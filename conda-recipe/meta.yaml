@@ -1,0 +1,77 @@
+{% set name = "wc3files" %}
+{% set version = "0.1.0" %}
+
+package:
+  name: {{ name|lower }}
+  version: {{ version }}
+
+source:
+  url: https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz
+  # sha256 of the 0.1.0 sdist built from this tree. It is correct as long as
+  # that exact artifact is the one uploaded to PyPI; if the sdist is rebuilt,
+  # recompute it:
+  #     pip download --no-deps --no-binary :all: wc3files==0.1.0
+  #     openssl dgst -sha256 wc3files-0.1.0.tar.gz
+  sha256: 542aa7ab7444267e8faaede5f1cf8081784712b2b459333f600afac010dca6ef
+
+build:
+  noarch: python
+  number: 0
+  script: {{ PYTHON }} -m pip install . -vv --no-deps --no-build-isolation
+  entry_points:
+    - wc3files = wc3files.cli.main:main
+
+# `python_min` is supplied by conda-forge's build configuration for noarch
+# python packages, which is what their linter expects. Building this recipe
+# outside conda-forge needs that variable defined, or the two lines below
+# changed to a literal `>=3.9`.
+requirements:
+  host:
+    - python {{ python_min }}
+    - pip
+    - setuptools
+  run:
+    - python >={{ python_min }}
+    - loguru
+    - tqdm
+    - pandas
+
+test:
+  imports:
+    - wc3files
+    - wc3files.mpq
+    - wc3files.w3x
+    - wc3files.w3o
+    - wc3files.wtg
+    - wc3files.mdl
+    - wc3files.img
+    - wc3files.casc
+  requires:
+    - python {{ python_min }}
+    - pip
+  commands:
+    - pip check
+    - wc3files --help
+    # The package ships the game's own tables and loads them at runtime, so a
+    # wheel that omitted them would import cleanly and fail later. Check the
+    # ones that are read from disk rather than only that the import works.
+    - python -c "from wc3files.wtg import TriggerData; assert TriggerData.default().arg_count(2, 'KillUnit') == 1"
+    - python -c "from wc3files import border_path; import os; assert os.path.exists(border_path('active'))"
+
+about:
+  home: https://github.com/Bekhouche/wc3files
+  summary: Warcraft III map, campaign, and replay file reader/writer
+  description: |
+    Pure-Python reader and writer for Warcraft III's file formats: MPQ
+    archives and W3X maps, object data, terrain, triggers and scripts
+    (JASS/Lua), MDL/MDX models, BLP/DDS images, replays, and the CASC
+    storage of an installed game. No StormLib and no compiler required.
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  doc_url: https://github.com/Bekhouche/wc3files/tree/main/docs
+  dev_url: https://github.com/Bekhouche/wc3files
+
+extra:
+  recipe-maintainers:
+    - Bekhouche

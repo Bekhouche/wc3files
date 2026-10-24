@@ -1,0 +1,5 @@
+Version = 2.5.0.63166;
+COvenBakeConfig_Mesh	$D857A09F
+{
+	ImportAnimation = true;
+}

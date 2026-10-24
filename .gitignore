@@ -1,0 +1,64 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Test / type checker / linter caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+
+# Project-specific
+outputs/
+.pypirc
+
+# Dev-only reference clones, not part of the shipped/versioned project
+StormLib/
+w3x2lni/
+
+# OS
+.DS_Store
+Thumbs.db
+# Benchmark map corpus - third-party maps, tens of GB, never committed.
+# Rebuild with tools/build_map_corpus.py; the ledger records what was examined.
+maps_benchmark/
+
+# Working notes kept local: these record real local paths and the names of
+# specific maps in a personal collection, which do not belong in the repo.
+# The files stay on disk - they are untracked, not deleted.
+TODO.md
+STATUS.md
+notes/
+
+# Developer tooling kept local: the benchmark harness, the corpus builder and
+# the game-data refresher. They carry local install paths and the shape of a
+# personal map corpus, and none of it is needed to use the package.
+tools/
+
+# Secrets and anything else that must never reach the repo: PyPI/anaconda
+# tokens, signing keys, local credentials. Ignored before the directory was
+# created, so nothing in it has ever been tracked.
+private/

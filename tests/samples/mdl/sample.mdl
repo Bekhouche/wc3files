@@ -1,0 +1,17 @@
+Version {
+	FormatVersion 800,
+}
+Model "SampleModel" {
+	BlendTime 0,
+	MinimumExtent { 0, 0, 0 },
+	MaximumExtent { 0, 0, 0 },
+	BoundsRadius 0,
+}
+Sequences 1 {
+	Anim "Stand" {
+		Interval { 0, 1000 },
+		MinimumExtent { -50, -50, 0 },
+		MaximumExtent { 50, 50, 100 },
+		BoundsRadius 100,
+	}
+}
