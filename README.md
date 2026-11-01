@@ -31,7 +31,8 @@ Full documentation lives in [docs/](docs/README.md):
 - [Concepts](docs/concepts.md) - the rules that explain the API's shape
 - [Formats](docs/formats.md) - every format, its class, and how far support goes
 - [API reference](docs/api-reference.md) - every public class and method
-- [Command line](docs/cli.md) - the `wc3files` command and its 26 subcommands
+- [Command line](docs/cli.md) - the `wc3files` command and its 27 subcommands
+- [vJass and Zinc](docs/vjass.md) - compiling vJass and Zinc to JASS, as JassHelper does
 - [Triggers and scripts](docs/triggers.md) - GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script
 
 ## Features
@@ -58,6 +59,11 @@ Full documentation lives in [docs/](docs/README.md):
 ### Replay Files (W3G)
 - Parse Warcraft III replay files (.w3g)
 - Extract game information, player data, and actions
+
+### vJass and Zinc
+- Compile vJass and Zinc to plain JASS, as JassHelper does, without the World Editor
+- Compile a single script, a set of library files, or the `war3map.j` of a whole map
+- `wc3files vjass war3map.j -o compiled.j`, or `VJassCompiler().compile_file(...)` from Python
 
 ## Usage Examples
 

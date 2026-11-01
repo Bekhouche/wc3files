@@ -1,0 +1,12 @@
+ID;PWXL;N;E
+B;X3;Y3;D0
+C;Y1;X1;K"Item"
+C;X2;K"cost"
+C;X3;K"label"
+C;Y2;X1;K"I000"
+C;X2;K25
+C;X3;K"Sword"
+C;Y3;X1;K"I001"
+C;X2;K40
+C;X3;K"Shield"
+E

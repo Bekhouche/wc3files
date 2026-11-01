@@ -264,6 +264,44 @@ from wc3files.wtg import trigger_text
 Exceptions: `JassLexError`, `JassParseError`, `LuaLexError`, `LuaParseError` -
 all carry `line` and `col`.
 
+### vJass and Zinc
+
+See [vJass and Zinc](vjass.md).
+
+```python
+from wc3files.vjass import VJassCompiler, CompileOptions, compile_vjass
+
+VJassCompiler(options=None, conf=None, **option_fields)
+    .compile(source, filename='<input>')   # -> CompileResult
+    .compile_file(path, output=None)
+    .compile_files(paths, output=None)     # one script, in the given order
+    .compile_map(map_path, output_path=None)
+
+CompileResult
+    .jass                 # the compiled script, text
+    .program              # the same, as an ir.Program
+    .warnings             # [VJassWarning]
+    .externals            # //! external commands, not run
+    .imports              # files pulled in by //! import
+    .validate()           # check_program over the output
+    .write(path)
+
+CompileOptions(debug=False, optimize=False, max_array_size=8191,
+               lookup_folders=None, auto_method_evaluate=True,
+               implicit_this=True, common_j=None, blizzard_j=None,
+               strict=False, constant_overrides=None)
+CompileOptions.from_conf('jasshelper.conf')
+
+compile_vjass(source, **option_fields)    # -> JASS text
+ScriptFile().read_vjass(path_or_source, filename=None, **option_fields)
+```
+
+`VJassError` carries `location` (file, line), `phase` (`preprocess`, `parse`
+or `compile`) and `message`.
+
+`wc3files.scripts.JassVM(program)` runs a compiled program (`.call(name)`,
+`.output`); `run_script(text, entry='main')` is the shorthand.
+
 ---
 
 ## Models

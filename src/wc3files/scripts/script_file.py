@@ -72,6 +72,26 @@ class ScriptFile:
           self._file_type = ScriptFileType.JASS
           return self
 
+     def read_vjass(self, source, filename=None, **options):
+          """Compile vJass/Zinc and load the resulting JASS.
+
+          `source` is a path, or the source text itself when `filename` is
+          given (`filename` then names it in error messages and anchors
+          `//! import`). Keyword arguments are `wc3files.vjass.CompileOptions`
+          fields (`debug=True`, `optimize=True`, ...). The full compile result
+          - warnings, the JASS text - is kept in `self.vjass_result`.
+          """
+          from wc3files.vjass import VJassCompiler
+          compiler = VJassCompiler(**options)
+          if filename is None:
+               result = compiler.compile_file(source)
+          else:
+               result = compiler.compile(source, filename)
+          self.vjass_result = result
+          self._data = parse_jass(result.jass)
+          self._file_type = ScriptFileType.JASS
+          return self
+
      def write(self, file_path, validate=False):
           ext = file_path.rsplit('.', 1)[-1].lower()
           if ext not in (item.value for item in ScriptFileType):

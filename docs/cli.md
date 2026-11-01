@@ -7,7 +7,7 @@ wc3files --help
 wc3files <command> --help     # every command documents its own options
 ```
 
-26 commands, grouped below by what they are for.
+27 commands, grouped below by what they are for.
 
 ## Archives
 
@@ -94,6 +94,20 @@ whose GUI functions stock Warcraft III does not declare. Both trigger
 commands take `--json` to emit structured output instead of text.
 
 `script-to-triggers` is covered in [Triggers and scripts](triggers.md).
+
+### vJass and Zinc
+
+```bash
+wc3files vjass war3map.j -o compiled.j       # compile to plain JASS
+wc3files vjass a.j b.j main.j -o out.j       # several files, as one script
+wc3files vjass MyMap.w3x -o Compiled.w3x     # a map: compile its war3map.j
+wc3files vjass war3map.j --preprocess        # source after imports, macros, Zinc
+```
+
+`--debug` builds with `debug` code kept, `-O` inlines, `--check` validates the
+result against the natives, and `-I DIR` adds a folder for `//! import`.
+`--conf jasshelper.conf` reads JassHelper's own settings. Warnings go to
+stderr. The compiler itself is covered in [vJass and Zinc](vjass.md).
 
 ## Replays
 

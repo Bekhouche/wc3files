@@ -1,0 +1,245 @@
+{
+ "big": {
+  "debug": [
+   "9001 9000",
+   "15 5 20000 100 300",
+   "10010 42 10"
+  ],
+  "release": [
+   "9001 9000",
+   "15 5 20000 100 300",
+   "10010 42 10"
+  ]
+ },
+ "childcreate": {
+  "debug": [
+   "child:c15 child:gc299 z3",
+   "231",
+   "2child:again45"
+  ],
+  "release": [
+   "child:c15 child:gc299 z3",
+   "231",
+   "2child:again45"
+  ]
+ },
+ "dbgfree": {
+  "debug": [
+   "bye",
+   "Double free of type: D",
+   "Attempt to destroy a null struct of type: D"
+  ],
+  "release": [
+   "bye"
+  ]
+ },
+ "forward": {
+  "debug": [
+   "hooked 21",
+   "21",
+   "hooked late",
+   "late",
+   "hooked early 103",
+   "early 103",
+   "hooked late",
+   "late"
+  ],
+  "release": [
+   "hooked 21",
+   "21",
+   "hooked late",
+   "late",
+   "hooked early 103",
+   "early 103",
+   "hooked late",
+   "late"
+  ]
+ },
+ "inherit": {
+  "debug": [
+   "6.000 shape",
+   "16.000 sq",
+   "rect|square of rect",
+   "is square",
+   "is rect",
+   "square gone",
+   "rect gone",
+   "rect gone"
+  ],
+  "release": [
+   "6.000 shape",
+   "16.000 sq",
+   "rect|square of rect",
+   "is square",
+   "is rect",
+   "square gone",
+   "rect gone",
+   "rect gone"
+  ]
+ },
+ "inject": {
+  "debug": [
+   "before",
+   "Q init",
+   "lib init",
+   "after"
+  ],
+  "release": [
+   "before",
+   "Q init",
+   "lib init",
+   "after"
+  ]
+ },
+ "libs": {
+  "debug": [
+   "init A",
+   "init B",
+   "scope init",
+   "C uses B7A_",
+   "main"
+  ],
+  "release": [
+   "init A",
+   "init B",
+   "scope init",
+   "C uses B7A_",
+   "main"
+  ]
+ },
+ "loaddata": {
+  "debug": [
+   "Sword25Shield40"
+  ],
+  "release": [
+   "Sword25Shield40"
+  ]
+ },
+ "methods_exec": {
+  "debug": [
+   "LOUD hi",
+   "quiet there",
+   "a deaf",
+   "quiet hears",
+   "13 16",
+   "s__Plain_sq s__Plain_twice"
+  ],
+  "release": [
+   "LOUD hi",
+   "quiet there",
+   "a deaf",
+   "quiet hears",
+   "13 16",
+   "s__Plain_sq s__Plain_twice"
+  ]
+ },
+ "misc": {
+  "debug": [
+   "7 12",
+   "30 9 1 5",
+   "307 4",
+   "set x 42",
+   "less",
+   "not greater",
+   "53420",
+   "add",
+   "keys differ"
+  ],
+  "release": [
+   "7 12",
+   "30 9 1 5",
+   "307 4",
+   "set x 42",
+   "less",
+   "not greater",
+   "53420",
+   "add",
+   "keys differ"
+  ]
+ },
+ "modules": {
+  "debug": [
+   "module init 1",
+   "struct init A",
+   "2"
+  ],
+  "release": [
+   "module init 1",
+   "struct init A",
+   "2"
+  ]
+ },
+ "scopes": {
+  "debug": [
+   "first inner Outer_Inner_ outer inner Outer_Inner_",
+   "1005 77 9 9"
+  ],
+  "release": [
+   "first inner Outer_Inner_ outer inner Outer_Inner_",
+   "1005 77 9 9"
+  ]
+ },
+ "static_if": {
+  "debug": [
+   "opt",
+   "no nope",
+   "debug only"
+  ],
+  "release": [
+   "opt",
+   "no nope",
+   "flag"
+  ]
+ },
+ "structs": {
+  "debug": [
+   "15 30 2",
+   "hi2",
+   "destroy 5",
+   "1",
+   "1 1"
+  ],
+  "release": [
+   "15 30 2",
+   "hi2",
+   "destroy 5",
+   "1",
+   "1 1"
+  ]
+ },
+ "zinc_basic": {
+  "debug": [
+   "zinit",
+   "for 10",
+   "down 5 -1",
+   "while 2",
+   "do 32",
+   "cfor 3",
+   "5 3.500 2",
+   "ordered",
+   "else",
+   "woof4tweet2",
+   "14 -13",
+   "compound 15",
+   "debug!",
+   "static ok",
+   "anon"
+  ],
+  "release": [
+   "zinit",
+   "for 10",
+   "down 5 -1",
+   "while 2",
+   "do 32",
+   "cfor 3",
+   "5 3.500 2",
+   "ordered",
+   "else",
+   "woof4tweet2",
+   "14 -13",
+   "compound 15",
+   "static ok",
+   "anon"
+  ]
+ }
+}

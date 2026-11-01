@@ -253,6 +253,112 @@ def _cmd_jass(args):
         sys.stdout.write(text)
 
 
+def _cmd_vjass(args):
+    """Compile vJass/Zinc to JASS - a script, several, or a whole map.
+
+    A map (.w3x/.w3m, or a folder map) has its war3map.j compiled and is
+    written back with the result, as the World Editor does when saving with
+    JassHelper on. Anything else is read as source; several inputs compile as
+    one script, in the order given.
+    """
+    from wc3files.vjass import VJassCompiler, CompileOptions, VJassError
+    from wc3files.vjass.preprocessor import Preprocessor, _read_text
+    from wc3files.vjass.zinc import translate_zinc
+
+    overrides = dict(debug=args.debug, optimize=args.optimize,
+                     strict=args.strict,
+                     auto_method_evaluate=not args.force_method_evaluate,
+                     implicit_this=not args.no_implicit_this)
+    if args.max_array_size:
+        overrides['max_array_size'] = args.max_array_size
+    if args.common:
+        overrides['common_j'] = args.common
+    if args.blizzard:
+        overrides['blizzard_j'] = args.blizzard
+    if args.conf:
+        options = CompileOptions.from_conf(args.conf, **overrides)
+    else:
+        options = CompileOptions(**overrides)
+    options.lookup_folders.extend(args.lookup or [])
+    for define in args.define or []:
+        name, _, value = define.partition('=')
+        options.constant_overrides[name] = value.lower() not in ('0', 'false',
+                                                                  'no')
+    compiler = VJassCompiler(options)
+
+    inputs = args.input
+    first = inputs[0]
+    is_map = len(inputs) == 1 and (
+        first.lower().endswith(('.w3x', '.w3m')) or
+        (os.path.isdir(first) and os.path.isfile(os.path.join(first,
+                                                               'war3map.j'))))
+
+    if args.preprocess:
+        # Show what the parser sees: imports, macros, debug lines and Zinc
+        # (translated to vJass) all applied.
+        if len(inputs) != 1 or is_map:
+            raise ValueError('--preprocess takes one source file')
+        pre = Preprocessor(options).run(_read_text(first), os.path.abspath(first))
+        lines = []
+        for kind, segment in pre.segments:
+            if kind == 'zinc':
+                segment = translate_zinc(segment, options)
+            lines.extend(line.text for line in segment)
+        text = '\n'.join(lines) + '\n'
+        _write_or_print(text, args.output)
+        return
+
+    try:
+        if is_map:
+            result = compiler.compile_map(first, args.output)
+            target = args.output or first
+        elif len(inputs) == 1:
+            result = compiler.compile_file(first)
+            target = None
+        else:
+            result = compiler.compile_files(inputs)
+            target = None
+    except VJassError as exc:
+        raise ValueError(f'vJass: {exc}') from None
+
+    shown = 0
+    for warning in result.warnings:
+        if args.quiet:
+            break
+        if shown == args.max_warnings:
+            print(f'... and {len(result.warnings) - shown} more warnings',
+                  file=sys.stderr)
+            break
+        print(warning, file=sys.stderr)
+        shown += 1
+    for location, tool, arguments in result.externals:
+        if not args.quiet:
+            print(f'{location}: note: external tool {tool!r} not run '
+                  '(//! external commands run in the World Editor)',
+                  file=sys.stderr)
+
+    if args.check:
+        issues = [f for f in result.validate() if f['severity'] == 'issue']
+        for finding in issues:
+            print(f"check: {finding['message']}", file=sys.stderr)
+        if issues:
+            raise ValueError(f'{len(issues)} issue(s) in the compiled script')
+
+    if target is not None:
+        print(f'Compiled {first} -> {target}')
+        return
+    _write_or_print(result.jass, args.output)
+
+
+def _write_or_print(text, output):
+    if output and output != '-':
+        with open(output, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(text)
+        print(f'Wrote {output}')
+    else:
+        sys.stdout.write(text)
+
+
 def _cmd_trigger_text(args):
     """Render a war3map.wtg as the text the World Editor would show."""
     from wc3files.wtg import MapTriggersFile
@@ -1346,6 +1452,55 @@ def build_parser():
                               'names other scripts or the map call into.'))
     p_jass.set_defaults(func=_cmd_jass)
 
+    p_vjass = subparsers.add_parser(
+        'vjass', help=('Compile vJass and Zinc to plain JASS (what JassHelper '
+                       'does): a script, several scripts, or a whole map.'))
+    p_vjass.add_argument('input', nargs='+',
+                         help=('Source file(s), compiled together in order; or '
+                               'one map (.w3x/.w3m or a folder map), whose '
+                               'war3map.j is compiled and written back.'))
+    p_vjass.add_argument('-o', '--output', default=None,
+                         help=("Where to write the JASS (default: stdout). For "
+                               "a map: the map to write (default: in place)."))
+    p_vjass.add_argument('--debug', action='store_true',
+                         help='Debug build: keep debug code, DEBUG_MODE=true.')
+    p_vjass.add_argument('-O', '--optimize', action='store_true',
+                         help='Inline one-line functions (JassHelper\'s '
+                              'optimizer).')
+    p_vjass.add_argument('--common', help='common.j to compile against '
+                                          '(default: the bundled copy).')
+    p_vjass.add_argument('--blizzard', help='Blizzard.j to compile against '
+                                            '(default: the bundled copy).')
+    p_vjass.add_argument('--conf', help="A JassHelper jasshelper.conf to read "
+                                        "(lookup folders and options).")
+    p_vjass.add_argument('-I', '--lookup', action='append', default=None,
+                         help='A folder //! import searches (repeatable).')
+    p_vjass.add_argument('-D', '--define', action='append', default=None,
+                         help=('Force a constant for static if, NAME or '
+                               'NAME=false (repeatable).'))
+    p_vjass.add_argument('--max-array-size', type=int, default=None,
+                         help=('Size of one JASS array: 8191 (default, matches '
+                               'JassHelper) or 32768 (game 1.29+).'))
+    p_vjass.add_argument('--strict', action='store_true',
+                         help='Make undeclared names an error instead of a '
+                              'warning.')
+    p_vjass.add_argument('--force-method-evaluate', action='store_true',
+                         help=('Calling a method above its declaration is an '
+                               'error ([forcemethodevaluate]).'))
+    p_vjass.add_argument('--no-implicit-this', action='store_true',
+                         help='Bare member names do not mean this.member.')
+    p_vjass.add_argument('--check', action='store_true',
+                         help='Validate the compiled JASS against the natives.')
+    p_vjass.add_argument('--preprocess', action='store_true',
+                         help=('Print the source after imports, text macros, '
+                               'debug lines and Zinc translation, and stop.'))
+    p_vjass.add_argument('-q', '--quiet', action='store_true',
+                         help='Do not print warnings.')
+    p_vjass.add_argument('--max-warnings', type=int, default=50,
+                         help='Warnings to print before summarizing '
+                              '(default: 50).')
+    p_vjass.set_defaults(func=_cmd_vjass)
+
     p_trig_text = subparsers.add_parser(
         'trigger-text',
         help=('Render a war3map.wtg as the text the World Editor shows - '
@@ -1415,9 +1570,9 @@ def main(argv=None):
                             LuaParseError)):
             print(f"error: {args.input}: {exc}", file=sys.stderr)
             print("hint: if this script uses vJass (struct, method, library, "
-                  "scope) it needs JassHelper's compilation first - this "
-                  "package preprocesses text macros but does not compile "
-                  "vJass. See TODO.md.", file=sys.stderr)
+                  "scope) or Zinc, compile it to JASS first: "
+                  f"wc3files vjass {args.input} -o compiled.j",
+                  file=sys.stderr)
             return 1
         raise
     return 0

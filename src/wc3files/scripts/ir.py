@@ -5,8 +5,8 @@ wc3files.mdl keeps one shared model (empty_model()) that both its text (MDL) and
 binary (MDX) frontends convert to/from.
 
 Only the subset of JASS this package's parser actually recognizes is modeled here
-(no macro/preprocessor constructs - vJass-only syntax like structs or textmacros is
-out of scope, see TODO.md).
+(no macro/preprocessor constructs - vJass is compiled to this plain JASS by
+wc3files.vjass, which has its own syntax tree).
 """
 
 
