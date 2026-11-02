@@ -214,9 +214,7 @@ def _cmd_jass(args):
     is_lua = script.get_file_type().value == 'lua'
 
     if args.check:
-        if _report_script_check(args.input, script.validate()):
-            raise SystemExit(1)
-        return
+        return _report_script_check(args.input, script.validate())
 
     if is_lua:
         if args.strip:
@@ -1707,7 +1705,9 @@ def main(argv=None):
         logger.add(sys.stderr, level='WARNING')
 
     try:
-        args.func(args)
+        # A command returns 1 (or another status) when it failed after
+        # reporting why; None means success.
+        status = args.func(args)
     except NotImplementedError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -1743,7 +1743,7 @@ def main(argv=None):
                   file=sys.stderr)
             return 1
         raise
-    return 0
+    return status if isinstance(status, int) else 0
 
 
 if __name__ == '__main__':

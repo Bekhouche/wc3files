@@ -74,6 +74,14 @@ class TestCliErrorHandling(unittest.TestCase):
         rc = main(['dump', 'w3i', '/no/such/file.w3i', '-'])
         self.assertEqual(rc, 1)
 
+    def test_a_command_reporting_failure_sets_the_exit_status(self):
+        # img-convert prints the error and returns 1 itself rather than
+        # raising; main() used to drop that and exit 0.
+        with tempfile.TemporaryDirectory() as tmp:
+            rc = main(['img-convert', _helpers.sample_path('sample.blp'),
+                       os.path.join(tmp, 'out.png'), '--resize', 'big'])
+        self.assertEqual(rc, 1)
+
 
 class TestBundledIconBorders(unittest.TestCase):
     """wc3files.img.borders - real border art bundled with this package (see

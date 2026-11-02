@@ -215,9 +215,7 @@ class TestScriptFileAndCli(unittest.TestCase):
                     handle.write('local t = CreateTrigger()\nKillUnit(t)\n')
                out, err = io.StringIO(), io.StringIO()
                with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
-                    with self.assertRaises(SystemExit) as caught:
-                         cli_main(['jass', path, '--check'])
-               self.assertEqual(caught.exception.code, 1)
+                    self.assertEqual(cli_main(['jass', path, '--check']), 1)
                self.assertIn(f'{path}:2: issue:', out.getvalue())
                self.assertIn('1 issue(s), 0 note(s)', err.getvalue())
 
