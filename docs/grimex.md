@@ -172,6 +172,16 @@ The interpreter and the tools were checked in three ways:
    remaining failures depend on Lua's one-pass compiler (`load` reading a
    chunk lazily; a limit error found before a later syntax error) or on POSIX
    file semantics under Windows.
+   The 5.3.4 suite, run in 5.3 mode with its `_port` and `_soft` switches:
+   attrib, big, bitwise, closure, code, constructs, coroutine, events, goto,
+   literals, locals, math, nextvar, pm, strings, tpack, utf8 and vararg pass
+   unchanged. The rest test what an interpreter in Python does not have:
+   bytecode (`string.dump` headers, stripped dumps), exact line hooks, the
+   garbage collector's steps, the C API, and the `lua` executable. One is
+   left out on purpose: `table.sort` does not raise "invalid order function"
+   for an inconsistent comparator, because Lua itself raises it only when
+   its own partition happens to overrun, and a stricter check would reject
+   `a <= b` comparators that work in real maps.
 2. **Real Lua.** All 36 `war3map.lua` scripts found on the development
    machine compile.
 3. **The nestharus/JASS corpus.** Every external of its `lua/` folder runs:

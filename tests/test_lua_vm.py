@@ -7,7 +7,8 @@ math, nextvar, pm, sort, strings, vararg, attrib, code and checktable pass
 unchanged. The parts that fail depend on Lua's one-pass compiler (load()
 reading a chunk lazily, a limit error found before a later syntax error) or
 on POSIX file semantics. That suite is not checked in; the cases below
-cover the same ground in small pieces.
+cover the same ground in small pieces. The 5.3.4 suite was run the same way
+for 5.3 mode; TestLua53 keeps a case from each kind of failure it found.
 """
 import os
 import shutil
