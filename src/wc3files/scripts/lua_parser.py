@@ -19,6 +19,8 @@ class LuaParseError(Exception):
                             f'at line {token.line}, column {token.col}')
           self.line = token.line
           self.col = token.col
+          self.token = token
+          self.message = message
 
 
 # Binary operator precedence, low to high, each tier left-associative except
@@ -75,11 +77,17 @@ class _TokenStream:
           return self.advance().value
 
 
-def parse(source):
+def parse(source, version='5.3'):
      """Parse Lua source text into an ir.Chunk. Raises LuaParseError (with
      line/col) rather than silently mis-parsing, matching jass_parser's
-     established convention."""
-     stream = _TokenStream(tokenize(source))
+     established convention.
+
+     `version='5.1'` applies the two places where Lua 5.1's grammar is
+     stricter: a `;` must follow a statement (no empty statements), and
+     `break`, like `return`, must be the last statement of its block."""
+     stream = _TokenStream(tokenize(source, version))
+     stream.lua51 = version == '5.1'
+
      body = _parse_block(stream, until={'end', 'else', 'elseif', 'until'})
      if stream.peek().kind != 'EOF':
           raise LuaParseError('expected end of file', stream.peek())
@@ -95,20 +103,59 @@ def _at_block_end(stream, until):
 
 def _parse_block(stream, until):
      statements = []
+     lua51 = getattr(stream, 'lua51', False)
+     last = (ir.LuaReturnStmt, ir.BreakStmt) if lua51 else (ir.LuaReturnStmt,)
      while not _at_block_end(stream, until):
           if stream.check_op(';'):
+               if lua51:
+                    raise LuaParseError('expected a statement', stream.peek())
                stream.advance()
                continue
           stmt = _parse_statement(stream)
           statements.append(stmt)
-          if isinstance(stmt, (ir.LuaReturnStmt, ir.BreakStmt)):
-               if stream.check_op(';'):
-                    stream.advance()
+          if stream.check_op(';'):
+               stream.advance()
+          if isinstance(stmt, last):
                break
      return statements
 
 
+def _at(node, token):
+     """Record the source line a node starts on. It is a plain attribute, not
+     one of the node's `_fields`, so it never takes part in the structural
+     equality the round-trip checks rely on; the Lua interpreter uses it for
+     error messages."""
+     node.line = token.line
+     return node
+
+
+# Lua 5.1 stops nesting at 200 levels (LUAI_MAXCCALLS); a script nested
+# deeper fails to load there, so 5.1 mode reports it the same way.
+_MAX_LEVELS = 200
+
+
+def _enter(stream):
+     if getattr(stream, 'lua51', False):
+          stream.levels = getattr(stream, 'levels', 0) + 1
+          if stream.levels > _MAX_LEVELS:
+               raise LuaParseError('chunk has too many syntax levels', stream.peek())
+
+
+def _leave(stream):
+     if getattr(stream, 'lua51', False):
+          stream.levels -= 1
+
+
 def _parse_statement(stream):
+     start = stream.peek()
+     _enter(stream)
+     try:
+          return _at(_parse_statement_at(stream), start)
+     finally:
+          _leave(stream)
+
+
+def _parse_statement_at(stream):
      if stream.check_keyword('break'):
           stream.advance()
           return ir.BreakStmt()
@@ -320,24 +367,28 @@ def _parse_expr_list(stream):
 # --- expressions ----------------------------------------------------------
 
 def _parse_expr(stream):
-     return _parse_or(stream)
+     _enter(stream)
+     try:
+          return _parse_or(stream)
+     finally:
+          _leave(stream)
 
 
 def _parse_or(stream):
      left = _parse_and(stream)
      while stream.check_keyword('or'):
-          stream.advance()
+          token = stream.advance()
           right = _parse_and(stream)
-          left = ir.BinaryExpr('or', left, right)
+          left = _at(ir.BinaryExpr('or', left, right), token)
      return left
 
 
 def _parse_and(stream):
      left = _parse_compare(stream)
      while stream.check_keyword('and'):
-          stream.advance()
+          token = stream.advance()
           right = _parse_compare(stream)
-          left = ir.BinaryExpr('and', left, right)
+          left = _at(ir.BinaryExpr('and', left, right), token)
      return left
 
 
@@ -349,34 +400,34 @@ def _parse_compare(stream):
                break
           stream.advance()
           right = _parse_bor(stream)
-          left = ir.BinaryExpr(token.value, left, right)
+          left = _at(ir.BinaryExpr(token.value, left, right), token)
      return left
 
 
 def _parse_bor(stream):
      left = _parse_bxor(stream)
      while stream.check_op('|'):
-          stream.advance()
+          token = stream.advance()
           right = _parse_bxor(stream)
-          left = ir.BinaryExpr('|', left, right)
+          left = _at(ir.BinaryExpr('|', left, right), token)
      return left
 
 
 def _parse_bxor(stream):
      left = _parse_band(stream)
      while stream.check_op('~'):
-          stream.advance()
+          token = stream.advance()
           right = _parse_band(stream)
-          left = ir.BinaryExpr('~', left, right)
+          left = _at(ir.BinaryExpr('~', left, right), token)
      return left
 
 
 def _parse_band(stream):
      left = _parse_shift(stream)
      while stream.check_op('&'):
-          stream.advance()
+          token = stream.advance()
           right = _parse_shift(stream)
-          left = ir.BinaryExpr('&', left, right)
+          left = _at(ir.BinaryExpr('&', left, right), token)
      return left
 
 
@@ -388,16 +439,20 @@ def _parse_shift(stream):
                break
           stream.advance()
           right = _parse_concat(stream)
-          left = ir.BinaryExpr(token.value, left, right)
+          left = _at(ir.BinaryExpr(token.value, left, right), token)
      return left
 
 
 def _parse_concat(stream):
      left = _parse_add(stream)
      if stream.check_op('..'):
-          stream.advance()
-          right = _parse_concat(stream)
-          return ir.BinaryExpr('..', left, right)
+          token = stream.advance()
+          _enter(stream)
+          try:
+               right = _parse_concat(stream)
+          finally:
+               _leave(stream)
+          return _at(ir.BinaryExpr('..', left, right), token)
      return left
 
 
@@ -409,7 +464,7 @@ def _parse_add(stream):
                break
           stream.advance()
           right = _parse_mul(stream)
-          left = ir.BinaryExpr(token.value, left, right)
+          left = _at(ir.BinaryExpr(token.value, left, right), token)
      return left
 
 
@@ -421,7 +476,7 @@ def _parse_mul(stream):
                break
           stream.advance()
           right = _parse_unary(stream)
-          left = ir.BinaryExpr(token.value, left, right)
+          left = _at(ir.BinaryExpr(token.value, left, right), token)
      return left
 
 
@@ -431,17 +486,25 @@ def _parse_unary(stream):
                  or (token.kind == 'OP' and token.value in _UNARY_OPS))
      if is_unary:
           stream.advance()
-          operand = _parse_unary(stream)
-          return ir.UnaryExpr(token.value, operand)
+          _enter(stream)
+          try:
+               operand = _parse_unary(stream)
+          finally:
+               _leave(stream)
+          return _at(ir.UnaryExpr(token.value, operand), token)
      return _parse_pow(stream)
 
 
 def _parse_pow(stream):
      left = _parse_atom(stream)
      if stream.check_op('^'):
-          stream.advance()
-          right = _parse_unary(stream)
-          return ir.BinaryExpr('^', left, right)
+          token = stream.advance()
+          _enter(stream)
+          try:
+               right = _parse_unary(stream)
+          finally:
+               _leave(stream)
+          return _at(ir.BinaryExpr('^', left, right), token)
      return left
 
 
@@ -450,31 +513,31 @@ def _parse_atom(stream):
 
      if token.kind == 'NUMBER':
           stream.advance()
-          return _literal_from_number(token)
+          return _at(_literal_from_number(token), token)
 
      if token.kind == 'STRING':
           stream.advance()
-          return ir.Literal('string', token.value)
+          return _at(ir.Literal('string', token.value), token)
 
      if token.kind == 'KEYWORD' and token.value == 'nil':
           stream.advance()
-          return ir.Literal('nil', None)
+          return _at(ir.Literal('nil', None), token)
 
      if token.kind == 'KEYWORD' and token.value in ('true', 'false'):
           stream.advance()
-          return ir.Literal('bool', token.value == 'true')
+          return _at(ir.Literal('bool', token.value == 'true'), token)
 
      if token.kind == 'OP' and token.value == '...':
           stream.advance()
-          return ir.VarargExpr()
+          return _at(ir.VarargExpr(), token)
 
      if token.kind == 'KEYWORD' and token.value == 'function':
           stream.advance()
           params, is_vararg, body = _parse_funcbody(stream)
-          return ir.LuaFunctionExpr(params, body=body, is_vararg=is_vararg)
+          return _at(ir.LuaFunctionExpr(params, body=body, is_vararg=is_vararg), token)
 
      if token.kind == 'OP' and token.value == '{':
-          return _parse_table(stream)
+          return _at(_parse_table(stream), token)
 
      return _parse_prefixexp(stream)
 
@@ -495,33 +558,51 @@ def _parse_prefixexp(stream):
           stream.advance()
           expr = _parse_expr(stream)
           stream.expect_op(')')
+          if isinstance(expr, (ir.LuaCallExpr, ir.LuaMethodCallExpr, ir.VarargExpr)):
+               # `(f())` and `(...)` keep only their first value. The
+               # parentheses are otherwise invisible in the tree, so they are
+               # recorded on a copy of the node: the interpreter truncates on
+               # it and the printer puts the parentheses back.
+               expr = _parenthesized(expr)
      elif token.kind == 'NAME':
           stream.advance()
-          expr = ir.VarExpr(token.value)
+          expr = _at(ir.VarExpr(token.value), token)
      else:
           raise LuaParseError('expected an expression', token)
 
      while True:
+          token = stream.peek()
           if stream.check_op('.'):
                stream.advance()
                name = stream.expect_name()
-               expr = ir.IndexExpr(expr, ir.Literal('string', name))
+               expr = _at(ir.IndexExpr(expr, ir.Literal('string', name)), token)
           elif stream.check_op('['):
                stream.advance()
                index = _parse_expr(stream)
                stream.expect_op(']')
-               expr = ir.IndexExpr(expr, index)
+               expr = _at(ir.IndexExpr(expr, index), token)
           elif stream.check_op(':'):
                stream.advance()
                method = stream.expect_name()
                args = _parse_args(stream)
-               expr = ir.LuaMethodCallExpr(expr, method, args)
+               expr = _at(ir.LuaMethodCallExpr(expr, method, args), token)
           elif _at_call_args(stream):
+               if getattr(stream, 'lua51', False) and stream.check_op('(') and \
+                         stream.pos > 0 and stream.tokens[stream.pos - 1].line != token.line:
+                    raise LuaParseError('ambiguous syntax (function call x new statement)',
+                                        token)
                args = _parse_args(stream)
-               expr = ir.LuaCallExpr(expr, args)
+               expr = _at(ir.LuaCallExpr(expr, args), token)
           else:
                break
      return expr
+
+
+def _parenthesized(expr):
+     copy = type(expr).__new__(type(expr))
+     copy.__dict__.update(expr.__dict__)
+     copy.paren = True
+     return copy
 
 
 def _at_call_args(stream):

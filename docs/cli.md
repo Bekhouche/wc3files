@@ -7,7 +7,7 @@ wc3files --help
 wc3files <command> --help     # every command documents its own options
 ```
 
-27 commands, grouped below by what they are for.
+28 commands, grouped below by what they are for.
 
 ## Archives
 
@@ -108,6 +108,35 @@ wc3files vjass war3map.j --preprocess        # source after imports, macros, Zin
 result against the natives, and `-I DIR` adds a folder for `//! import`.
 `--conf jasshelper.conf` reads JassHelper's own settings. Warnings go to
 stderr. The compiler itself is covered in [vJass and Zinc](vjass.md).
+
+`--externals` decides what happens to the `//! external` calls and external
+blocks of Lua:
+
+```bash
+wc3files vjass war3map.j --externals check            # run in a sandbox, report errors
+wc3files vjass MyMap.w3x -o Out.w3x --externals run   # write the objects they make
+wc3files vjass war3map.j -o out.j --externals run --externals-dir objects/
+```
+
+`note` (the default) only lists them. `check` runs them and changes nothing;
+it exits with an error when one fails. `run` writes what they change into the
+map, or, for a script, writes the changed files (`war3map.w3a`, ...) next to
+`-o` or into `--externals-dir`. `--workspace DIR` keeps the tools' sandbox
+folder between runs. See [External tools and Lua](grimex.md).
+
+### Lua
+
+```bash
+wc3files lua script.lua arg1 arg2                     # plain Lua 5.1, sandboxed
+wc3files lua script.lua --lua-version 5.3
+wc3files lua make.lua --tool ObjectMerger --map MyMap.w3x -o Out.w3x
+```
+
+Plain mode lets the script read its own folder (`--root` to change it) and
+write nothing unless `--allow-write` is given. `--tool` runs the script as
+that Grim Extension Pack tool would, with its functions defined, against
+`--map` (or an empty map); `-o` is the map to write, or a folder for the
+changed files.
 
 ## Replays
 

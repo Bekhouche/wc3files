@@ -110,9 +110,11 @@ functions and methods, `for` ranges and C-style `for`, `while`, `do ... while`,
 syntax. Zinc and vJass mix freely: a Zinc struct can implement a vJass module
 and the other way round.
 
-`//! external` and `//! externalblock` commands (ObjectMerger and similar
-editor tools) are not run. They are collected in `result.externals`, so a build
-pipeline can run them itself.
+`//! external` commands and `//! externalblock` blocks (ObjectMerger and the
+other editor tools) are collected in `result.externals`, and
+[`wc3files.grimex`](grimex.md) runs them: `result.run_externals(map_files)`,
+`compile_map(..., externals=True)` or `--externals check|run` on the command
+line.
 
 ## Options
 
@@ -198,7 +200,9 @@ immediately. A native it does not implement raises `JassRuntimeError`.
 
 ## Limitations
 
-- `//! external` tools are not run (see above).
+- `//! external` tools run only when asked (`--externals`), and only the four
+  Grim Extension Pack tools are implemented; see [External tools and
+  Lua](grimex.md).
 - Compiling a map compiles the `war3map.j` it contains. The World Editor
   builds that file from the GUI triggers when it saves, so a map saved with
   JassHelper enabled already holds compiled JASS; recompiling it changes

@@ -49,14 +49,72 @@ class TextMacro(object):
         self.location = location
 
 
+class External(object):
+    """A `//! external` command or an `//! externalblock` block: a tool the
+    World Editor runs after the script is compiled (ObjectMerger and the other
+    Grim Extension Pack tools). `wc3files.grimex` runs them.
+
+    tool
+        The tool name (`ObjectMerger`).
+    arguments
+        The rest of the command line, as written (`w3a AHbz A000 anam "X"`,
+        or `$FILENAME$` for a block).
+    lines
+        For a block, the text of each `//! i` line, exactly as JassHelper
+        passes it on (everything after `i` and one separator, trailing spaces
+        kept); None for a single command.
+    positions
+        The source Location of each line of `lines`.
+    extension
+        For a block, the extension of the file `$FILENAME$` stands for
+        (`lua`; JassHelper's default is `tmp`).
+
+    It also unpacks as the `(location, tool, arguments_or_lines)` tuple
+    earlier versions returned."""
+
+    def __init__(self, tool, arguments, location, lines=None, positions=None,
+                 extension=None):
+        self.tool = tool
+        self.arguments = arguments
+        self.location = location
+        self.lines = lines
+        self.positions = positions if positions is not None else []
+        self.extension = extension
+
+    @property
+    def is_block(self):
+        return self.lines is not None
+
+    @property
+    def text(self):
+        """The block's text, one line per `//! i` line."""
+        return ''.join(line + '\n' for line in self.lines or [])
+
+    def _tuple(self):
+        return (self.location, self.tool,
+                self.lines if self.lines is not None else self.arguments)
+
+    def __iter__(self):
+        return iter(self._tuple())
+
+    def __getitem__(self, index):
+        return self._tuple()[index]
+
+    def __len__(self):
+        return 3
+
+    def __repr__(self):
+        kind = 'block' if self.is_block else 'command'
+        return f'External({kind} {self.tool} {self.arguments!r} at {self.location})'
+
+
 class Preprocessed(object):
     """Result of preprocessing.
 
     segments
         `[(kind, [SourceLine])]` with kind 'vjass' or 'zinc', in file order.
     externals
-        `[(location, tool, arguments)]` for each `//! external` command, and
-        `[(location, tool, [lines])]` for each external block.
+        An `External` for each `//! external` command and external block.
     imports
         Absolute paths of every imported file, in import order.
     macros
@@ -87,6 +145,18 @@ def _directive(line):
 
 def _loc(line):
     return Location(line.file, line.line)
+
+
+_RAW_I = re.compile(r'^\s*//!\s*i(?=\s|$)')
+
+
+def _raw_rest(text):
+    """The text of a `//! i` line after `i` and one separator character, as
+    JassHelper copies it."""
+    match = _RAW_I.match(text)
+    if not match:
+        return ''
+    return text[match.end() + 1:]
 
 
 class Preprocessor(object):
@@ -322,7 +392,8 @@ class Preprocessor(object):
                     self.result.externals.append(external_block)
                     external_block = None
                 elif kind == 'i':
-                    external_block[2].append(rest)
+                    external_block.lines.append(_raw_rest(line.text))
+                    external_block.positions.append(_loc(line))
                 continue
             if kind is None:
                 current.append(line)
@@ -341,14 +412,28 @@ class Preprocessor(object):
                 current_kind, current, zinc_start = 'vjass', [], None
                 continue
             if kind == 'externalblock':
-                tool = rest.split()
-                external_block = (_loc(line), tool[-1] if tool else '', [])
+                # `//! externalblock [extension=ext] tool arguments`, the way
+                # JassHelper reads it.
+                parts = rest.split(None, 1)
+                extension = 'tmp'
+                if parts and '=' in parts[0]:
+                    key, _, extension = parts[0].partition('=')
+                    if key != 'extension':
+                        raise VJassError('Expected: extension (before =) ', _loc(line),
+                                         'preprocess')
+                    parts = parts[1].split(None, 1) if len(parts) > 1 else []
+                if not parts:
+                    raise VJassError('//! externalblock needs a tool name', _loc(line),
+                                     'preprocess')
+                external_block = External(parts[0], parts[1] if len(parts) > 1 else '',
+                                          _loc(line), lines=[], positions=[],
+                                          extension=extension)
                 continue
             if kind == 'external':
                 parts = rest.split(None, 1)
-                self.result.externals.append(
-                    (_loc(line), parts[0] if parts else '',
-                     parts[1] if len(parts) > 1 else ''))
+                self.result.externals.append(External(
+                    parts[0] if parts else '', parts[1] if len(parts) > 1 else '',
+                    _loc(line)))
                 continue
             if kind in KEPT_DIRECTIVES:
                 current.append(line)

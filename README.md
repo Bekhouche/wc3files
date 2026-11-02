@@ -31,8 +31,9 @@ Full documentation lives in [docs/](docs/README.md):
 - [Concepts](docs/concepts.md) - the rules that explain the API's shape
 - [Formats](docs/formats.md) - every format, its class, and how far support goes
 - [API reference](docs/api-reference.md) - every public class and method
-- [Command line](docs/cli.md) - the `wc3files` command and its 27 subcommands
+- [Command line](docs/cli.md) - the `wc3files` command and its 28 subcommands
 - [vJass and Zinc](docs/vjass.md) - compiling vJass and Zinc to JASS, as JassHelper does
+- [External tools and Lua](docs/grimex.md) - running a map's ObjectMerger, FileImporter and other tool calls, and the Lua interpreter
 - [Triggers and scripts](docs/triggers.md) - GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script
 
 ## Features
@@ -64,6 +65,11 @@ Full documentation lives in [docs/](docs/README.md):
 - Compile vJass and Zinc to plain JASS, as JassHelper does, without the World Editor
 - Compile a single script, a set of library files, or the `war3map.j` of a whole map
 - `wc3files vjass war3map.j -o compiled.j`, or `VJassCompiler().compile_file(...)` from Python
+
+### External tools and Lua
+- Run the `//! external` calls and Lua `//! externalblock` blocks of a vJass map (ObjectMerger, FileImporter, FileExporter, ConstantMerger), as the World Editor does when saving
+- Check that Lua before opening the editor: errors name the `.j` line they come from
+- A Lua 5.1/5.3 interpreter in pure Python, sandboxed: `wc3files lua script.lua`
 
 ## Usage Examples
 

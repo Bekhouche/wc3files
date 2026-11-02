@@ -17,9 +17,9 @@ class CompileResult(object):
     warnings
         `VJassWarning` objects (unknown directives, a missing main, ...).
     externals
-        `//! external` commands and external blocks, which the World Editor
-        runs at save time (ObjectMerger and friends). They are not run here;
-        a build pipeline that wants them can.
+        `External` objects for the `//! external` commands and external blocks,
+        which the World Editor runs at save time (ObjectMerger and friends).
+        `run_externals()` runs them (see `wc3files.grimex`).
     imports
         Every file pulled in by `//! import`.
     """
@@ -49,6 +49,17 @@ class CompileResult(object):
         with open(path, 'w', encoding='utf-8', newline='\n') as fh:
             fh.write(self.jass)
         return path
+
+    def run_externals(self, map_files=None, **runner_options):
+        """Run the externals against a map's files (`{name: bytes}`; an empty
+        map when None), as the World Editor does after compiling. Keyword
+        arguments go to `wc3files.grimex.ExternalRunner` (`workspace`,
+        `stop_on_error`, ...); the lookup folders default to the compile's.
+        Returns a `wc3files.grimex.ExternalsResult`."""
+        from wc3files.grimex import ExternalRunner
+        runner_options.setdefault('lookup_folders', list(self.options.lookup_folders))
+        with ExternalRunner(map_files, **runner_options) as runner:
+            return runner.run(self.externals)
 
     def __str__(self):
         return self.jass
@@ -115,10 +126,18 @@ class VJassCompiler(object):
             result.write(output)
         return result
 
-    def compile_map(self, map_path, output_path=None):
+    def compile_map(self, map_path, output_path=None, externals=False, workspace=None):
         """Compile the `war3map.j` inside a map and write the map back with the
         compiled script - what saving in the World Editor does with JassHelper
         enabled. The map is rewritten in place when `output_path` is None.
+
+        With `externals=True` the script's external tool calls run too, and
+        the object data, imports and constants they change are written into
+        the map with the script (`workspace` is the tools' sandbox folder; see
+        `wc3files.grimex`). An external that fails raises VJassError and
+        nothing is written. The result's `externals_result` holds what they
+        did.
+
         Returns the CompileResult."""
         from wc3files.w3x import W3xFile
         files = _read_map_files(map_path)
@@ -129,6 +148,15 @@ class VJassCompiler(object):
         source = files[name].decode('utf-8-sig', errors='replace')
         result = self.compile(source, os.path.join(map_path, name))
         files[name] = result.jass.encode('utf-8')
+        result.externals_result = None
+        if externals and result.externals:
+            done = result.run_externals(files, workspace=workspace)
+            result.externals_result = done
+            if done.errors:
+                details = '\n'.join(str(error) for error in done.errors)
+                raise VJassError(f'external tool call failed:\n{details}',
+                                 phase='externals')
+            files = done.files
         target = output_path or map_path
         if os.path.isdir(target) or (output_path is None and
                                      os.path.isdir(map_path)):

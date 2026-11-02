@@ -147,6 +147,15 @@ def print_expr(expr):
 
 
 def _print_expr(expr, depth=0):
+     text = _print_expr_bare(expr, depth)
+     if getattr(expr, 'paren', False):
+          # `(f())` truncates to one value; the parser records that on the
+          # node, and dropping the parentheses would change the meaning.
+          return f'({text})'
+     return text
+
+
+def _print_expr_bare(expr, depth=0):
      """`depth` is the indentation depth of the statement this expression is
      embedded in - only meaningful to LuaFunctionExpr (the only expression
      that can itself span multiple lines); every other case ignores it.

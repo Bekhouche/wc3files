@@ -308,9 +308,12 @@ def _cmd_vjass(args):
         _write_or_print(text, args.output)
         return
 
+    mode = args.externals
     try:
         if is_map:
-            result = compiler.compile_map(first, args.output)
+            result = compiler.compile_map(first, args.output,
+                                          externals=(mode == 'run'),
+                                          workspace=args.workspace)
             target = args.output or first
         elif len(inputs) == 1:
             result = compiler.compile_file(first)
@@ -331,11 +334,33 @@ def _cmd_vjass(args):
             break
         print(warning, file=sys.stderr)
         shown += 1
-    for location, tool, arguments in result.externals:
-        if not args.quiet:
-            print(f'{location}: note: external tool {tool!r} not run '
-                  '(//! external commands run in the World Editor)',
-                  file=sys.stderr)
+    if mode == 'note':
+        for location, tool, arguments in result.externals:
+            if not args.quiet:
+                print(f'{location}: note: external tool {tool!r} not run '
+                      '(use --externals check or run)', file=sys.stderr)
+    elif result.externals:
+        done = getattr(result, 'externals_result', None)
+        if done is None:
+            map_files = None
+            if is_map:
+                from wc3files.vjass.api import _read_map_files
+                map_files = _read_map_files(first)
+            done = result.run_externals(map_files, workspace=args.workspace,
+                                        stop_on_error=(mode == 'run'))
+        _report_externals(done, args.quiet)
+        if done.errors:
+            raise ValueError(f'{len(done.errors)} external tool call(s) failed')
+        if mode == 'run' and not is_map:
+            folder = args.externals_dir or (os.path.dirname(os.path.abspath(args.output))
+                                            if args.output and args.output != '-'
+                                            else os.getcwd())
+            for name, data in done.changed_files().items():
+                destination = os.path.join(folder, *name.split('\\'))
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+                with open(destination, 'wb') as handle:
+                    handle.write(data)
+                print(f'Wrote {destination}', file=sys.stderr)
 
     if args.check:
         issues = [f for f in result.validate() if f['severity'] == 'issue']
@@ -348,6 +373,87 @@ def _cmd_vjass(args):
         print(f'Compiled {first} -> {target}')
         return
     _write_or_print(result.jass, args.output)
+
+
+def _report_externals(done, quiet=False):
+    """Print what running the external tool calls did."""
+    for error in done.errors:
+        print(f'error: {error}', file=sys.stderr)
+        for position, function in error.traceback[1:6]:
+            print(f'    in {function} at {position}', file=sys.stderr)
+    if quiet:
+        return
+    if done.output.strip():
+        for line in done.output.rstrip('\n').split('\n'):
+            print(f'lua: {line}', file=sys.stderr)
+    for operation, what in done.denied:
+        print(f'note: sandbox refused to {operation} {what}', file=sys.stderr)
+    ran = sum(1 for _, status in done.ran if status == 'ok')
+    skipped = sum(1 for _, status in done.ran if status == 'skipped')
+    summary = f'externals: {ran} ran, {len(done.errors)} failed'
+    if skipped:
+        summary += f', {skipped} skipped'
+    if done.changed:
+        summary += '; changed ' + ', '.join(done.changed)
+    print(summary, file=sys.stderr)
+
+
+def _cmd_lua(args):
+    """Run a Lua script: plain Lua in a sandbox, or with the functions of a
+    Grim Extension Pack tool (ObjectMerger, ...) against a map."""
+    from wc3files.scripts.lua_vm import LuaVM, LuaError, run_with_stack
+    from wc3files.scripts.lua_stdlib import LuaHost, LuaExit
+
+    with open(args.script, 'rb') as handle:
+        source = handle.read().decode('utf-8', 'replace')
+    if args.tool is None:
+        root = os.path.abspath(args.root or os.path.dirname(os.path.abspath(args.script)))
+        host = LuaHost(root=root, writable=args.allow_write, output=sys.stdout.write)
+        vm = LuaVM(version=args.lua_version, host=host,
+                   max_steps=args.max_steps or None)
+        try:
+            run_with_stack(vm.execute, source, args.script, None, args.args)
+        except LuaError as error:
+            sys.stdout.flush()
+            print(f'lua: {error}', file=sys.stderr)
+            for position, function in error.traceback[1:6]:
+                print(f'    in {function} at {position}', file=sys.stderr)
+            raise SystemExit(1)
+        except LuaExit as exit_:
+            raise SystemExit(exit_.code)
+        for operation, what in host.denied:
+            print(f'note: sandbox refused to {operation} {what}', file=sys.stderr)
+        return
+
+    from wc3files.grimex import ExternalRunner
+    map_files = None
+    if args.map:
+        from wc3files.vjass.api import _read_map_files
+        map_files = _read_map_files(args.map)
+    with ExternalRunner(map_files, workspace=args.workspace,
+                        lookup_folders=[os.path.dirname(os.path.abspath(args.script))]
+                        ) as runner:
+        done = runner.run_script(source, tool=args.tool, chunkname=args.script)
+    _report_externals(done)
+    if done.errors:
+        raise SystemExit(1)
+    if not done.changed:
+        return
+    if args.output is None:
+        if args.map is None:
+            return
+        args.output = args.map
+    if args.output.lower().endswith(('.w3x', '.w3m')):
+        from wc3files.w3x import W3xFile
+        W3xFile().build_from_files(done.files, args.output)
+        print(f'Wrote {args.output}')
+        return
+    for name, data in done.changed_files().items():
+        destination = os.path.join(args.output, *name.split('\\'))
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        with open(destination, 'wb') as handle:
+            handle.write(data)
+        print(f'Wrote {destination}')
 
 
 def _write_or_print(text, output):
@@ -1499,7 +1605,48 @@ def build_parser():
     p_vjass.add_argument('--max-warnings', type=int, default=50,
                          help='Warnings to print before summarizing '
                               '(default: 50).')
+    p_vjass.add_argument('--externals', choices=('note', 'check', 'run'),
+                         default='note',
+                         help=('What to do with //! external calls and external '
+                               'blocks: note them (default), check them (run them '
+                               'in a sandbox and report errors, changing nothing) '
+                               'or run them (a map gets the object data they '
+                               'make; for a script, the changed files are written '
+                               'to --externals-dir).'))
+    p_vjass.add_argument('--externals-dir', default=None,
+                         help=('Where --externals run writes the files it changes '
+                               'when the input is a script (default: next to -o).'))
+    p_vjass.add_argument('--workspace', default=None,
+                         help=('The external tools\' sandbox folder, kept between '
+                               'runs (default: a temporary one).'))
     p_vjass.set_defaults(func=_cmd_vjass)
+
+    p_lua = subparsers.add_parser(
+        'lua', help=('Run a Lua script in a sandbox: plain Lua 5.1/5.3, or with a '
+                     'Grim Extension Pack tool\'s functions (ObjectMerger, ...) '
+                     'against a map.'))
+    p_lua.add_argument('script', help='The .lua file to run.')
+    p_lua.add_argument('args', nargs='*', help='Arguments for the script (...).')
+    p_lua.add_argument('--tool', default=None,
+                       choices=('ObjectMerger', 'FileImporter', 'FileExporter',
+                                'ConstantMerger'),
+                       help='Run it as this tool would (its functions are defined).')
+    p_lua.add_argument('--map', help='The map the tool works on (.w3x/.w3m or folder).')
+    p_lua.add_argument('-o', '--output',
+                       help=('Where to write the result: a .w3x/.w3m map, or a '
+                             'folder for the changed files (default: the --map, '
+                             'in place).'))
+    p_lua.add_argument('--workspace', help='The tool\'s sandbox folder.')
+    p_lua.add_argument('--lua-version', choices=('5.1', '5.3'), default='5.1',
+                       help='Lua version to run (plain mode; default 5.1).')
+    p_lua.add_argument('--root',
+                       help='Plain mode: the folder the script may read (default: '
+                            'its own).')
+    p_lua.add_argument('--allow-write', action='store_true',
+                       help='Plain mode: let the script write under --root.')
+    p_lua.add_argument('--max-steps', type=int, default=50_000_000,
+                       help='Stop the script after this many steps (0: no limit).')
+    p_lua.set_defaults(func=_cmd_lua)
 
     p_trig_text = subparsers.add_parser(
         'trigger-text',

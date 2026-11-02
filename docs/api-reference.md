@@ -275,16 +275,21 @@ VJassCompiler(options=None, conf=None, **option_fields)
     .compile(source, filename='<input>')   # -> CompileResult
     .compile_file(path, output=None)
     .compile_files(paths, output=None)     # one script, in the given order
-    .compile_map(map_path, output_path=None)
+    .compile_map(map_path, output_path=None, externals=False, workspace=None)
 
 CompileResult
     .jass                 # the compiled script, text
     .program              # the same, as an ir.Program
     .warnings             # [VJassWarning]
-    .externals            # //! external commands, not run
+    .externals            # [External]: //! external commands and blocks
     .imports              # files pulled in by //! import
     .validate()           # check_program over the output
+    .run_externals(map_files=None, **runner_options)   # -> ExternalsResult
     .write(path)
+
+External                  # also unpacks as (location, tool, arguments_or_lines)
+    .tool .arguments .location .is_block
+    .lines .positions .extension .text
 
 CompileOptions(debug=False, optimize=False, max_array_size=8191,
                lookup_folders=None, auto_method_evaluate=True,
@@ -301,6 +306,53 @@ or `compile`) and `message`.
 
 `wc3files.scripts.JassVM(program)` runs a compiled program (`.call(name)`,
 `.output`); `run_script(text, entry='main')` is the shorthand.
+
+### External tools and Lua
+
+See [External tools and Lua](grimex.md).
+
+```python
+from wc3files.grimex import ExternalRunner, ObjectData
+
+ExternalRunner(map_files=None, workspace=None, lookup_folders=(),
+               install_path='C:\\Program Files\\Warcraft III',
+               stop_on_error=True, max_steps=200_000_000, environ=None)
+    .run(externals)                  # -> ExternalsResult
+    .run_script(source, tool='ObjectMerger', chunkname='script.lua')
+    .close()                         # removes a temporary workspace
+
+ExternalsResult
+    .files                # every map file afterwards, {name: bytes}
+    .changed              # names the tools wrote
+    .changed_files()      # {name: bytes} of those
+    .errors               # [ExternalError]: .message .location .tool .traceback
+    .log .output .denied .ran .ok
+
+ObjectData(files=None)               # ObjectMerger's view of a map's object tables
+    .create(ext, base, new) / .modify(ext, id) / .exists(ext, id)
+    .make_change(ext, target, field, value, level=None)
+    .reset_change(...) / .reset_object(...) / .generate_id(ext, base)
+    .merge(ext, data, mode='merge') / .changed_files()
+```
+
+```python
+from wc3files.scripts import LuaVM, LuaHost, LuaError, LuaTable
+
+LuaVM(version='5.1', host=None, max_steps=50_000_000, max_depth=2000)
+    .execute(source, chunkname='?', positions=None, args=())   # -> [results]
+    .compile(source, chunkname='?')   # -> a function, callable from Python
+    .call(fn, args) / .pcall(fn, args)
+    .globals              # LuaTable: .get(key) .set(key, value)
+    .register(name, fn)   # fn(args) -> [results]
+    .to_lua(value) / .to_python(value)
+
+LuaHost(root=None, writable=False, cwd=None, mounts=None, read_only=(),
+        environ=None, output=None, allow_commands=True, text_newline=None)
+    .output .denied
+```
+
+`LuaError` carries the error `value` (the message for a string) and a
+`traceback` of (position, function) pairs.
 
 ---
 

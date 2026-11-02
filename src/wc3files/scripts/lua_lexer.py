@@ -35,7 +35,7 @@ _NAME_CONT = _NAME_START | _DIGITS
 _HEX_MARKER = {'x', 'X'}
 _EXPONENT_MARKER = {'e', 'E'}
 _SIGN = {'+', '-'}
-_WHITESPACE = {' ', '\t', '\r', '\n'}
+_WHITESPACE = {' ', '\t', '\r', '\n', '\f', '\v'}
 _QUOTES = {'"', "'"}
 _LONG_BRACKET_START = {'[', '='}
 
@@ -49,13 +49,16 @@ _LONG_BRACKET_START = {'[', '='}
 
 
 class Token:
-     __slots__ = ('kind', 'value', 'line', 'col')
+     __slots__ = ('kind', 'value', 'line', 'col', 'raw')
 
      def __init__(self, kind, value, line, col):
           self.kind = kind
           self.value = value
           self.line = line
           self.col = col
+          # The token's source text, quotes and brackets included (for
+          # error messages: `near '[[a]]'`).
+          self.raw = None
 
      def __repr__(self):
           return f'Token({self.kind}, {self.value!r}, {self.line}:{self.col})'
@@ -66,9 +69,12 @@ class LuaLexError(Exception):
           super().__init__(f'{message} at line {line}, column {col}')
           self.line = line
           self.col = col
+          self.message = message
 
 
 class _Scanner:
+     lua51 = False
+
      def __init__(self, source):
           self.source = source
           self.length = len(source)
@@ -94,12 +100,16 @@ class _Scanner:
           return self.pos >= self.length
 
 
-def tokenize(source):
+def tokenize(source, version='5.3'):
      """Tokenize Lua source text into a flat list of Token. Keywords are kept
      as kind 'KEYWORD' (value = the keyword text, matching jass_lexer's
      convention); comments/whitespace are dropped entirely (Lua's grammar,
      like JASS's, is keyword/punctuation-driven, not layout-sensitive)."""
      scanner = _Scanner(source)
+     # Lua 5.1 takes an unknown escape such as `\/` as the character itself;
+     # 5.2 and later reject it.
+     scanner.lua51 = version == '5.1'
+
      tokens = []
 
      while not scanner.at_end():
@@ -113,28 +123,32 @@ def tokenize(source):
                _consume_comment(scanner)
                continue
 
+          start = scanner.pos
+
           if ch in _QUOTES:
-               tokens.append(_read_short_string(scanner))
-               continue
-
-          if ch == '[' and scanner.peek(1) in _LONG_BRACKET_START:
-               long_bracket = _try_read_long_bracket(scanner)
-               if long_bracket is not None:
-                    tokens.append(long_bracket)
-                    continue
-
-          if ch in _DIGITS or (ch == '.' and scanner.peek(1) in _DIGITS):
-               tokens.append(_read_number(scanner))
-               continue
-
-          if ch in _NAME_START:
-               tokens.append(_read_name(scanner))
-               continue
-
-          tokens.append(_read_operator(scanner))
+               token = _read_short_string(scanner)
+          elif ch == '[' and scanner.peek(1) in _LONG_BRACKET_START and \
+                    _peek_long_bracket(scanner):
+               token = _try_read_long_bracket(scanner)
+          elif ch in _DIGITS or (ch == '.' and scanner.peek(1) in _DIGITS):
+               token = _read_number(scanner)
+          elif ch in _NAME_START:
+               token = _read_name(scanner)
+          else:
+               token = _read_operator(scanner)
+          token.raw = scanner.source[start:scanner.pos]
+          tokens.append(token)
 
      tokens.append(Token('EOF', '', scanner.line, scanner.col))
      return tokens
+
+
+def _peek_long_bracket(scanner):
+     """Whether a long bracket starts here, without consuming anything."""
+     save = scanner.pos, scanner.line, scanner.col
+     level = _long_bracket_level(scanner)
+     scanner.pos, scanner.line, scanner.col = save
+     return level is not None
 
 
 def _consume_comment(scanner):
@@ -245,6 +259,9 @@ def _read_escape(scanner, start_line, start_col):
                scanner.advance()
           return ''
      if ch not in _ESCAPES:
+          if scanner.lua51 and ch not in ('', '\r'):
+               scanner.advance()
+               return ch
           raise LuaLexError(f'invalid escape sequence \\{ch}', scanner.line, scanner.col)
      scanner.advance()
      return _ESCAPES[ch]

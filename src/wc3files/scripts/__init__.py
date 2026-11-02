@@ -10,3 +10,5 @@ from .lua_parser import parse as parse_lua, LuaParseError
 from .lua_printer import print_chunk as print_lua
 from .lua_obfuscator import obfuscate_lua
 from .jass_vm import JassVM, JassRuntimeError, run_script
+from .lua_vm import LuaVM, LuaError, LuaTable, LuaFunction, PyFunction, run_with_stack
+from .lua_stdlib import LuaHost, LuaExit
