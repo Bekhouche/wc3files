@@ -104,10 +104,16 @@ class _Scope:
 
 def check_program(program, natives=None):
      """Validate a parsed ir.Program. Returns a list of finding dicts:
-     {'severity': 'note'|'issue', 'message': str}. Never raises on its own -
+     {'severity': 'note'|'issue', 'message': str, 'line': int or None}, the
+     line being that of the statement the call is in. Never raises on its own -
      see module docstring for why this stays a triage signal."""
      natives = natives or NativeSignatures.default()
      findings = []
+     where = {'line': None}
+
+     def report(severity, message):
+          findings.append({'severity': severity, 'message': message,
+                           'line': where['line']})
 
      globals_by_name = {g.name: g.type for g in program.globals}
      locally_declared = {}
@@ -162,13 +168,11 @@ def check_program(program, natives=None):
      def check_call(name, args, scope):
           decl = resolve_callable(name)
           if decl is None:
-               findings.append({'severity': 'issue',
-                                 'message': f"call to unrecognized function '{name}'"})
+               report('issue', f"call to unrecognized function '{name}'")
                return
           if len(decl.params) != len(args):
-               findings.append({'severity': 'issue',
-                                 'message': f"'{name}' takes {len(decl.params)} argument(s), "
-                                            f"got {len(args)}"})
+               report('issue', f"'{name}' takes {len(decl.params)} argument(s), "
+                               f"got {len(args)}")
                return
           for position, (param, arg) in enumerate(zip(decl.params, args), start=1):
                actual = infer_type(arg, scope)
@@ -179,15 +183,13 @@ def check_program(program, natives=None):
                               # real map code - not a documented rule, an observed one)
                arg_text = print_expr(arg)
                if param.type == 'integer' and actual == 'real':
-                    findings.append({'severity': 'note',
-                                      'message': f"'{name}' argument {position} ({arg_text}) "
-                                                 f"expects integer, got real (JASS does not "
-                                                 f"narrow real -> integer - needs R2I())"})
+                    report('note', f"'{name}' argument {position} ({arg_text}) "
+                                   f"expects integer, got real (JASS does not "
+                                   f"narrow real -> integer - needs R2I())")
                elif not (natives.is_ancestor(param.type, actual)):
-                    findings.append({'severity': 'issue',
-                                      'message': f"'{name}' argument {position} ({arg_text}) "
-                                                 f"expects {param.type}, got incompatible "
-                                                 f"type {actual}"})
+                    report('issue', f"'{name}' argument {position} ({arg_text}) "
+                                    f"expects {param.type}, got incompatible "
+                                    f"type {actual}")
 
      def walk_expr(expr, scope):
           if isinstance(expr, ir.CallExpr):
@@ -207,6 +209,8 @@ def check_program(program, natives=None):
                walk_statement(stmt, scope)
 
      def walk_statement(stmt, scope):
+          line = getattr(stmt, 'line', None)
+          where['line'] = line
           if isinstance(stmt, ir.Local):
                scope.locals_by_name[stmt.name] = stmt.type
                if stmt.initial is not None:
@@ -221,6 +225,7 @@ def check_program(program, natives=None):
                     walk_expr(arg, scope)
           elif isinstance(stmt, ir.IfStmt):
                for condition, body in stmt.branches:
+                    where['line'] = getattr(condition, 'line', line)
                     walk_expr(condition, scope)
                     walk_statements(body, scope)
                if stmt.else_body is not None:

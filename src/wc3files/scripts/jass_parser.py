@@ -293,8 +293,11 @@ def _parse_if(stream, is_debug):
      branches = [(condition, body)]
 
      while stream.check_keyword('elseif'):
-          stream.advance()
+          line = stream.advance().line
           elseif_condition = _parse_expr(stream)
+          # the checker reports a call in this condition on the elseif line
+          # (a plain attribute, outside the node's structural _fields)
+          elseif_condition.line = line
           stream.expect_keyword('then')
           elseif_body = _parse_statements(stream, until={'elseif', 'else', 'endif'})
           branches.append((elseif_condition, elseif_body))

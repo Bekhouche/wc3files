@@ -258,7 +258,7 @@ from wc3files import (parse_jass, print_jass, tokenize_jass,
                       check_jass, check_lua, find_reachable, remove_dead_code,
                       build_rename_table, apply_rename, obfuscate_lua)
 
-check_jass(program, natives=None)     # -> [{'severity', 'message'}]
+check_jass(program, natives=None)     # -> [{'severity', 'message', 'line'}]
 check_lua(chunk, natives=None)        # -> [{'severity', 'message', 'line'}]
 from wc3files.wtg.from_script import reconstruct_from_jass
 from wc3files.wtg import trigger_text

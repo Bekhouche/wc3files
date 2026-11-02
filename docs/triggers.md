@@ -122,7 +122,7 @@ a look. The checker only reports what it is sure of; anything it cannot
 resolve is skipped.
 
 For JASS it reports calls to unknown functions, wrong argument counts and
-arguments of an incompatible type.
+arguments of an incompatible type, each with the line of its statement.
 
 Lua has no declarations, so the Lua checker works from what the script shows:
 

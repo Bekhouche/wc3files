@@ -380,7 +380,9 @@ def _cmd_vjass(args):
     if args.check:
         issues = [f for f in result.validate() if f['severity'] == 'issue']
         for finding in issues:
-            print(f"check: {finding['message']}", file=sys.stderr)
+            # the line is in the compiled JASS, not in the vJass source
+            where = f"compiled line {finding['line']}: " if finding.get('line') else ''
+            print(f"check: {where}{finding['message']}", file=sys.stderr)
         if issues:
             raise ValueError(f'{len(issues)} issue(s) in the compiled script')
 
