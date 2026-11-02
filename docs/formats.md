@@ -16,8 +16,8 @@ layouts they accept, and refuse the ones they do not.
 | `.w3x` `.w3m` `.w3n` | `W3xFile` | ✓ | ✓ | The map wrapper over MPQ: `read` → edit `files` → `build_from_files` |
 | CASC storage | `CascStorage` | ✓ | – | Reads an installed game. Local only, never contacts a CDN |
 
-Archives using PKWare-imploded (DCL) sectors cannot be opened; that
-decompressor is not implemented.
+Every Warcraft III compression method is decoded in pure Python: zlib,
+bzip2, PKWare DCL (implode), and the Huffman and ADPCM stages used for sounds.
 
 ## Map sub-files
 
@@ -108,7 +108,6 @@ Plus icon authoring: `resize_box`, `resize_nearest`, `composite_over`,
 
 ## Known limits
 
-- **DCL (PKWare implode) sectors** - archives using them cannot be opened.
 - **Encrypted CASC chunks** (BLTE mode `E`) - unreadable without the key, so
   non-`enUS` locale files in an install generally cannot be read.
 - **`.w3xd`** - encrypted; not addressable.

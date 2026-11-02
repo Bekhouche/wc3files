@@ -196,10 +196,12 @@ targets - MPQ is documented well enough to implement natively.
 - Round-trip correctness is the bar: read a real file, write it back
   unmodified, and diff against the original (or reread and compare
   structurally) before considering a parser/writer done.
-- Lazy-import optional/heavy decompression paths (see `dclimplode` in the
-  MPQ reader) rather than importing them eagerly at module load - eager
-  imports of unbuildable deps previously broke the package on plain
-  installs.
+- Keep runtime dependencies pure Python. Every MPQ compression method
+  (zlib, bzip2, PKWare DCL, Huffman, ADPCM) lives in `mpq/compression.py`,
+  and one block reader (`mpq/sectors.py`) serves both `MpqFiles` and
+  `W3xFile`; the optional C `dclimplode` codec it replaced never built here.
+  Lazy-import anything optional rather than importing it at module load -
+  eager imports of unbuildable deps previously broke plain installs.
 
 ## Testing
 

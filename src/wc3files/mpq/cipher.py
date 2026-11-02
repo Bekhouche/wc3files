@@ -1,6 +1,4 @@
-import bz2
 import struct
-import zlib
 from io import BytesIO
 from .data import *
 
@@ -76,23 +74,7 @@ class MpqCipher:
           return seed1
      
      @staticmethod
-     def decompress(data):
-          compression_mask = ord(data[0:1])
-
-          if compression_mask == 0:
-               return data[1:]
-          
-          decompressed_data = data[1:]
-
-          if compression_mask & 0x01:  # Huffman encoded
-               print('Huffman encoded')
-               decompressed_data = decompressed_data
-          if compression_mask & 0x02:  # Deflated (ZLib)
-               decompressed_data = zlib.decompress(decompressed_data)
-          if compression_mask & 0x08:  # Imploded (PKWare)
-               import dclimplode  # optional native codec, rarely hit - keep it out of the module's hard dependencies
-               decompressed_data = dclimplode.decompressobj().decompress(decompressed_data)
-          if compression_mask & 0x10:  # BZip2 compressed
-               decompressed_data = bz2.decompress(decompressed_data)
-          
-          return decompressed_data
+     def decompress(data, size=None):
+          """Decompress one MPQ sector (its method byte, then the data)."""
+          from .compression import decompress
+          return decompress(data, size)
