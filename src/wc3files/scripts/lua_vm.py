@@ -344,11 +344,12 @@ class LuaFunction:
 class PyFunction:
      """A function implemented in Python: `fn(args)` takes the argument list
      and returns the list of results (or None for no result)."""
-     __slots__ = ('fn', 'name', '__weakref__')
+     __slots__ = ('fn', 'name', 'nups', '__weakref__')
 
-     def __init__(self, fn, name='?'):
+     def __init__(self, fn, name='?', nups=0):
           self.fn = fn
           self.name = name
+          self.nups = nups
 
      def __call__(self, *args):
           return self.fn(list(args)) or []
@@ -360,6 +361,22 @@ class PyFunction:
 class LuaUserdata:
      """Base for host objects exposed to Lua (file handles, ...)."""
      metatable = None
+
+
+class LightUserdata(LuaUserdata):
+     """A light userdata: a bare value (debug.upvalueid's result), equal to
+     any other light userdata holding the same value, with no metatable of
+     its own."""
+     __slots__ = ('value',)
+
+     def __init__(self, value):
+          self.value = value
+
+     def __eq__(self, other):
+          return type(other) is LightUserdata and other.value == self.value
+
+     def __hash__(self):
+          return hash(('light', self.value))
 
 
 class Coroutine:
@@ -385,6 +402,11 @@ class Coroutine:
                return [False, 'cannot resume dead coroutine']
           if self.status != 'suspended':
                return [False, 'cannot resume non-suspended coroutine']
+          # Lua caps nested resumes (LUAI_MAXCCALLS); each one here is a thread
+          nesting = getattr(vm, 'resume_nesting', 0)
+          if nesting >= 200:
+               return [False, 'C stack overflow']
+          vm.resume_nesting = nesting + 1
           previous = vm.current_coroutine
           if previous is not None:
                previous.status = 'normal'
@@ -402,6 +424,7 @@ class Coroutine:
           else:
                self._resume.release()
           self._yielded.acquire()
+          vm.resume_nesting = nesting
           self._depth = vm.depth
           vm.depth = saved_depth
           vm.stack = saved_stack
@@ -657,7 +680,7 @@ class _Cell:
 
 
 class _Frame:
-     __slots__ = ('regs', 'up', 'varargs', 'fn', 'line')
+     __slots__ = ('regs', 'up', 'varargs', 'fn', 'line', 'calldesc')
 
      def __init__(self, regs, up, varargs, fn):
           self.regs = regs
@@ -665,12 +688,13 @@ class _Frame:
           self.varargs = varargs
           self.fn = fn
           self.line = None
+          self.calldesc = None
 
 
 class _Proto:
      __slots__ = ('name', 'nparams', 'is_vararg', 'nslots', 'body', 'upvals',
                   'chunk', 'line', 'position', 'upnames', 'slotnames', 'positions',
-                  'needs_arg', 'source')
+                  'needs_arg', 'source', 'last_line', 'active_lines')
 
      def __init__(self, name, nparams, is_vararg, chunk, line, position):
           self.name = name
@@ -687,6 +711,8 @@ class _Proto:
           self.positions = None
           self.needs_arg = False
           self.source = None
+          self.last_line = 0
+          self.active_lines = ()
 
 
 # --- compiler -----------------------------------------------------------------
@@ -709,6 +735,7 @@ class _FuncState:
           self.upnames = {}
           self.loops = 0
           self.slotnames = []
+          self.active = set()       # lines with code, for debug.getinfo 'L'
 
      def declare(self, name):
           slot = self.nslots
@@ -804,7 +831,7 @@ class _Compiler:
           """5.2+: (kind, index) of the _ENV in scope for a free name."""
           return self.fs.resolve('_ENV')
 
-     def function(self, params, is_vararg, body, name, line, method=False):
+     def function(self, params, is_vararg, body, name, line, method=False, end_line=0):
           outer = self.fs
           fs = _FuncState(outer, is_vararg, line or 0, self)
           self.fs = fs
@@ -828,20 +855,40 @@ class _Compiler:
           proto.positions = self.positions
           proto.source = self.source
           proto.upnames = sorted(fs.upnames, key=fs.upnames.get)
+          proto.last_line = end_line or 0
+          if end_line:
+               fs.active.add(end_line)          # the implicit return
+          proto.active_lines = tuple(sorted(fs.active))
           upvals = tuple(fs.upvals)
           vm = self.vm
+          if vm.version == '5.1':
+               def make(f):
+                    regs = f.regs
+                    up = f.up
+                    return LuaFunction(
+                         proto, [regs[i] if is_local else up[i] for is_local, i in upvals],
+                         vm, f.fn.env)
+               return make
+          cache = [None]
 
-          def make(f):
+          def make_cached(f):
+               # Lua 5.3 reuses a closure whose upvalues are all the same
+               # (so identical closures compare equal); 5.4 dropped this
                regs = f.regs
                up = f.up
-               return LuaFunction(
-                    proto, [regs[i] if is_local else up[i] for is_local, i in upvals], vm,
-                    f.fn.env)
-          return make
+               cells = [regs[i] if is_local else up[i] for is_local, i in upvals]
+               last = cache[0]
+               if last is not None and last.env is f.fn.env and \
+                         all(a is b for a, b in zip(last.upvals, cells)):
+                    return last
+               fn = LuaFunction(proto, cells, vm, f.fn.env)
+               cache[0] = fn
+               return fn
+          return make_cached
 
      # -- blocks ------------------------------------------------------------
 
-     def block(self, statements, new_scope=True):
+     def block(self, statements, new_scope=True, until=False):
           fs = self.fs
           if new_scope:
                fs.blocks.append({})
@@ -855,7 +902,7 @@ class _Compiler:
                               f"label '{stmt.name}' already defined on line {first}")
                     labels[stmt.name] = index
           if labels:
-               _check_goto_scopes(self, statements, labels)
+               _check_goto_scopes(self, statements, labels, until)
           fs.labels.append(set(labels))
           try:
                compiled = [self.statement(s) for s in statements]
@@ -894,6 +941,8 @@ class _Compiler:
 
      def statement(self, stmt):
           self.line = getattr(stmt, 'line', None)
+          if self.line is not None:
+               self.fs.active.add(self.line)
           inner = self._statement(stmt)
           line = getattr(stmt, 'line', None)
           position = self.position(line)
@@ -959,7 +1008,8 @@ class _Compiler:
      def stmt_LocalFunctionStmt(self, stmt):
           slot = self.fs.declare(stmt.name)
           make = self.function(stmt.params, stmt.is_vararg, stmt.body, stmt.name,
-                               getattr(stmt, 'line', None))
+                               getattr(stmt, 'line', None),
+                               end_line=getattr(stmt, 'end_line', 0))
 
           def run(f):
                cell = _Cell()
@@ -972,7 +1022,8 @@ class _Compiler:
           name = '.'.join(path) + (':' + stmt.method_name if stmt.method_name else '')
           make = self.function(stmt.params, stmt.is_vararg, stmt.body, name,
                                getattr(stmt, 'line', None),
-                               method=stmt.method_name is not None)
+                               method=stmt.method_name is not None,
+                               end_line=getattr(stmt, 'end_line', 0))
           if len(path) == 1 and stmt.method_name is None:
                store = self.store(ir.VarExpr(path[0]))
 
@@ -998,11 +1049,11 @@ class _Compiler:
      def stmt_AssignStmt(self, stmt):
           targets = stmt.targets
           if len(targets) == 1 and len(stmt.values) == 1:
-               value = self.expr(stmt.values[0])
                target = targets[0]
                if isinstance(target, ir.IndexExpr):
                     obj = self.expr(target.obj)
                     key = self.expr(target.index)
+                    value = self.expr(stmt.values[0])
                     vm = self.vm
                     desc = self.describe(target.obj)
 
@@ -1012,6 +1063,7 @@ class _Compiler:
                          vm.setindex(o, k, value(f), desc)
                     return run
                store = self.store(target)
+               value = self.expr(stmt.values[0])
 
                def run(f):
                     store(f, value(f))
@@ -1078,7 +1130,7 @@ class _Compiler:
           fs.blocks.append({})
           fs.loops += 1
           try:
-               body = self.block(stmt.body, new_scope=False)
+               body = self.block(stmt.body, new_scope=False, until=True)
                cond = self.expr(stmt.condition)
           finally:
                fs.loops -= 1
@@ -1157,12 +1209,19 @@ class _Compiler:
                     raise LuaError("'for' step is zero")
                if type(a) is int and type(c) is int:
                     if type(b) is float:
+                         # Lua's forlimit: clip a float limit to the integers
                          if b != b:
                               return None
-                         b = math.floor(b) if c > 0 else math.ceil(b)
-                         if b in (math.inf, -math.inf):
-                              b = _INT_MAX if b > 0 else _INT_MIN
-                         b = int(b)
+                         if b >= 9223372036854775808.0:
+                              if c < 0:
+                                   return None          # counts down from below it
+                              b = _INT_MAX
+                         elif b < -9223372036854775808.0:
+                              if c > 0:
+                                   return None
+                              b = _INT_MIN
+                         else:
+                              b = math.floor(b) if c > 0 else math.ceil(b)
                else:
                     a = float(a)
                     b = float(b)
@@ -1534,7 +1593,8 @@ class _Compiler:
 
      def expr_LuaFunctionExpr(self, expr):
           return self.function(expr.params, expr.is_vararg, expr.body,
-                               'anonymous', getattr(expr, 'line', None))
+                               'anonymous', getattr(expr, 'line', None),
+                               end_line=getattr(expr, 'end_line', 0))
 
      def expr_TableExpr(self, expr):
           fields = expr.fields
@@ -1798,7 +1858,7 @@ class LuaVM:
      # -- running -------------------------------------------------------------
 
      def compile(self, source, chunkname='?', positions=None, binary=False, env=None,
-                 source_name=None):
+                 source_name=None, skip_comment_line=True):
           """Compile source text to a function. `positions`, if given, names
           the source position of each line (for error messages), replacing
           the default `chunkname:line`. `binary` says `source` is already a
@@ -1808,7 +1868,9 @@ class LuaVM:
                # Lua takes \r\n, \n\r and a lone \r each as one line break,
                # inside long strings too.
                text = re.sub(r'\r\n|\n\r|\r', '\n', text)
-          if text.startswith('#'):
+          if skip_comment_line and text.startswith('#'):
+               # luaL_loadfile skips a first '#' line (a Unix exec line);
+               # load() of a string does not
                newline = text.find('\n')
                text = '--' + text[newline:] if newline >= 0 else ''
           try:
@@ -1866,7 +1928,7 @@ class LuaVM:
      def call(self, fn, args, desc=None):
           t = type(fn)
           if t is LuaFunction:
-               return self._call_lua(fn, args)
+               return self._call_lua(fn, args, desc)
           if t is PyFunction:
                result = fn.fn(args)
                return [] if result is None else result
@@ -1875,7 +1937,7 @@ class LuaVM:
                return self.call(handler, [fn] + list(args))
           raise LuaError(_op_error('call', fn, desc, self.version))
 
-     def _call_lua(self, fn, args):
+     def _call_lua(self, fn, args, desc=None):
           proto = fn.proto
           self.steps += 1
           if self.max_steps is not None and self.steps > self.max_steps:
@@ -1899,6 +1961,8 @@ class LuaVM:
                          extra.set('n', len(varargs))
                          regs[n] = _Cell(extra)
                     frame = _Frame(regs, fn.upvals, varargs, fn)
+                    frame.calldesc = desc
+                    desc = None                 # a tail call has no name
                     stack.append(frame)
                     try:
                          sig = proto.body(frame)
@@ -2047,7 +2111,10 @@ class LuaVM:
                          return r
                return _ARITH[op](x, y)
           if x is not None and y is not None and op in _BITWISE:
-               return _BITWISE[op](self._toint(x), self._toint(y))
+               ix = _float_int(x)
+               iy = _float_int(y)
+               if ix is not None and iy is not None:
+                    return _BITWISE[op](ix, iy)
           event = '__' + op
           handler = self._metamethod(a, event)
           if handler is None:
@@ -2056,10 +2123,11 @@ class LuaVM:
                r = self.call(handler, [a, b])
                return r[0] if r else None
           if op in _BITWISE:
-               bad, desc = (b, bdesc) if x is not None and \
-                    (type(a) is not float or a.is_integer()) else (a, adesc)
-               if is_number(bad):
-                    raise LuaError('number has no integer representation')
+               bad, desc = (b, bdesc) if x is not None and _float_int(x) is not None \
+                    else (a, adesc)
+               if x is not None and y is not None:
+                    where = f' ({desc})' if desc and self.version != '5.1' else ''
+                    raise LuaError(f'number{where} has no integer representation')
                raise LuaError(_op_error('perform bitwise operation on', bad, desc, self.version))
           bad, desc = (b, bdesc) if x is not None else (a, adesc)
           raise LuaError(_op_error('perform arithmetic on', bad, desc, self.version))
@@ -2109,6 +2177,8 @@ class LuaVM:
                return a == b
           if ta is not tb:
                return False
+          if ta is LightUserdata:
+               return a.value == b.value
           if ta is LuaTable or isinstance(a, LuaUserdata):
                handler = self._compare_handler(a, b, '__eq')
                if handler is not None:
@@ -2138,12 +2208,12 @@ class LuaVM:
           if ta is str and tb is str:
                return a < b
           if self.version == '5.1' and ta is not tb:
-               raise LuaError(_compare_error(a, b))
+               raise LuaError(_compare_error(a, b, self.version))
           handler = self._compare_handler(a, b, '__lt')
           if handler is not None:
                r = self.call(handler, [a, b])
                return truthy(r[0] if r else None)
-          raise LuaError(_compare_error(a, b))
+          raise LuaError(_compare_error(a, b, self.version))
 
      def le(self, a, b):
           ta = type(a)
@@ -2153,7 +2223,7 @@ class LuaVM:
           if ta is str and tb is str:
                return a <= b
           if self.version == '5.1' and ta is not tb:
-               raise LuaError(_compare_error(a, b))
+               raise LuaError(_compare_error(a, b, self.version))
           handler = self._compare_handler(a, b, '__le')
           if handler is not None:
                r = self.call(handler, [a, b])
@@ -2162,7 +2232,7 @@ class LuaVM:
           if handler is not None:
                r = self.call(handler, [b, a])
                return not truthy(r[0] if r else None)
-          raise LuaError(_compare_error(a, b))
+          raise LuaError(_compare_error(a, b, self.version))
 
      # -- conversions ------------------------------------------------------------------------
 
@@ -2280,12 +2350,14 @@ def _gotos_leaving(stmt, label):
                yield from _gotos_leaving(inner, label)
 
 
-def _check_goto_scopes(compiler, statements, labels):
+def _check_goto_scopes(compiler, statements, labels, until=False):
      """Lua rejects a forward goto into the scope of a local declared
      between it and its label, unless the label ends the block (only labels
      and empty statements follow it)."""
      for name, target in labels.items():
-          if all(isinstance(s, ir.LabelStmt) for s in statements[target + 1:]):
+          # in a repeat body the 'until' condition still sees the locals, so
+          # a label before it does not end their scope
+          if not until and all(isinstance(s, ir.LabelStmt) for s in statements[target + 1:]):
                continue
           for index in range(target):
                for goto in _gotos_leaving(statements[index], name):
@@ -2361,19 +2433,40 @@ def _arg_type(args, i):
      return type_name(args[i]) if i < len(args) else 'no value'
 
 
+def _float_int(v):
+     """The integer a number converts to for bitwise operations, or None."""
+     if type(v) is int:
+          return v
+     if v.is_integer() and -9223372036854775808.0 <= v < 9223372036854775808.0:
+          return int(v)
+     return None
+
+
+def _obj_type_name(value, version):
+     """Lua 5.3's luaT_objtypename: a table's or userdata's __name."""
+     if version != '5.1':
+          mt = getattr(value, 'metatable', None)
+          if type(mt) is LuaTable:
+               name = mt.hash.get('__name')
+               if type(name) is str:
+                    return name
+     return type_name(value)
+
+
 def _op_error(what, value, desc, version='5.1'):
      # 5.1: "attempt to index global 'x' (a nil value)";
      # 5.2+: "attempt to index a nil value (global 'x')"
+     kind = _obj_type_name(value, version)
      if desc and version == '5.1':
-          return f'attempt to {what} {desc} (a {type_name(value)} value)'
+          return f'attempt to {what} {desc} (a {kind} value)'
      if desc:
-          return f'attempt to {what} a {type_name(value)} value ({desc})'
-     return f'attempt to {what} a {type_name(value)} value'
+          return f'attempt to {what} a {kind} value ({desc})'
+     return f'attempt to {what} a {kind} value'
 
 
-def _compare_error(a, b):
-     ta = type_name(a)
-     tb = type_name(b)
+def _compare_error(a, b, version='5.1'):
+     ta = _obj_type_name(a, version)
+     tb = _obj_type_name(b, version)
      if ta == tb:
           return f'attempt to compare two {ta} values'
      return f'attempt to compare {ta} with {tb}'

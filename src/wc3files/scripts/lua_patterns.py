@@ -375,7 +375,7 @@ def gsub(src, pattern, repl, max_n=None, lastmatch_rule=False):
                # Lua 5.3.4: no match may end where the previous one did
                if e != -1 and e != last:
                     n += 1
-                    out.append(_replacement(ms, s, e, repl))
+                    out.append(_replacement(ms, s, e, repl, True))
                     s = last = e
                elif s < ms.slen:
                     out.append(src[s])
@@ -401,7 +401,7 @@ def gsub(src, pattern, repl, max_n=None, lastmatch_rule=False):
      return ''.join(out), n
 
 
-def _replacement(ms, s, e, repl):
+def _replacement(ms, s, e, repl, strict=False):
      whole = ms.src[s:e]
      if isinstance(repl, str):
           if '%' not in repl:
@@ -419,6 +419,9 @@ def _replacement(ms, s, e, repl):
                     elif '1' <= d <= '9':
                          value = ms.one_capture(ord(d) - ord('1'), s, e)
                          out.append(str(value))
+                    elif strict and d != '%':
+                         # 5.2+: only %0-%9 and %% are allowed
+                         raise PatternError("invalid use of '%' in replacement string")
                     else:
                          out.append(d)
                else:

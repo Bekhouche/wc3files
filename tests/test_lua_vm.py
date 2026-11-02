@@ -451,6 +451,28 @@ class TestLua53(unittest.TestCase):
         ''', '5.3'), [True, 'thread', True, 'integer', '0x8000000000000000', True])
         self.assertIn('invalid option', error_of('debug.getinfo(print, "X")', '5.3'))
 
+    def test_utf8_and_table_checks(self):
+        self.assertEqual(run('''
+            return utf8.len("\\xC0\\x80"), utf8.offset("a\\u{e9}b", 3), utf8.char(72, 233),
+                   select(2, pcall(table.move, {}, 1, math.maxinteger, 2)),
+                   select(2, pcall(table.unpack, {}, 1, math.maxinteger))
+        ''', '5.3'), [None, 4, 'H\xc3\xa9',
+                     "bad argument #4 to 'move' (destination wrap around)",
+                     'too many results to unpack'])
+
+    def test_closures_and_coroutines(self):
+        self.assertEqual(run('''
+            local a = {}
+            for i = 1, 3 do a[i] = function (x) return x + _ENV.y end end
+            local f = function (n) return coroutine.wrap(f)(n) end
+            f = function (g) coroutine.wrap(g)(g) end
+            local ok, msg = pcall(f, f)
+            local yielded = coroutine.wrap(function ()
+                 return pcall(table.sort, {1, 2, 3}, coroutine.yield)
+            end)()
+            return a[1] == a[3], ok, msg:find('C stack overflow') ~= nil, yielded
+        ''', '5.3'), [True, False, True, False])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -27,7 +27,7 @@ import re
 import time as _time
 
 from .lua_vm import (
-     LuaError, LuaTable, LuaFunction, PyFunction, LuaUserdata, Coroutine,
+     LuaError, LuaTable, LuaFunction, PyFunction, LuaUserdata, LightUserdata, Coroutine,
      type_name, truthy, is_number, str_to_number, number_to_str,
      to_text, to_bytes_text, _INT_MIN, _INT_MAX, _wrap, set_weak_mode,
 )
@@ -390,6 +390,13 @@ def _bad(i, fname, message):
 
 def _typeerror(args, i, fname, expected):
      got = type_name(args[i]) if i < len(args) else 'no value'
+     if i < len(args) and type(args[i]) is LightUserdata:
+          got = 'light userdata'
+     elif i < len(args):
+          mt = getattr(args[i], 'metatable', None)
+          name = mt.get('__name') if isinstance(mt, LuaTable) else None
+          if type(name) is str:
+               got = name                     # 5.3: a metatable's __name
      return _bad(i, fname, f'{expected} expected, got {got}')
 
 
@@ -398,6 +405,23 @@ class _Lib:
           self.vm = vm
           self.host = host
           self.version = vm.version
+
+     def c_call(self):
+          """A C-call boundary: Lua code called from inside cannot yield
+          (Lua's library functions without a continuation)."""
+          import contextlib
+          co = self.vm.current_coroutine
+
+          @contextlib.contextmanager
+          def boundary():
+               if co is not None:
+                    co.c_calls = getattr(co, 'c_calls', 0) + 1
+               try:
+                    yield
+               finally:
+                    if co is not None:
+                         co.c_calls -= 1
+          return boundary()
 
      # -- checks ---------------------------------------------------------------
 
@@ -494,9 +518,9 @@ def install(vm, host=None):
      g.set('io', _install_io(vm, lib))
      g.set('coroutine', _install_coroutine(vm, lib))
      g.set('debug', _install_debug(vm, lib))
-     _install_package(vm, lib, g)
      if vm.version != '5.1':
           g.set('utf8', _install_utf8(vm, lib))
+     _install_package(vm, lib, g)          # after every library, for package.loaded
      return host
 
 
@@ -549,7 +573,11 @@ def _install_base(vm, lib, g):
           if not 2 <= base <= 36:
                raise _bad(1, 'tonumber', 'base out of range')
           text = lib.check_str(args, 0, 'tonumber').strip(' \t\n\r\f\v').lower()
-          negative = text.startswith('-')
+          if text.startswith('+') and vm.version != '5.1':
+               text = text[1:]
+               negative = False
+          else:
+               negative = text.startswith('-')
           if negative:
                text = text[1:]
           if not text:
@@ -742,7 +770,13 @@ def _install_base(vm, lib, g):
                fn = lib.check_fn(args, 0, 'load')
                pieces = []
                while True:
-                    r = vm.call(fn, [])
+                    try:
+                         with lib.c_call():
+                              r = vm.call(fn, [])
+                    except LuaError as error:
+                         if vm.version == '5.1':
+                              raise
+                         return [None, error.value]
                     piece = r[0] if r else None
                     if piece is None or piece == '':
                          break
@@ -882,7 +916,8 @@ def _load_text(vm, text, name, mode='bt', env=None, has_env=False):
                cells[0].v = env if has_env else vm.globals
           return [LuaFunction(proto, cells, vm)]
      try:
-          fn = vm.compile(text, chunk_id(name), binary=True, source_name=name)
+          fn = vm.compile(text, chunk_id(name), binary=True, source_name=name,
+                          skip_comment_line=False)
           if has_env and fn.upvals:
                fn.upvals[0].v = env
           return [fn]
@@ -1011,7 +1046,7 @@ def _install_string(vm, lib):
                     return [None]
                except PatternError as error:
                     raise LuaError(str(error))
-          return [PyFunction(step, 'gmatch_iterator')]
+          return [PyFunction(step, 'gmatch_iterator', nups=3)]
 
      def gsub(args):
           s = lib.check_str(args, 0, 'gsub')
@@ -1040,7 +1075,8 @@ def _install_string(vm, lib):
                     raise LuaError(f'invalid replacement value (a {type_name(value)})')
           else:
                raise _typeerror(args, 2, 'gsub', 'string/function/table')
-          text, count = lua_patterns.gsub(s, p, replacement, max_n, vm.version != '5.1')
+          with lib.c_call():
+               text, count = lua_patterns.gsub(s, p, replacement, max_n, vm.version != '5.1')
           return [text, count]
 
      def format_(args):
@@ -1099,6 +1135,8 @@ def _format(vm, lib, args):
           m = _FORMAT_SPEC.match(fmt, i)
           flags, width, precision, conv = m.group(1), m.group(2), m.group(3), m.group(4)
           i = m.end()
+          if len(flags) >= 6:
+               raise LuaError('invalid format (repeated flags)')
           if len(width) > 2 or (precision is not None and len(precision) > 2):
                raise LuaError("invalid format (width or precision too long)")
           if conv is None:
@@ -1247,6 +1285,19 @@ def _quoted(vm, value):
 # --- table --------------------------------------------------------------------------
 
 def _install_table(vm, lib):
+     def table_length(t):
+          n = vm.length(t)
+          if type(n) is int:
+               return n
+          if vm.version != '5.1':
+               if type(n) is str:
+                    n = str_to_number(n)
+               if type(n) is float and n.is_integer():
+                    return int(n)
+               if type(n) is not int:
+                    raise LuaError('object length is not an integer')
+          return n
+
      table = LuaTable()
 
      def get(t, i):
@@ -1260,7 +1311,7 @@ def _install_table(vm, lib):
 
      def insert(args):
           t = lib.check_table(args, 0, 'insert')
-          n = vm.length(t)
+          n = table_length(t)
           if len(args) == 2:
                put(t, n + 1, args[1])
                return []
@@ -1276,10 +1327,14 @@ def _install_table(vm, lib):
 
      def remove(args):
           t = lib.check_table(args, 0, 'remove')
-          n = vm.length(t)
+          n = table_length(t)
           if len(args) < 2 or args[1] is None and vm.version == '5.1':
                if n == 0:
-                    return [None] if vm.version != '5.1' else []
+                    if vm.version == '5.1':
+                         return []
+                    value = get(t, 0)
+                    put(t, 0, None)
+                    return [value]
                value = get(t, n)
                put(t, n, None)
                return [value]
@@ -1305,7 +1360,7 @@ def _install_table(vm, lib):
           i = lib.opt_int(args, 2, 'concat', 1)
           j = lib.opt_int(args, 3, 'concat', None)
           if j is None:
-               j = vm.length(t)
+               j = table_length(t)
           parts = []
           for k in range(i, j + 1):
                v = get(t, k)
@@ -1323,7 +1378,9 @@ def _install_table(vm, lib):
           comp = _arg(args, 1)
           if comp is not None and type(comp) not in (LuaFunction, PyFunction):
                raise _typeerror(args, 1, 'sort', 'function')
-          n = vm.length(t)
+          n = table_length(t)
+          if n > 1 and n >= 0x7FFFFFFF and vm.version != '5.1':
+               raise _bad(0, 'sort', 'array too big')
           values = [get(t, k) for k in range(1, n + 1)]
           if comp is None:
                def less(a, b):
@@ -1339,7 +1396,8 @@ def _install_table(vm, lib):
                if less(b, a):
                     return 1
                return 0
-          values.sort(key=functools.cmp_to_key(cmp))
+          with lib.c_call():
+               values.sort(key=functools.cmp_to_key(cmp))
           for k, v in enumerate(values, 1):
                put(t, k, v)
           return []
@@ -1372,7 +1430,7 @@ def _install_table(vm, lib):
      def foreachi(args):
           t = lib.check_table(args, 0, 'foreachi')
           fn = lib.check_fn(args, 1, 'foreachi')
-          for k in range(1, vm.length(t) + 1):
+          for k in range(1, table_length(t) + 1):
                r = vm.call(fn, [k, get(t, k)])
                if r and r[0] is not None:
                     return r[:1]
@@ -1388,11 +1446,19 @@ def _install_table(vm, lib):
           t = lib.check_int(args, 3, 'move')
           a2 = _arg(args, 4) if _arg(args, 4) is not None else a1
           if e >= f:
+               # Lua 5.3's tmove checks
+               if not (f > 0 or e < _INT_MAX + f):
+                    raise _bad(2, 'move', 'too many elements to move')
+               n = e - f + 1
+               if t > _INT_MAX - n + 1:
+                    raise _bad(3, 'move', 'destination wrap around')
                if t > e or t <= f or a1 is not a2:
-                    for k in range(0, e - f + 1):
+                    for k in range(0, n):
+                         vm.tick()
                          put(a2, t + k, get(a1, f + k))
                else:
-                    for k in range(e - f, -1, -1):
+                    for k in range(n - 1, -1, -1):
+                         vm.tick()
                          put(a2, t + k, get(a1, f + k))
           return [a2]
 
@@ -1457,7 +1523,10 @@ def _install_math(vm, lib):
           if type(a) is int and type(b) is int and not v51:
                if b == 0:
                     raise _bad(1, 'fmod', 'zero')
-               return [int(math.fmod(a, b))]
+               if b == -1:
+                    return [0]
+               r = abs(a) % abs(b)
+               return [-r if a < 0 else r]
           try:
                return [math.fmod(float(a), float(b))]
           except ValueError:
@@ -1522,6 +1591,8 @@ def _install_math(vm, lib):
 
      def minmax(name, pick):
           def run(args):
+               if not args and not v51:
+                    raise _bad(0, name, 'value expected')
                best = lib.check_num(args, 0, name)
                for k in range(1, len(args)):
                     v = lib.check_num(args, k, name)
@@ -1533,6 +1604,8 @@ def _install_math(vm, lib):
      def random(args):
           if not args:
                return [rng.random()]
+          if len(args) > 2:
+               raise LuaError("wrong number of arguments to 'random'")
           low = lib.check_int(args, 0, 'random')
           if len(args) == 1:
                high = low
@@ -1541,6 +1614,8 @@ def _install_math(vm, lib):
                high = lib.check_int(args, 1, 'random')
           if low > high:
                raise _bad(len(args) - 1, 'random', 'interval is empty')
+          if not v51 and not (low >= 0 or high <= _INT_MAX + low):
+               raise _bad(0, 'random', 'interval too large')
           return [rng.randint(low, high)]
 
      def randomseed(args):
@@ -1563,6 +1638,8 @@ def _install_math(vm, lib):
                return [int(x)]
           if type(x) is str and not v51:
                n = str_to_number(x)
+               if type(n) is float and n.is_integer() and _INT_MIN <= n <= _INT_MAX:
+                    n = int(n)            # 5.3 converts "34.0" too
                if type(n) is int:
                     return [n]
           return [None]
@@ -2067,6 +2144,8 @@ def _install_coroutine(vm, lib):
           current = vm.current_coroutine
           if current is None:
                raise LuaError('attempt to yield from outside a coroutine')
+          if getattr(current, 'c_calls', 0):
+               raise LuaError('attempt to yield across a C-call boundary')
           return current.yield_(args)
 
      def status(args):
@@ -2102,7 +2181,8 @@ def _install_coroutine(vm, lib):
           return [PyFunction(call, 'wrapped_coroutine')]
 
      def isyieldable(args):
-          return [vm.current_coroutine is not None]
+          current = vm.current_coroutine
+          return [current is not None and not getattr(current, 'c_calls', 0)]
 
      for name, fn in [('create', create), ('resume', resume), ('yield', yield_),
                       ('status', status), ('running', running), ('wrap', wrap)]:
@@ -2133,7 +2213,7 @@ def _install_debug(vm, lib):
                     t.set('short_src', to_bytes_text(proto.chunk))
                     t.set('what', 'main' if main else 'Lua')
                     t.set('linedefined', 0 if main else (proto.line or 0))
-                    t.set('lastlinedefined', -1 if main else 0)
+                    t.set('lastlinedefined', -1 if main else proto.last_line)
                if 'l' in what:
                     t.set('currentline', frame.line if frame is not None and
                           frame.line is not None else -1)
@@ -2142,9 +2222,22 @@ def _install_debug(vm, lib):
                     if vm.version != '5.1':
                          t.set('nparams', proto.nparams)
                          t.set('isvararg', proto.is_vararg)
-               if 'n' in what and not main:
-                    t.set('name', to_bytes_text(proto.name.split('.')[-1].split(':')[-1]))
-                    t.set('namewhat', 'global' if '.' not in proto.name else 'field')
+               if 'L' in what:
+                    lines = LuaTable()
+                    for line in proto.active_lines:
+                         lines.set(line, True)
+                    t.set('activelines', lines)
+               if 'n' in what and (main or frame is None):
+                    t.set('namewhat', '')
+               if 'n' in what and not main and frame is not None:
+                    # the name the caller used, as Lua derives it from the call
+                    m = re.match(r"^(global|local|field|method|upvalue) '(.*)'$",
+                                 frame.calldesc or '')
+                    if m:
+                         t.set('name', m.group(2))
+                         t.set('namewhat', m.group(1))
+                    else:
+                         t.set('namewhat', '')
           else:
                if 'S' in what:
                     t.set('source', '=[C]')
@@ -2242,6 +2335,42 @@ def _install_debug(vm, lib):
                return [fn.proto.upnames[n - 1]]
           return [None]
 
+     def upvalue_cell(args, fname):
+          fn = lib.check_fn(args, 0, fname)
+          n = lib.check_int(args, 1, fname)
+          if type(fn) is not LuaFunction or not 1 <= n <= len(fn.upvals):
+               raise _bad(1, fname, 'invalid upvalue index')
+          return fn, n - 1
+
+     def upvalueid(args):
+          fn = lib.check_fn(args, 0, 'upvalueid')
+          n = lib.check_int(args, 1, 'upvalueid')
+          if type(fn) is PyFunction and 1 <= n <= fn.nups:
+               return [LightUserdata(('C', id(fn), n))]
+          fn, i = upvalue_cell(args, 'upvalueid')
+          return [LightUserdata(id(fn.upvals[i]))]
+
+     def upvaluejoin(args):
+          f1, i1 = upvalue_cell(args, 'upvaluejoin')
+          f2, i2 = upvalue_cell(args[2:], 'upvaluejoin')
+          f1.upvals[i1] = f2.upvals[i2]
+          return []
+
+     def getuservalue(args):
+          v = _arg(args, 0)
+          full = isinstance(v, LuaUserdata) and type(v) is not LightUserdata
+          return [getattr(v, 'uservalue', None) if full else None]
+
+     def setuservalue(args):
+          v = _arg(args, 0)
+          if not isinstance(v, LuaUserdata) or type(v) is LightUserdata:
+               raise _typeerror(args, 0, 'setuservalue', 'userdata')
+          value = _arg(args, 1)
+          if value is not None and type(value) is not LuaTable:
+               raise _bad(1, 'setuservalue', 'table expected')
+          v.uservalue = value
+          return [v]
+
      def getmetatable_(args):
           return [vm.getmetatable(_arg(args, 0))]
 
@@ -2311,6 +2440,10 @@ def _install_debug(vm, lib):
                       ('getregistry', getregistry), ('sethook', sethook),
                       ('gethook', gethook), ('debug', debug_)]:
           _fn(d, name, fn)
+     if vm.version != '5.1':
+          for name, fn in [('upvalueid', upvalueid), ('upvaluejoin', upvaluejoin),
+                           ('getuservalue', getuservalue), ('setuservalue', setuservalue)]:
+               _fn(d, name, fn)
      if vm.version == '5.1':
           _fn(d, 'getfenv', getfenv_)
           _fn(d, 'setfenv', setfenv_)
@@ -2358,6 +2491,8 @@ def _install_package(vm, lib, g):
                loaded.set(name, None)
           if loader is None:
                path = package.get('path')
+               if type(path) is not str and vm.version != '5.1':
+                    raise LuaError("'package.path' must be a string")
                found, tried = searchpath(name, path if type(path) is str else '')
                if found is None:
                     raise LuaError(f"module '{name}' not found:\n\tno field package.preload"
@@ -2435,73 +2570,145 @@ def _install_package(vm, lib, g):
 # --- utf8 (5.3) ------------------------------------------------------------------------------
 
 def _install_utf8(vm, lib):
+     """Lua 5.3's utf8 library (lutf8lib.c): strict decoding (no overlong
+     forms, nothing above U+10FFFF), positions in bytes."""
      u = LuaTable()
+     maxunicode = 0x10FFFF
+     limits = (0xFF, 0x7F, 0x7FF, 0xFFFF)
+
+     def utf8_decode(s, i):
+          """(code, next index) of the sequence starting at s[i], or None."""
+          c = ord(s[i]) if i < len(s) else 0
+          if c < 0x80:
+               return c, i + 1
+          res = 0
+          count = 0
+          while c & 0x40:
+               count += 1
+               cc = ord(s[i + count]) if i + count < len(s) else 0
+               if cc & 0xC0 != 0x80:
+                    return None
+               res = (res << 6) | (cc & 0x3F)
+               c <<= 1
+          res |= (c & 0x7F) << (count * 5)
+          if count > 3 or res > maxunicode or res <= limits[count]:
+               return None
+          return res, i + count + 1
+
+     def cont(s, i):
+          return i < len(s) and ord(s[i]) & 0xC0 == 0x80
+
+     def relat(pos, length):
+          if pos >= 0:
+               return pos
+          return 0 if -pos > length else length + pos + 1
+
+     def encode(code):
+          from .lua_lexer import utf8_encode
+          return utf8_encode(code)
 
      def char(args):
           out = []
           for k in range(len(args)):
                code = lib.check_int(args, k, 'char')
-               out.append(chr(code).encode('utf-8', 'surrogatepass').decode('latin-1'))
+               if not 0 <= code <= maxunicode:
+                    raise _bad(k, 'char', 'value out of range')
+               out.append(encode(code))
           return [''.join(out)]
-
-     def decode(s):
-          try:
-               return s.encode('latin-1').decode('utf-8')
-          except UnicodeDecodeError as error:
-               return error
 
      def len_(args):
           s = lib.check_str(args, 0, 'len')
-          i = _posrelat(lib.opt_int(args, 1, 'len', 1), len(s))
-          j = _posrelat(lib.opt_int(args, 2, 'len', -1), len(s))
-          text = decode(s[i - 1:j])
-          if isinstance(text, UnicodeDecodeError):
-               return [None, i + text.start]
-          return [len(text)]
+          length = len(s)
+          posi = relat(lib.opt_int(args, 1, 'len', 1), length)
+          posj = relat(lib.opt_int(args, 2, 'len', -1), length)
+          posi -= 1
+          if not (0 <= posi <= length):
+               raise _bad(1, 'len', 'initial position out of string')
+          posj -= 1
+          if posj >= length:
+               raise _bad(2, 'len', 'final position out of string')
+          n = 0
+          while posi <= posj:
+               decoded = utf8_decode(s, posi)
+               if decoded is None:
+                    return [None, posi + 1]
+               posi = decoded[1]
+               n += 1
+          return [n]
 
      def codepoint(args):
           s = lib.check_str(args, 0, 'codepoint')
-          i = _posrelat(lib.opt_int(args, 1, 'codepoint', 1), len(s))
-          j = _posrelat(lib.opt_int(args, 2, 'codepoint', i), len(s))
-          if i > j:
-               return []
-          k = i - 1
+          length = len(s)
+          posi = relat(lib.opt_int(args, 1, 'codepoint', 1), length)
+          pose = relat(lib.opt_int(args, 2, 'codepoint', posi), length)
+          if posi < 1:
+               raise _bad(1, 'codepoint', 'out of range')
+          if pose > length:
+               raise _bad(2, 'codepoint', 'out of range')
           out = []
-          while k < j:
-               lead = ord(s[k])
-               size = 1 if lead < 0x80 else 2 if lead < 0xE0 else 3 if lead < 0xF0 else 4
-               text = decode(s[k:k + size])
-               if isinstance(text, UnicodeDecodeError):
+          i = posi - 1
+          while i < pose:
+               decoded = utf8_decode(s, i)
+               if decoded is None:
                     raise LuaError('invalid UTF-8 code')
-               out.append(ord(text))
-               k += size
+               out.append(decoded[0])
+               i = decoded[1]
           return out
 
      def codes(args):
           s = lib.check_str(args, 0, 'codes')
 
           def step(a):
-               k = a[1]
-               if k > 0:
-                    lead = ord(s[k - 1])
-                    k += 1 if lead < 0x80 else 2 if lead < 0xE0 else 3 if lead < 0xF0 else 4
-               else:
-                    k = 1
-               if k > len(s):
+               text = a[0]
+               length = len(text)
+               n = (a[1] if type(a[1]) is int else int(a[1])) - 1
+               if n < 0:
+                    n = 0
+               elif n < length:
+                    n += 1
+                    while cont(text, n):
+                         n += 1
+               if n >= length:
                     return [None]
-               return [k, codepoint([s, k])[0]]
+               decoded = utf8_decode(text, n)
+               if decoded is None or cont(text, decoded[1]):
+                    raise LuaError('invalid UTF-8 code')
+               return [n + 1, decoded[0]]
           return [PyFunction(step, 'codes_iterator'), s, 0]
 
      def offset(args):
           s = lib.check_str(args, 0, 'offset')
           n = lib.check_int(args, 1, 'offset')
-          starts = [k + 1 for k, c in enumerate(s) if not 0x80 <= ord(c) < 0xC0]
-          if n > 0:
-               return [starts[n - 1] if n <= len(starts) else
-                       (len(s) + 1 if n == len(starts) + 1 else None)]
-          if n < 0 and -n <= len(starts):
-               return [starts[n]]
-          return [None]
+          length = len(s)
+          posi = lib.opt_int(args, 2, 'offset', 1 if n >= 0 else length + 1)
+          if posi < 0:
+               posi = 0 if -posi > length else length + posi + 1
+          posi -= 1
+          if not (0 <= posi <= length):
+               raise _bad(2, 'offset', 'position out of range')
+
+          def cont(i):
+               return i < length and (ord(s[i]) & 0xC0) == 0x80
+          if n == 0:
+               while posi > 0 and cont(posi):
+                    posi -= 1
+          else:
+               if cont(posi):
+                    raise LuaError('initial position is a continuation byte')
+               if n < 0:
+                    while n < 0 and posi > 0:
+                         posi -= 1
+                         while posi > 0 and cont(posi):
+                              posi -= 1
+                         n += 1
+               else:
+                    n -= 1
+                    while n > 0 and posi < length:
+                         posi += 1
+                         while cont(posi):
+                              posi += 1
+                         n -= 1
+          return [posi + 1] if n == 0 else [None]
 
      for name, fn in [('char', char), ('len', len_), ('codepoint', codepoint),
                       ('codes', codes), ('offset', offset)]:

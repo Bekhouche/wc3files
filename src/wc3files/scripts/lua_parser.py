@@ -291,8 +291,10 @@ def _parse_function_stmt(stream):
           stream.advance()
           method_name = stream.expect_name()
      params, is_vararg, body = _parse_funcbody(stream)
-     return ir.FunctionStmt(name_path, method_name=method_name, params=params,
-                             body=body, is_vararg=is_vararg)
+     node = ir.FunctionStmt(name_path, method_name=method_name, params=params,
+                            body=body, is_vararg=is_vararg)
+     node.end_line = stream.funcbody_end
+     return node
 
 
 def _parse_local(stream):
@@ -301,7 +303,9 @@ def _parse_local(stream):
           stream.advance()
           name = stream.expect_name()
           params, is_vararg, body = _parse_funcbody(stream)
-          return ir.LocalFunctionStmt(name, params, body=body, is_vararg=is_vararg)
+          node = ir.LocalFunctionStmt(name, params, body=body, is_vararg=is_vararg)
+          node.end_line = stream.funcbody_end
+          return node
 
      names = [stream.expect_name()]
      while stream.check_op(','):
@@ -331,6 +335,9 @@ def _parse_funcbody(stream):
                break
      stream.expect_op(')')
      body = _parse_block(stream, until={'end'})
+     # the 'end' line, read by the caller right away (debug.getinfo's
+     # lastlinedefined); nested bodies have already set theirs
+     stream.funcbody_end = stream.peek().line
      stream.expect_keyword('end')
      return params, is_vararg, body
 
@@ -534,7 +541,9 @@ def _parse_atom(stream):
      if token.kind == 'KEYWORD' and token.value == 'function':
           stream.advance()
           params, is_vararg, body = _parse_funcbody(stream)
-          return _at(ir.LuaFunctionExpr(params, body=body, is_vararg=is_vararg), token)
+          node = ir.LuaFunctionExpr(params, body=body, is_vararg=is_vararg)
+          node.end_line = stream.funcbody_end
+          return _at(node, token)
 
      if token.kind == 'OP' and token.value == '{':
           return _at(_parse_table(stream), token)
