@@ -260,6 +260,15 @@ from wc3files import (parse_jass, print_jass, tokenize_jass,
 
 check_jass(program, natives=None)     # -> [{'severity', 'message', 'line'}]
 check_lua(chunk, natives=None)        # -> [{'severity', 'message', 'line'}]
+jass_to_lua(program, natives=None, prelude=True)   # -> Lua 5.3 source
+
+MapRuntime(players=1, seed=0, max_steps=200_000_000, root=None)
+    .run(source, chunkname='war3map.lua', seconds=10.0)   # -> RunReport
+    .advance(seconds)
+    .declare_natives(native_decls)
+    .vm                               # the LuaVM, globals included
+RunReport .errors .warnings .messages .game_time .callbacks .ok
+run_map_script(source, chunkname='war3map.lua', seconds=10.0, **options)
 from wc3files.wtg.from_script import reconstruct_from_jass
 from wc3files.wtg import trigger_text
 ```

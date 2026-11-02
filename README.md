@@ -71,6 +71,7 @@ Full documentation lives in [docs/](docs/README.md):
 - Check that Lua before opening the editor: errors name the `.j` line they come from
 - A Lua 5.1/5.3 interpreter in pure Python, sandboxed: `wc3files lua script.lua`
 - Check a Reforged `war3map.lua` against the game API (undefined globals, missing `FourCC`, wrong argument counts and types): `wc3files jass war3map.lua --check`
+- Run a map's script without the game (common.j stubs, blizzard.j, timers) to find its start-up errors: `wc3files run-map MyMap.w3x`; translate JASS to Lua with `wc3files jass war3map.j --to-lua`
 
 ## Usage Examples
 

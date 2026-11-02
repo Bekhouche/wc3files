@@ -86,6 +86,8 @@ wc3files model-info Footman.mdx                    # version, sequences, texture
 ```bash
 wc3files jass war3map.j                      # parse and print back
 wc3files jass war3map.lua --check            # check calls against the game API
+wc3files jass war3map.j --to-lua             # translate JASS to Lua 5.3
+wc3files run-map MyMap.w3x                   # run config/main and timers, report errors
 wc3files trigger-text war3map.wtg            # render as World Editor text
 wc3files script-to-triggers war3map.j        # rebuild GUI triggers from a script
 ```
@@ -94,6 +96,11 @@ wc3files script-to-triggers war3map.j        # rebuild GUI triggers from a scrip
 of the script, and exits with status 1 when there is an issue. It works on
 JASS and on Reforged Lua; what it checks is described in [Triggers and
 scripts](triggers.md#checking-a-script).
+
+`run-map` runs a map's script against stubs of the game API and prints its
+runtime errors and argument warnings, exiting with status 1 on an error;
+`--seconds`, `--players` and `--messages` are explained in [Running a map
+script](triggers.md#running-a-map-script).
 
 `trigger-text` takes `--trigger-data` for a map built with an extended editor,
 whose GUI functions stock Warcraft III does not declare. Both trigger

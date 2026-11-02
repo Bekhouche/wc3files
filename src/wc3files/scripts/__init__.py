@@ -13,3 +13,5 @@ from .lua_checker import check_chunk as check_lua
 from .jass_vm import JassVM, JassRuntimeError, run_script
 from .lua_vm import LuaVM, LuaError, LuaTable, LuaFunction, PyFunction, run_with_stack
 from .lua_stdlib import LuaHost, LuaExit
+from .jass_to_lua import jass_to_lua
+from .wc3_runtime import MapRuntime, RunReport, run_map_script

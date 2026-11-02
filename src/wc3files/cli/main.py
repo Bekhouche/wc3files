@@ -215,6 +215,12 @@ def _cmd_jass(args):
 
     if args.check:
         return _report_script_check(args.input, script.validate())
+    if args.to_lua:
+        if is_lua:
+            raise ValueError('--to-lua takes a JASS script')
+        from wc3files.scripts.jass_to_lua import jass_to_lua
+        _write_or_print(jass_to_lua(program), args.output)
+        return
 
     if is_lua:
         if args.strip:
@@ -266,6 +272,26 @@ def _report_script_check(path, findings):
     notes = len(findings) - issues
     print(f'{issues} issue(s), {notes} note(s)', file=sys.stderr)
     return 1 if issues else 0
+
+
+def _cmd_run_map(args):
+    """Run a map script in wc3files.scripts.wc3_runtime and report what failed."""
+    from wc3files.scripts.wc3_runtime import MapRuntime, load_map_script
+    source, chunkname, natives = load_map_script(args.input)
+    runtime = MapRuntime(players=args.players, max_steps=args.max_steps or None)
+    runtime.declare_natives(natives)
+    report = runtime.run(source, chunkname, seconds=args.seconds)
+    if args.messages:
+        for text in report.messages:
+            print(text)
+    for error in report.errors:
+        print(f'error: {error}')
+    for warning in report.warnings:
+        print(f'warning: {warning}')
+    print(f'{len(report.errors)} error(s), {len(report.warnings)} warning(s), '
+          f'{report.callbacks} callback(s), {report.game_time:.2f} s of game time',
+          file=sys.stderr)
+    return 1 if report.errors else 0
 
 
 def _cmd_vjass(args):
@@ -1573,6 +1599,9 @@ def build_parser():
     p_jass.add_argument('--keep', action='append', default=None,
                         help=('An identifier to leave alone (repeatable). Use for '
                               'names other scripts or the map call into.'))
+    p_jass.add_argument('--to-lua', action='store_true',
+                        help=('Translate a JASS script to Lua 5.3, as Reforged runs '
+                              'JASS-era code (integer division, string +, arrays).'))
     p_jass.add_argument('--check', action='store_true',
                         help=('Check calls against common.j/blizzard.j (and, for Lua, '
                               'undefined globals and the Lua 5.3 library) and print '
@@ -1668,6 +1697,20 @@ def build_parser():
     p_lua.add_argument('--max-steps', type=int, default=50_000_000,
                        help='Stop the script after this many steps (0: no limit).')
     p_lua.set_defaults(func=_cmd_lua)
+
+    p_run_map = subparsers.add_parser(
+        'run-map', help=('Run a map script without the game (common.j stubs, '
+                         'blizzard.j, timers) and report its runtime errors.'))
+    p_run_map.add_argument('input', help='A war3map.lua or war3map.j, or a .w3x/.w3m map.')
+    p_run_map.add_argument('--seconds', type=float, default=10.0,
+                           help='Game time to let pass after main() (default 10).')
+    p_run_map.add_argument('--players', type=int, default=1,
+                           help='Player slots in use (default 1).')
+    p_run_map.add_argument('--messages', action='store_true',
+                           help='Also print the text the map displays.')
+    p_run_map.add_argument('--max-steps', type=int, default=200_000_000,
+                           help='Stop after this many interpreter steps.')
+    p_run_map.set_defaults(func=_cmd_run_map)
 
     p_trig_text = subparsers.add_parser(
         'trigger-text',

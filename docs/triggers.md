@@ -177,6 +177,64 @@ hand-written, TypeScript and C# transpiled, obfuscated), it reports issues in
 copies of one map (the native takes one packed color, so the color passed is
 255), and a call to a `testChars` that is defined nowhere in two others.
 
+## Running a map script
+
+The checker reads a script; `run-map` runs one, to find the errors a map
+makes while it sets itself up. It is a Lua 5.3 interpreter with the game's
+API installed:
+
+1. every native of `common.j` as a Python stub, and `blizzard.j` translated
+   to Lua, so the BJ functions are the real ones;
+2. `config()` and `main()` called, as the game does;
+3. a clock: timers, `TriggerRegisterTimerEvent` and `TriggerSleepAction`
+   work, and `--seconds` of game time pass, so code started from a 0-second
+   timer or an "elapsed game time" event runs too. Each callback runs in its
+   own coroutine, as Reforged runs triggers.
+
+```bash
+wc3files run-map war3map.lua               # or a war3map.j, or a .w3x/.w3m map
+wc3files run-map MyMap.w3x --seconds 30 --players 4 --messages
+```
+
+```python
+from wc3files.scripts import MapRuntime
+
+runtime = MapRuntime(players=4)
+report = runtime.run(source, 'war3map.lua', seconds=30)
+report.errors        # runtime errors, with the Lua position and a traceback
+report.warnings      # natives called with an argument of the wrong type
+report.messages      # what the map displayed (DisplayTextToPlayer, print)
+runtime.advance(10)  # let more game time pass
+```
+
+A JASS map runs the same way: its `war3map.j` is translated to Lua first,
+and the natives it declares itself (`UnitAlive`) get stubs.
+
+What has state: players, units (owner, type, position, life), groups and
+forces with their enumerations and filters, hashtables, triggers with their
+conditions and actions, timers, locations, rects and camera bounds, and the
+string, math and conversion natives, which compute their real results.
+Every other native returns the default value of its type: 0, 0.0, false,
+"", or a new handle of the declared type. Events other than timers never
+fire, there is no object data (`BlzGetAbilityTooltip` returns ""), and the
+`debug` library is absent, as it is in the game.
+
+So an error is a lead, not a verdict: a map that reads its own object data,
+or places things by the real terrain, can fail here and work in the game.
+On the 36 real `war3map.lua` scripts of the development machine, 23 run 10
+seconds of game time without an error (the Footmen Frenzy, Castle Fight,
+Risk, Poker Strike, Spectrum TD and War of Races maps among them, up to
+2,925 callbacks each). One error is the map's own: a call to a `globals`
+that is defined nowhere. The other 12 are one Legion TD map reading numbers
+out of an ability tooltip, which needs the object data this runtime does
+not have. Running them also found two interpreter bugs, both fixed: weak
+tables dropped an entry before any collection, and a 5.3 map's code took
+the branch meant for a game with a `debug` library.
+
+`jass --to-lua` prints the translation itself: JASS's truncating integer
+division becomes `__jdiv`, string `+` becomes `..` (with null as ""),
+arrays become `__jarray(default)`, and loops become `while true do`.
+
 ## Rebuilding GUI triggers from a script
 
 When a map has lost its `war3map.wtg` but kept its script, the triggers can be

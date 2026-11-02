@@ -29,7 +29,7 @@ import time as _time
 from .lua_vm import (
      LuaError, LuaTable, LuaFunction, PyFunction, LuaUserdata, LightUserdata, Coroutine,
      type_name, truthy, is_number, str_to_number, number_to_str,
-     to_text, to_bytes_text, _INT_MIN, _INT_MAX, _wrap, set_weak_mode,
+     to_text, to_bytes_text, _INT_MIN, _INT_MAX, _wrap, set_weak_mode, collect_weak_tables,
 )
 from . import lua_patterns
 from .lua_patterns import PatternError
@@ -744,8 +744,7 @@ def _install_base(vm, lib, g):
           if option not in gc_options:
                raise _bad(0, 'collectgarbage', f"invalid option '{to_text(option)}'")
           if option == 'collect':
-               import gc
-               gc.collect()
+               collect_weak_tables()
           if option == 'stop':
                gc_state['running'] = False
           elif option == 'restart':
@@ -755,8 +754,7 @@ def _install_base(vm, lib, g):
           if option == 'isrunning':
                return [gc_state['running']]
           if option == 'step':
-               import gc
-               gc.collect()
+               collect_weak_tables()
                return [True]           # a step always finishes a full cycle here
           return [0]
 

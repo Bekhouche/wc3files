@@ -180,9 +180,13 @@ class _WeakHash:
 
      It offers the dict operations the interpreter uses on `LuaTable.hash`.
      Entries whose weak key or value is no longer referenced anywhere else
-     disappear, as Lua's collector removes them; under CPython's reference
-     counting that happens as soon as the last other reference goes, rather
-     than at the next collection."""
+     disappear, as Lua's collector removes them - but only when a collection
+     runs (collectgarbage "collect" or "step"), as in Lua. Until then the
+     table pins what it holds: under CPython's reference counting a weak
+     entry would otherwise vanish the moment its last other reference went,
+     so `t[k] = {}` followed by `t[k].x` would fail on a weak-valued table.
+     A table that pins more than _PIN_LIMIT objects lets go of them by
+     itself, standing in for the collector's own memory pressure."""
 
      def __init__(self, weak_keys, weak_values, items=()):
           import weakref
@@ -190,8 +194,14 @@ class _WeakHash:
           self.weak_keys = weak_keys
           self.weak_values = weak_values
           self.d = {}
+          self._pins = []
+          _WEAK_TABLES.add(self)
           for k, v in items:
                self[k] = v
+
+     def release(self):
+          """A collection: entries now only weakly held may disappear."""
+          self._pins.clear()
 
      def _wrap_key(self, k):
           if self.weak_keys and _collectable(k):
@@ -201,8 +211,14 @@ class _WeakHash:
      def __setitem__(self, k, v):
           d = self.d
           key = k
+          pins = self._pins
           if self.weak_keys and _collectable(k):
+               pins.append(k)
                key = self._ref(k, lambda ref, d=d: d.pop(ref, None))
+          if self.weak_values and _collectable(v):
+               pins.append(v)
+          if len(pins) > _PIN_LIMIT:
+               pins.clear()
           if self.weak_values and _collectable(v):
                v = self._ref(v, lambda ref, d=d, key=key: d.pop(key, None)
                              if d.get(key) is ref else None)
@@ -263,6 +279,26 @@ class _WeakHash:
 
      def __len__(self):
           return len(list(self._pairs()))
+
+
+_PIN_LIMIT = 200_000
+
+
+def _weak_registry():
+     import weakref
+     return weakref.WeakSet()
+
+
+_WEAK_TABLES = _weak_registry()
+
+
+def collect_weak_tables():
+     """What Lua's collector does to weak tables: let go of the entries that
+     nothing else references. Called by collectgarbage."""
+     import gc
+     for table in list(_WEAK_TABLES):
+          table.release()
+     gc.collect()
 
 
 def set_weak_mode(table, mode):
@@ -1903,6 +1939,11 @@ class LuaVM:
           if self.max_steps is not None and self.steps > self.max_steps:
                raise LuaError(f'script stopped after {self.max_steps} steps '
                               f'(an endless loop?)', level=0)
+          if not self.steps & 0xFFFF:
+               # Lua's collector also runs by itself as a program allocates;
+               # this lets weak tables drop entries without collectgarbage()
+               for table in list(_WEAK_TABLES):
+                    table.release()
 
      # -- globals -------------------------------------------------------------------
 
