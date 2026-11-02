@@ -35,6 +35,7 @@ class NativeSignatures:
      def clear(self):
           self._natives = {}
           self._functions = {}
+          self._globals = {}
           self._type_parent = {}
 
      def read(self, *paths):
@@ -48,6 +49,8 @@ class NativeSignatures:
                     self._natives[native.name] = native
                for function in program.functions:
                     self._functions[function.name] = function
+               for glob in program.globals:
+                    self._globals[glob.name] = glob
           return self
 
      @classmethod
@@ -62,6 +65,11 @@ class NativeSignatures:
           """Return the declared ir.NativeDecl/ir.FunctionDecl for a native or
           BJ-wrapper function name, or None if unrecognized."""
           return self._natives.get(name) or self._functions.get(name)
+
+     def lookup_global(self, name):
+          """Return the ir.GlobalVar common.j/blizzard.j declare as `name`
+          (a constant such as UNIT_STATE_LIFE or a bj_ variable), or None."""
+          return self._globals.get(name)
 
      def is_ancestor(self, ancestor, type_name):
           """Whether `type_name` is `ancestor` or (transitively) extends it,

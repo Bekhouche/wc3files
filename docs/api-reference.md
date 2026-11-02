@@ -247,7 +247,7 @@ ScriptFile()
     .get_data()                       # ir.Program (JASS) or ir.Chunk (Lua)
     .get_file_type()
     .import_data(program)
-    .validate(natives=None)           # JASS only
+    .validate(natives=None)           # check_jass or check_lua, by language
 ```
 
 Module-level helpers:
@@ -255,8 +255,11 @@ Module-level helpers:
 ```python
 from wc3files import (parse_jass, print_jass, tokenize_jass,
                       parse_lua, print_lua, tokenize_lua,
-                      check_jass, find_reachable, remove_dead_code,
+                      check_jass, check_lua, find_reachable, remove_dead_code,
                       build_rename_table, apply_rename, obfuscate_lua)
+
+check_jass(program, natives=None)     # -> [{'severity', 'message'}]
+check_lua(chunk, natives=None)        # -> [{'severity', 'message', 'line'}]
 from wc3files.wtg.from_script import reconstruct_from_jass
 from wc3files.wtg import trigger_text
 ```

@@ -213,6 +213,11 @@ def _cmd_jass(args):
     program = script.get_data()
     is_lua = script.get_file_type().value == 'lua'
 
+    if args.check:
+        if _report_script_check(args.input, script.validate()):
+            raise SystemExit(1)
+        return
+
     if is_lua:
         if args.strip:
             raise ValueError('--strip works on JASS only; Lua has no reachability '
@@ -251,6 +256,18 @@ def _cmd_jass(args):
         print(f'Wrote {args.output}')
     else:
         sys.stdout.write(text)
+
+
+def _report_script_check(path, findings):
+    """Print `path:line: severity: message` for each finding; 1 on an issue."""
+    for finding in findings:
+        line = finding.get('line')
+        where = f'{path}:{line}' if line else path
+        print(f"{where}: {finding['severity']}: {finding['message']}")
+    issues = sum(1 for f in findings if f['severity'] == 'issue')
+    notes = len(findings) - issues
+    print(f'{issues} issue(s), {notes} note(s)', file=sys.stderr)
+    return 1 if issues else 0
 
 
 def _cmd_vjass(args):
@@ -1556,6 +1573,10 @@ def build_parser():
     p_jass.add_argument('--keep', action='append', default=None,
                         help=('An identifier to leave alone (repeatable). Use for '
                               'names other scripts or the map call into.'))
+    p_jass.add_argument('--check', action='store_true',
+                        help=('Check calls against common.j/blizzard.j (and, for Lua, '
+                              'undefined globals and the Lua 5.3 library) and print '
+                              'the findings instead of the script. Exits 1 on an issue.'))
     p_jass.set_defaults(func=_cmd_jass)
 
     p_vjass = subparsers.add_parser(

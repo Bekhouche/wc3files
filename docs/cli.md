@@ -85,9 +85,15 @@ wc3files model-info Footman.mdx                    # version, sequences, texture
 
 ```bash
 wc3files jass war3map.j                      # parse and print back
+wc3files jass war3map.lua --check            # check calls against the game API
 wc3files trigger-text war3map.wtg            # render as World Editor text
 wc3files script-to-triggers war3map.j        # rebuild GUI triggers from a script
 ```
+
+`jass --check` prints one `file:line: severity: message` per finding instead
+of the script, and exits with status 1 when there is an issue. It works on
+JASS and on Reforged Lua; what it checks is described in [Triggers and
+scripts](triggers.md#checking-a-script).
 
 `trigger-text` takes `--trigger-data` for a map built with an extended editor,
 whose GUI functions stock Warcraft III does not declare. Both trigger

@@ -86,8 +86,11 @@ targets - MPQ is documented well enough to implement natively.
   `Literal`/`VarExpr`/`UnaryExpr`/`BinaryExpr`/`IfStmt` where the shape
   genuinely matches JASS's, with new Lua-only node types everywhere else (see
   `ir.py`'s "Lua-only nodes" section) - `ScriptFile` dispatches `.lua` to this
-  frontend (`validate=True` against a `.lua` path still raises - no native/BJ
-  checker exists for Lua). `lua_obfuscator.py`'s `obfuscate_lua` (phase 5) is
+  frontend; `validate()` on Lua runs `lua_checker.py`'s `check_chunk`
+  (undefined globals, Lua 5.3 library members, native/BJ argument counts and
+  inferable types - FourCC, boolexpr - with feature tests, hooks, aliases and
+  metatable operators deliberately left alone; CLI `jass --check`).
+  `lua_obfuscator.py`'s `obfuscate_lua` (phase 5) is
   a genuinely different design from JASS's flat-namespace `obfuscator.py`, not
   a reuse of it - a real scope-tracking walk that renames every local/param/
   loop-var binding and never touches a global at all (Lua's dynamic global

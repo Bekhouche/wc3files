@@ -102,12 +102,80 @@ except JassParseError as error:
     print(error.line, error.col)
 ```
 
-JASS-only checking against native and BJ signatures:
+## Checking a script
+
+`validate()` checks a script against the game API in the bundled `common.j`
+and `blizzard.j`, for JASS and for Reforged's `war3map.lua`:
 
 ```python
+script = ScriptFile().read('war3map.lua')
 for finding in script.validate():
-    print(finding['severity'], finding['message'])
+    print(finding.get('line'), finding['severity'], finding['message'])
+
+script.write('checked.lua', validate=True)   # raises ValueError on an issue
 ```
+
+From the command line: `wc3files jass war3map.lua --check`.
+
+A finding is an `issue` when the code is wrong and a `note` when it is worth
+a look. The checker only reports what it is sure of; anything it cannot
+resolve is skipped.
+
+For JASS it reports calls to unknown functions, wrong argument counts and
+arguments of an incompatible type.
+
+Lua has no declarations, so the Lua checker works from what the script shows:
+
+1. **Names.** A global the script calls must be a native, a `blizzard.j`
+   function, a Lua 5.3 library function, `FourCC`, or something the script
+   assigns somewhere, in any order and in any function. Anything else fails
+   when it runs with "attempt to call a nil value". A global that is read but
+   never assigned is a note. Names that Lua 5.1 had and 5.3 does not
+   (`unpack`, `math.pow`, ...) and natives that only `common.ai` declares
+   (`UnitAlive`) are notes too.
+2. **Library members.** `math.flor(x)` is an issue, unless the script adds
+   `flor` to `math` itself (`function math.flor(...)`).
+3. **Game calls.** A call to a native or a `blizzard.j` function is checked
+   for its argument count and for the argument types that can be told
+   without running the code: literals, results of other game calls,
+   functions, and locals that are assigned once. The ones that matter most:
+   - a string where an object id is expected, `CreateUnit(p, 'hfoo', ...)`
+     instead of `FourCC('hfoo')`;
+   - a function where a boolexpr is expected, `TriggerAddCondition(t, f)`
+     instead of `Condition(f)`;
+   - a handle of the wrong type, such as a trigger passed to `KillUnit`;
+   - the result of a function that returns nothing.
+
+   Missing arguments whose parameters are handles are a note, since Lua
+   passes nil, which is null for a handle.
+
+What it leaves alone, because it is valid Lua:
+
+- locals that shadow a native, and natives the script replaces with its own
+  function (a hook);
+- feature tests: a name read in a condition, in `and`/`or`, in a comparison
+  or in `type(...)`, such as `table.unpack or unpack` or `if Debug then`.
+  Such a name is then optional everywhere in the script;
+- operators other than comparisons, whose result is only inferred for plain
+  numbers and strings, since a metatable can overload them;
+- conversions Lua does itself: a number where a string is expected, and a
+  numeric string where a number is expected.
+
+A script that writes globals by computed name (`_G[k] = v`,
+`rawset(_G, ...)`, `setmetatable(_G, ...)`), or loads code (`load`,
+`require`, `dofile`), can define any name, so it gets one note saying so and
+no undefined-name findings.
+
+Members can also be added to a library through a local alias
+(`local Math = math; Math.Abs = abs`, as the CSharp.lua runtime does), or by
+a function it is passed to; the checker follows both. Only reading functions
+such as `pairs` leave it alone.
+
+On the 36 real `war3map.lua` scripts of the development machine (generated,
+hand-written, TypeScript and C# transpiled, obfuscated), it reports issues in
+8, all genuine: `BlzFrameSetVertexColor(frame, 255, 204, 0, 220)` in six
+copies of one map (the native takes one packed color, so the color passed is
+255), and a call to a `testChars` that is defined nowhere in two others.
 
 ## Rebuilding GUI triggers from a script
 

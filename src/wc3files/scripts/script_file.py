@@ -4,6 +4,7 @@ from .jass_printer import print_program as print_jass
 from .lua_parser import parse as parse_lua
 from .lua_printer import print_chunk as print_lua
 from .checker import check_program
+from .lua_checker import check_chunk
 from . import ir
 
 
@@ -13,10 +14,9 @@ class ScriptFile:
      frontends share most expression/control-flow node types (see ir.py) but
      have different top-level shapes, so callers that need to tell them apart
      can check `get_file_type()` or the returned object's type directly.
-     `validate()`/`write(path, validate=True)` are JASS-only (no native/BJ
-     signature checker exists for Lua - Lua has no natives concept - so
-     `validate=True` against a `.lua` path raises rather than silently
-     skipping the check)."""
+     `validate()`/`write(path, validate=True)` check either language against
+     the bundled common.j/blizzard.j: checker.check_program for JASS,
+     lua_checker.check_chunk for Lua."""
 
      def __init__(self):
           self.clear()
@@ -97,22 +97,20 @@ class ScriptFile:
           if ext not in (item.value for item in ScriptFileType):
                raise ValueError(f'Invalid script file type: {ext}')
 
+          if validate:
+               issues = [f for f in self.validate() if f['severity'] == 'issue']
+               if issues:
+                    messages = '; '.join(
+                         (f"line {f['line']}: " if f.get('line') else '') + f['message']
+                         for f in issues)
+                    raise ValueError(f'Script failed validation: {messages}')
+
           if ext == ScriptFileType.LUA.value:
-               if validate:
-                    raise NotImplementedError(
-                         'validate=True is not supported for Lua scripts - no native/BJ '
-                         'signature checker exists for Lua (Lua has no natives concept)')
                text = print_lua(self._data)
                with open(file_path, 'w', encoding='utf-8', newline='\n') as fh:
                     fh.write(text)
                self._file_type = ScriptFileType.LUA
                return self
-
-          if validate:
-               issues = [f for f in self.validate() if f['severity'] == 'issue']
-               if issues:
-                    messages = '; '.join(f['message'] for f in issues)
-                    raise ValueError(f'Script failed validation: {messages}')
 
           text = print_jass(self._data)
           with open(file_path, 'w', encoding='utf-8', newline='\n') as fh:
@@ -121,9 +119,13 @@ class ScriptFile:
           return self
 
      def validate(self, natives=None):
-          """Report mode - see checker.check_program for exactly what this does
-          and does not check. Returns a list of {'severity', 'message'} findings;
-          never raises on its own (see write(validate=True) for the raising form)."""
+          """Report mode - see checker.check_program (JASS) and
+          lua_checker.check_chunk (Lua) for exactly what this does and does not
+          check. Returns a list of {'severity', 'message'} findings (Lua ones
+          also carry 'line'); never raises on its own (see
+          write(validate=True) for the raising form)."""
+          if isinstance(self._data, ir.Chunk):
+               return check_chunk(self._data, natives=natives)
           return check_program(self._data, natives=natives)
 
      def get_file_type(self):

@@ -244,7 +244,7 @@ class TestLuaRoundTrip(unittest.TestCase):
 
 
 class TestScriptFileLua(unittest.TestCase):
-    """ScriptFile's .lua wiring (read/write dispatch, validate=True guard) -
+    """ScriptFile's .lua wiring (read/write dispatch, validate=True) -
     the lexer/parser/printer functions above are exercised directly by every
     other test in this module; this covers the wrapper that dispatches to
     them by file extension."""
@@ -263,10 +263,15 @@ class TestScriptFileLua(unittest.TestCase):
             if os.path.exists(out_path):
                 os.remove(out_path)
 
-    def test_validate_true_is_rejected_for_lua(self):
+    def test_validate_true_checks_lua(self):
         script = ScriptFile().read(_helpers.sample_path('sample.lua'))
-        with self.assertRaises(NotImplementedError):
-            script.write(os.path.join(_helpers.SAMPLES_DIR, '_unused.lua'), validate=True)
+        self.assertEqual([f for f in script.validate() if f['severity'] == 'issue'], [])
+        script.import_data(parse('CreateUnit(Player(0), "hfoo", 0, 0, 270)\n'))
+        out_path = os.path.join(_helpers.SAMPLES_DIR, '_unused.lua')
+        with self.assertRaises(ValueError) as caught:
+            script.write(out_path, validate=True)
+        self.assertIn("line 1: 'CreateUnit' argument 2", str(caught.exception))
+        self.assertFalse(os.path.exists(out_path))
 
 
 class TestLuaObfuscator(unittest.TestCase):

@@ -70,6 +70,7 @@ Full documentation lives in [docs/](docs/README.md):
 - Run the `//! external` calls and Lua `//! externalblock` blocks of a vJass map (ObjectMerger, FileImporter, FileExporter, ConstantMerger), as the World Editor does when saving
 - Check that Lua before opening the editor: errors name the `.j` line they come from
 - A Lua 5.1/5.3 interpreter in pure Python, sandboxed: `wc3files lua script.lua`
+- Check a Reforged `war3map.lua` against the game API (undefined globals, missing `FourCC`, wrong argument counts and types): `wc3files jass war3map.lua --check`
 
 ## Usage Examples
 
