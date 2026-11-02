@@ -450,9 +450,9 @@ class _Lib:
                if self.version == '5.1':
                     return 0
                raise _bad(i, fname, 'number has no integer representation')
-          if v.is_integer():
-               return int(v)
           if self.version == '5.1':
+               return int(v)
+          if v.is_integer() and -9223372036854775808.0 <= v < 9223372036854775808.0:
                return int(v)
           raise _bad(i, fname, 'number has no integer representation')
 
@@ -508,7 +508,24 @@ def _fn(table, name, fn):
 
 def _install_base(vm, lib, g):
      def print_(args):
-          vm.host.write_output('\t'.join(vm.tostring(a) for a in args) + '\n')
+          # Lua's print calls whatever the global 'tostring' is now
+          tostring = vm.globals.hash.get('tostring')
+          if tostring is builtin_tostring[0]:
+               texts = [vm.tostring(a) for a in args]
+          else:
+               texts = []
+               for a in args:
+                    r = vm.call(tostring, [a], "global 'tostring'")
+                    s = r[0] if r else None
+                    if type(s) is not str:
+                         if type(s) in (int, float):
+                              s = vm.tostring(s)
+                         else:
+                              raise LuaError("'tostring' must return a string to 'print'")
+                    texts.append(s)
+          vm.host.write_output('\t'.join(texts) + '\n')
+
+     builtin_tostring = [None]
 
      def type_(args):
           lib.check_any(args, 0, 'type')
@@ -546,19 +563,23 @@ def _install_base(vm, lib, g):
           value = -value if negative else value
           return [_wrap(value) if vm.version != '5.1' else value]
 
+     raw_ipairs = vm.version == '5.1'
+
+     def ipairs_iterate(a):
+          i = a[1] + 1
+          obj = a[0]
+          if raw_ipairs and type(obj) is LuaTable:
+               v = obj.hash.get(i)
+          else:
+               v = vm.index(obj, i)
+          return [None] if v is None else [i, v]
+
+     # one iterator function for every call, as Lua returns (ipairs{} == ipairs{})
+     ipairs_iterator = PyFunction(ipairs_iterate, 'ipairs_iterator')
+
      def ipairs(args):
           t = lib.check_any(args, 0, 'ipairs')
-          raw = vm.version == '5.1'
-
-          def iterate(a):
-               i = a[1] + 1
-               obj = a[0]
-               if raw and type(obj) is LuaTable:
-                    v = obj.hash.get(i)
-               else:
-                    v = vm.index(obj, i)
-               return [None] if v is None else [i, v]
-          return [PyFunction(iterate, 'ipairs_iterator'), t, 0]
+          return [ipairs_iterator, t, 0]
 
      def pairs(args):
           t = lib.check_any(args, 0, 'pairs')
@@ -688,6 +709,8 @@ def _install_base(vm, lib, g):
                    {'stop', 'restart', 'collect', 'count', 'step', 'setpause',
                     'setstepmul', 'isrunning', 'generational', 'incremental'})
 
+     gc_state = {'running': True}
+
      def collectgarbage(args):
           option = lib.opt_str(args, 0, 'collectgarbage', 'collect')
           if option not in gc_options:
@@ -695,10 +718,18 @@ def _install_base(vm, lib, g):
           if option == 'collect':
                import gc
                gc.collect()
+          if option == 'stop':
+               gc_state['running'] = False
+          elif option == 'restart':
+               gc_state['running'] = True
           if option == 'count':
                return [0.0, 0] if vm.version == '5.1' else [0.0]
-          if option in ('step', 'isrunning'):
-               return [True]
+          if option == 'isrunning':
+               return [gc_state['running']]
+          if option == 'step':
+               import gc
+               gc.collect()
+               return [True]           # a step always finishes a full cycle here
           return [0]
 
      def load(args):
@@ -720,7 +751,13 @@ def _install_base(vm, lib, g):
                     pieces.append(piece)
                text = ''.join(pieces)
                name = name if name is not None else '=(load)'
-          return _load_text(vm, text, name)
+          if vm.version == '5.1':
+               return _load_text(vm, text, name)
+          # 5.2+: load(chunk, name, mode, env); an env given, even nil,
+          # becomes the chunk's _ENV
+          mode = lib.opt_str(args, 2, 'load', 'bt')
+          has_env = len(args) > 3
+          return _load_text(vm, text, name, mode, args[3] if has_env else None, has_env)
 
      def loadstring(args):
           text = lib.check_str(args, 0, 'loadstring')
@@ -731,7 +768,10 @@ def _install_base(vm, lib, g):
           path = lib.opt_str(args, 0, 'loadfile', None)
           if path is None:
                return [None, 'reading from stdin is not supported']
-          return _load_file(vm, path)
+          result = _load_file(vm, path)
+          if vm.version != '5.1' and len(args) > 2 and result[0] is not None:
+               result[0].upvals[0].v = args[2]          # loadfile(path, mode, env)
+          return result
 
      def dofile(args):
           path = lib.opt_str(args, 0, 'dofile', None)
@@ -783,6 +823,7 @@ def _install_base(vm, lib, g):
      ]:
           _fn(g, name, fn)
      g.set('next', vm.next_function)
+     builtin_tostring[0] = g.get('tostring')
 
      def newproxy(args):
           proxy = LuaUserdata()
@@ -816,7 +857,7 @@ def chunk_id(source):
           if len(name) > 59:
                name = '...' + name[-56:]
           return name
-     length = len(re.split(r'[\n\r]', source, 1)[0])
+     length = len(re.split(r'[\n\r]', source, maxsplit=1)[0])
      limit = 60 - 16
      if length > limit:
           length = limit
@@ -825,14 +866,26 @@ def chunk_id(source):
      return f'[string "{source}"]'
 
 
-def _load_text(vm, text, name):
+def _load_text(vm, text, name, mode='bt', env=None, has_env=False):
      m = re.match(r'^\x1bLuaW(\d+)$', text)
+     binary = text.startswith('\x1b')
+     if binary and 'b' not in mode:
+          return [None, f"attempt to load a binary chunk (mode is '{mode}')"]
+     if not binary and 't' not in mode:
+          return [None, f"attempt to load a text chunk (mode is '{mode}')"]
      if m and int(m.group(1)) < len(vm.dumps):
           from .lua_vm import _Cell
           proto = vm.dumps[int(m.group(1))]
-          return [LuaFunction(proto, [_Cell() for _ in proto.upvals], vm)]
+          cells = [_Cell() for _ in range(max(len(proto.upvals), len(proto.upnames)))]
+          if cells and vm.version != '5.1':
+               # as Lua 5.2+ does, the first upvalue gets the environment
+               cells[0].v = env if has_env else vm.globals
+          return [LuaFunction(proto, cells, vm)]
      try:
-          return [vm.compile(text, chunk_id(name), binary=True, source_name=name)]
+          fn = vm.compile(text, chunk_id(name), binary=True, source_name=name)
+          if has_env and fn.upvals:
+               fn.upvals[0].v = env
+          return [fn]
      except LuaError as error:
           return [None, error.value]
 
@@ -949,7 +1002,7 @@ def _install_string(vm, lib):
      def gmatch(args):
           s = lib.check_str(args, 0, 'gmatch')
           p = lib.check_str(args, 1, 'gmatch')
-          iterator = lua_patterns.gmatch(s, p)
+          iterator = lua_patterns.gmatch(s, p, vm.version != '5.1')
 
           def step(a):
                try:
@@ -987,7 +1040,7 @@ def _install_string(vm, lib):
                     raise LuaError(f'invalid replacement value (a {type_name(value)})')
           else:
                raise _typeerror(args, 2, 'gsub', 'string/function/table')
-          text, count = lua_patterns.gsub(s, p, replacement, max_n)
+          text, count = lua_patterns.gsub(s, p, replacement, max_n, vm.version != '5.1')
           return [text, count]
 
      def format_(args):
@@ -1013,6 +1066,10 @@ def _install_string(vm, lib):
           _fn(string, name, fn)
      if vm.version == '5.1':
           string.set('gfind', string.get('gmatch'))
+     else:
+          from . import lua_strpack
+          for name in ('pack', 'unpack', 'packsize'):
+               _fn(string, name, (lambda f: lambda args: f(lib, args))(getattr(lua_strpack, name)))
      return string
 
 
@@ -1078,8 +1135,7 @@ def _format(vm, lib, args):
                     out.append((spec + conv) % value)
           elif conv in 'aA':
                value = float(lib.check_num(args, index, 'format'))
-               text = value.hex()
-               out.append(text.upper() if conv == 'A' else text)
+               out.append(_format_hexfloat(value, flags, width, precision, conv == 'A'))
           elif conv == 'q':
                out.append(_quoted(vm, args[index]))
           elif conv == 's':
@@ -1087,14 +1143,81 @@ def _format(vm, lib, args):
                if precision is None and not width:
                     out.append(s)
                else:
+                    if '\0' in s and vm.version != '5.1':
+                         raise _bad(index, 'format', 'string contains zeros')
                     out.append((spec + 's') % s)
           else:
                raise LuaError(f"invalid option '%{conv}' to 'format'")
      return ''.join(out)
 
 
+def _format_hexfloat(value, flags, width, precision, upper):
+     """C's %a: 0x1.8p+3, with printf's flags, width and precision."""
+     if value != value or value in (math.inf, -math.inf):
+          body = 'nan' if value != value else 'inf'
+          sign = '-' if math.copysign(1, value) < 0 else ('+' if '+' in flags else
+                                                          (' ' if ' ' in flags else ''))
+          text = sign + body
+          zero = False
+     else:
+          sign = '-' if math.copysign(1, value) < 0 else ('+' if '+' in flags else
+                                                          (' ' if ' ' in flags else ''))
+          value = abs(value)
+          if value == 0:
+               lead, mantissa, exponent = 0, 0, 0
+          else:
+               hexed = value.hex()                     # 0x1.8000000000000p+3
+               head, exp_text = hexed[2:].split('p')
+               lead_text, frac_text = head.split('.')
+               lead = int(lead_text)
+               mantissa = int(frac_text, 16)           # 13 hex digits, 52 bits
+               exponent = int(exp_text)
+          if precision is None:
+               digits = f'{mantissa:013x}'.rstrip('0') if mantissa else ''
+          else:
+               keep = int(precision or 0)
+               if keep < 13:
+                    shift = 4 * (13 - keep)
+                    q, r = divmod(mantissa, 1 << shift)
+                    half = 1 << (shift - 1)
+                    if r > half or (r == half and q & 1):
+                         q += 1
+                    if q >> (4 * keep):                 # carried into the lead digit
+                         q -= 1 << (4 * keep)
+                         lead += 1
+                    digits = f'{q:0{keep}x}' if keep else ''
+               else:
+                    digits = f'{mantissa:013x}' + '0' * (keep - 13)
+          point = '.' if digits or '#' in flags else ''
+          text = f'{sign}0x{lead}{point}{digits}p{"-" if exponent < 0 else "+"}{abs(exponent)}'
+          zero = '0' in flags and '-' not in flags
+     size = int(width) if width else 0
+     if len(text) < size:
+          if '-' in flags:
+               text = text + ' ' * (size - len(text))
+          elif zero:
+               prefix = len(sign) + 2
+               text = text[:prefix] + '0' * (size - len(text)) + text[prefix:]
+          else:
+               text = ' ' * (size - len(text)) + text
+     return text.upper() if upper else text
+
+
 def _quoted(vm, value):
      if type(value) is not str:
+          if vm.version != '5.1' and type(value) is int:
+               # mininteger has no decimal literal form; Lua 5.3 writes it in hex
+               return '0x8000000000000000' if value == -(1 << 63) else str(value)
+          if vm.version != '5.1' and type(value) is float:
+               if value == math.inf:
+                    return '1e9999'
+               if value == -math.inf:
+                    return '-1e9999'
+               if value != value:
+                    return '(0/0)'
+               if value.is_integer() and abs(value) < 1e16:
+                    return vm.tostring(value)       # '%q' keeps it a float: 3.0
+               return value.hex()
           if is_number(value) or value is None or type(value) is bool:
                return vm.tostring(value)
           raise LuaError("bad argument to 'format' (value has no literal form)")
@@ -1341,6 +1464,8 @@ def _install_math(vm, lib):
                return [math.nan]
 
      def modf(args):
+          if not v51 and type(_arg(args, 0)) is int:
+               return [args[0], 0.0]           # an integer is its own integer part
           x = float(lib.check_num(args, 0, 'modf'))
           if x in (math.inf, -math.inf):
                return [x, 0.0]
@@ -1829,7 +1954,7 @@ def _install_io(vm, lib):
           f = check_file(args, 0, 'flush')
           if f.handle is not None and f.writer is None:
                f.handle.flush()
-          return [f]
+          return [True]
 
      def m_setvbuf(args):
           check_file(args, 0, 'setvbuf')
@@ -1903,7 +2028,14 @@ def _install_io(vm, lib):
      def tmpfile(args):
           return [new_file(pyio.BytesIO(), 'tmpfile')]
 
+     def io_flush(args):
+          f = state['output']
+          if f.handle is not None and f.writer is None:
+               f.handle.flush()
+          return [True]
+
      for name, fn in [('open', open_), ('write', io_write), ('read', io_read),
+                      ('flush', io_flush),
                       ('lines', io_lines), ('close', io_close), ('type', io_type),
                       ('output', io_output), ('input', io_input), ('popen', popen),
                       ('tmpfile', tmpfile)]:
@@ -1938,13 +2070,24 @@ def _install_coroutine(vm, lib):
           return current.yield_(args)
 
      def status(args):
-          return [check_co(args, 0, 'status').status]
+          co = check_co(args, 0, 'status')
+          if co is main_thread[0]:
+               return ['running' if vm.current_coroutine is None else 'normal']
+          return [co.status]
+
+     main_thread = [None]
 
      def running(args):
           current = vm.current_coroutine
           if vm.version == '5.1':
                return [current]
-          return [current, current is None]
+          if current is None:
+               # 5.2+ always name a thread: the main one when outside any coroutine
+               if main_thread[0] is None:
+                    main_thread[0] = Coroutine(vm, None)
+                    main_thread[0].status = 'running'
+               return [main_thread[0], True]
+          return [current, False]
 
      def wrap(args):
           c = Coroutine(vm, lib.check_fn(args, 0, 'wrap'))
@@ -2026,6 +2169,9 @@ def _install_debug(vm, lib):
                start = 1
           target = _arg(args, start)
           what = lib.opt_str(args, start + 1, 'getinfo', 'flnSu')
+          valid = 'SlnufL' if vm.version == '5.1' else 'SlnrutfL'
+          if any(c not in valid for c in what):
+               raise _bad(start + 1, 'getinfo', 'invalid option')
           if type(target) in (LuaFunction, PyFunction):
                return [info_for(target, None, what.replace('l', ''))]
           level = lib.check_int(args, start, 'getinfo')

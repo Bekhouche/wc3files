@@ -790,10 +790,19 @@ class _Compiler:
           proto.positions = self.positions
           proto.source = self.source
           self.fs = _FuncState(None, True, 0, self)
+          if self.vm.version != '5.1':
+               # Lua 5.2+: a main chunk has exactly one upvalue, _ENV, and
+               # every free name is a field of whatever _ENV is in scope
+               self.fs.upnames['_ENV'] = 0
+               proto.upnames = ['_ENV']
           proto.body = self.block(chunk.body)
           proto.nslots = self.fs.nslots
           proto.slotnames = self.fs.slotnames
           return proto
+
+     def env_access(self):
+          """5.2+: (kind, index) of the _ENV in scope for a free name."""
+          return self.fs.resolve('_ENV')
 
      def function(self, params, is_vararg, body, name, line, method=False):
           outer = self.fs
@@ -840,10 +849,13 @@ class _Compiler:
           for index, stmt in enumerate(statements):
                if isinstance(stmt, ir.LabelStmt):
                     if stmt.name in labels:
+                         first = getattr(statements[labels[stmt.name]], 'line', None)
                          raise LuaCompileError(
                               f"{self.position(getattr(stmt, 'line', None))}: "
-                              f"label '{stmt.name}' already defined")
+                              f"label '{stmt.name}' already defined on line {first}")
                     labels[stmt.name] = index
+          if labels:
+               _check_goto_scopes(self, statements, labels)
           fs.labels.append(set(labels))
           try:
                compiled = [self.statement(s) for s in statements]
@@ -1252,9 +1264,10 @@ class _Compiler:
 
      def stmt_GotoStmt(self, stmt):
           if not any(stmt.label in labels for labels in self.fs.labels):
+               line = getattr(stmt, 'line', None)
                raise LuaCompileError(
-                    f"{self.position(getattr(stmt, 'line', None))}: "
-                    f"no visible label '{stmt.label}' for goto")
+                    f"{self.position(line)}: "
+                    f"no visible label '{stmt.label}' for <goto> at line {line}")
           signal = _Goto(stmt.label)
           return lambda f: signal
 
@@ -1299,6 +1312,21 @@ class _Compiler:
                     return store_up
                vm = self.vm
                name = target.name
+               if vm.version != '5.1':
+                    env_kind, env_index = self.env_access()
+
+                    def store_env_field(f, v):
+                         env = (f.regs if env_kind == 'local' else f.up)[env_index].v
+                         if type(env) is LuaTable and env.metatable is None:
+                              if v is None:
+                                   env.hash.pop(name, None)
+                              else:
+                                   if name not in env.hash:
+                                        env._keys = None
+                                   env.hash[name] = v
+                         else:
+                              vm.setindex(env, name, v, "upvalue '_ENV'")
+                    return store_env_field
 
                def store_global(f, v):
                     env = f.fn.env
@@ -1381,6 +1409,17 @@ class _Compiler:
                return lambda f: f.up[index].v
           vm = self.vm
           name = expr.name
+          if vm.version != '5.1':
+               env_kind, env_index = self.env_access()
+
+               def get_env_field(f):
+                    env = (f.regs if env_kind == 'local' else f.up)[env_index].v
+                    if type(env) is LuaTable:
+                         v = env.hash.get(name)
+                         if v is not None or env.metatable is None:
+                              return v
+                    return vm.index(env, name, "upvalue '_ENV'")
+               return get_env_field
 
           def get_global(f):
                env = f.fn.env
@@ -1458,6 +1497,11 @@ class _Compiler:
      def call(self, expr, multi):
           vm = self.vm
           args = self.explist(expr.args)
+          # Lua gives a call the line its prefix expression starts on, which
+          # can differ from the statement's (a call after a multi-line string)
+          line = _start_line(expr)
+          if line is None:
+               line = self.line
           if isinstance(expr, ir.LuaMethodCallExpr):
                obj = self.expr(expr.obj)
                method = expr.method
@@ -1469,6 +1513,7 @@ class _Compiler:
                     fn = vm.index(o, method, obj_desc)
                     a = args(f)
                     a.insert(0, o)
+                    f.line = line
                     return vm.call(fn, a, desc)
           else:
                func = self.expr(expr.func)
@@ -1476,7 +1521,9 @@ class _Compiler:
 
                def run(f):
                     fn = func(f)
-                    return vm.call(fn, args(f), desc)
+                    a = args(f)
+                    f.line = line
+                    return vm.call(fn, a, desc)
           if multi and not getattr(expr, 'paren', False):
                return run
 
@@ -1769,12 +1816,19 @@ class LuaVM:
           except (LuaParseError, LuaLexError) as error:
                line = getattr(error, 'line', None)
                where = _position_of(chunkname, positions, line)
-               raise LuaError(f'{where}: {_syntax_message(error)}', level=0) from None
+               message = _syntax_message(error)
+               if self.version != '5.1':
+                    # 5.1 quotes <eof> like any token; 5.2+ do not
+                    message = message.replace("near '<eof>'", 'near <eof>')
+               raise LuaError(f'{where}: {message}', level=0) from None
           compiler = _Compiler(self, chunkname, positions, source_name)
           try:
                proto = compiler.compile_chunk(tree)
           except LuaCompileError as error:
                raise LuaError(str(error), level=0) from None
+          if self.version != '5.1':
+               return LuaFunction(proto, [_Cell(self.globals if env is None else env)],
+                                  self, env)
           return LuaFunction(proto, [], self, env)
 
      def execute(self, source, chunkname='?', positions=None, args=(), binary=False):
@@ -1819,7 +1873,7 @@ class LuaVM:
           handler = self._metamethod(fn, '__call')
           if handler is not None:
                return self.call(handler, [fn] + list(args))
-          raise LuaError(_op_error('call', fn, desc))
+          raise LuaError(_op_error('call', fn, desc, self.version))
 
      def _call_lua(self, fn, args):
           proto = fn.proto
@@ -1927,7 +1981,7 @@ class LuaVM:
                else:
                     handler = self._metamethod(o, '__index')
                     if handler is None:
-                         raise LuaError(_op_error('index', o, desc))
+                         raise LuaError(_op_error('index', o, desc, self.version))
                if type(handler) is LuaFunction or type(handler) is PyFunction:
                     r = self.call(handler, [o, k])
                     return r[0] if r else None
@@ -1949,7 +2003,7 @@ class LuaVM:
                else:
                     handler = self._metamethod(o, '__newindex')
                     if handler is None:
-                         raise LuaError(_op_error('index', o, desc))
+                         raise LuaError(_op_error('index', o, desc, self.version))
                if type(handler) is LuaFunction or type(handler) is PyFunction:
                     self.call(handler, [o, k, v])
                     return
@@ -2006,14 +2060,14 @@ class LuaVM:
                     (type(a) is not float or a.is_integer()) else (a, adesc)
                if is_number(bad):
                     raise LuaError('number has no integer representation')
-               raise LuaError(_op_error('perform bitwise operation on', bad, desc))
+               raise LuaError(_op_error('perform bitwise operation on', bad, desc, self.version))
           bad, desc = (b, bdesc) if x is not None else (a, adesc)
-          raise LuaError(_op_error('perform arithmetic on', bad, desc))
+          raise LuaError(_op_error('perform arithmetic on', bad, desc, self.version))
 
      def _toint(self, v):
           if type(v) is int:
                return v
-          if v.is_integer():
+          if v.is_integer() and -9223372036854775808.0 <= v < 9223372036854775808.0:
                return int(v)
           raise LuaError('number has no integer representation')
 
@@ -2029,7 +2083,7 @@ class LuaVM:
                r = self.call(handler, [a, b])
                return r[0] if r else None
           bad, desc = (b, bdesc) if (ta is str or ta is int or ta is float) else (a, adesc)
-          raise LuaError(_op_error('concatenate', bad, desc))
+          raise LuaError(_op_error('concatenate', bad, desc, self.version))
 
      def length(self, v, desc=None):
           if type(v) is str:
@@ -2040,7 +2094,7 @@ class LuaVM:
                return r[0] if r else None
           if type(v) is LuaTable:
                return v.length()
-          raise LuaError(_op_error('get length of', v, desc))
+          raise LuaError(_op_error('get length of', v, desc, self.version))
 
      def eq(self, a, b):
           if a is b:
@@ -2204,9 +2258,70 @@ _LEX_MESSAGES = {
 }
 
 
+def _gotos_leaving(stmt, label):
+     """The `goto label` statements in `stmt` that jump out of it: not
+     inside a nested function, and not caught by a nested label of that name."""
+     if isinstance(stmt, ir.GotoStmt):
+          if stmt.label == label:
+               yield stmt
+          return
+     bodies = []
+     if isinstance(stmt, (ir.DoStmt, ir.WhileStmt, ir.RepeatStmt, ir.NumericForStmt,
+                          ir.GenericForStmt)):
+          bodies.append(stmt.body)
+     elif isinstance(stmt, ir.IfStmt):
+          bodies.extend(body for _, body in stmt.branches)
+          if stmt.else_body is not None:
+               bodies.append(stmt.else_body)
+     for body in bodies:
+          if any(isinstance(s, ir.LabelStmt) and s.name == label for s in body):
+               continue
+          for inner in body:
+               yield from _gotos_leaving(inner, label)
+
+
+def _check_goto_scopes(compiler, statements, labels):
+     """Lua rejects a forward goto into the scope of a local declared
+     between it and its label, unless the label ends the block (only labels
+     and empty statements follow it)."""
+     for name, target in labels.items():
+          if all(isinstance(s, ir.LabelStmt) for s in statements[target + 1:]):
+               continue
+          for index in range(target):
+               for goto in _gotos_leaving(statements[index], name):
+                    for between in statements[index + 1:target]:
+                         if isinstance(between, ir.LocalStmt):
+                              local = between.names[0]
+                         elif isinstance(between, ir.LocalFunctionStmt):
+                              local = between.name
+                         else:
+                              continue
+                         line = getattr(goto, 'line', None)
+                         raise LuaCompileError(
+                              f"{compiler.position(line)}: <goto {name}> at line {line} "
+                              f"jumps into the scope of local '{local}'")
+
+
+def _start_line(expr):
+     """The line a suffixed expression (`a.b:c(d)(e)`) starts on."""
+     while True:
+          if getattr(expr, 'paren', False):
+               return getattr(expr, 'line', None)
+          if isinstance(expr, ir.LuaCallExpr):
+               expr = expr.func
+          elif isinstance(expr, ir.LuaMethodCallExpr):
+               expr = expr.obj
+          elif isinstance(expr, ir.IndexExpr):
+               expr = expr.obj
+          else:
+               return getattr(expr, 'line', None)
+
+
 def _syntax_message(error):
      """A parser or lexer error worded the way Lua words it: `'=' expected
      near 'x'`."""
+     if getattr(error, 'lua_message', None):
+          return error.lua_message
      message = getattr(error, 'message', str(error))
      token = getattr(error, 'token', None)
      if token is None:
@@ -2246,9 +2361,13 @@ def _arg_type(args, i):
      return type_name(args[i]) if i < len(args) else 'no value'
 
 
-def _op_error(what, value, desc):
-     if desc:
+def _op_error(what, value, desc, version='5.1'):
+     # 5.1: "attempt to index global 'x' (a nil value)";
+     # 5.2+: "attempt to index a nil value (global 'x')"
+     if desc and version == '5.1':
           return f'attempt to {what} {desc} (a {type_name(value)} value)'
+     if desc:
+          return f'attempt to {what} a {type_name(value)} value ({desc})'
      return f'attempt to {what} a {type_name(value)} value'
 
 
@@ -2274,7 +2393,7 @@ def _div(a, b):
 def _mod(a, b):
      if type(a) is int and type(b) is int:
           if b == 0:
-               raise LuaError("attempt to perform 'n%%0'")
+               raise LuaError("attempt to perform 'n%0'")
           return a % b
      a = float(a)
      b = float(b)
@@ -2295,8 +2414,8 @@ def _mod(a, b):
 def _idiv(a, b):
      if type(a) is int and type(b) is int:
           if b == 0:
-               raise LuaError("attempt to perform 'n//0'")
-          return a // b
+               raise LuaError('attempt to divide by zero')
+          return _wrap(a // b)            # minint // -1 wraps to minint
      q = _div(a, b)
      if q != q or q in (math.inf, -math.inf):
           return q
@@ -2304,12 +2423,20 @@ def _idiv(a, b):
 
 
 def _pow(a, b):
+     """C's pow: Python raises where C returns an infinity or NaN."""
+     a = float(a)
+     b = float(b)
      try:
-          return math.pow(float(a), float(b))
-     except OverflowError:
-          return math.inf
-     except ValueError:
-          return math.nan
+          return math.pow(a, b)
+     except (OverflowError, ValueError):
+          odd = b.is_integer() and b % 2 == 1
+          if a == 0:                      # pole: 0^-n
+               return -math.inf if odd and math.copysign(1, a) < 0 else math.inf
+          if a < 0 and not b.is_integer():
+               return math.nan
+          if abs(a) < 1:                  # underflow from a large negative power
+               return math.inf if b < 0 else 0.0
+          return -math.inf if a < 0 and odd else math.inf
 
 
 def _unm(a, b):

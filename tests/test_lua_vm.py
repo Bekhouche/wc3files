@@ -382,5 +382,75 @@ class TestPythonInterop(unittest.TestCase):
         self.assertEqual(vm.to_python(vm.execute('return "é"', 'test')[0]), 'é')
 
 
+class TestLua53(unittest.TestCase):
+    """Lua 5.3 behaviour, the version Reforged runs; each case comes from a
+    failure of the official 5.3.4 test suite."""
+
+    def test_string_pack(self):
+        self.assertEqual(run('''
+            local s = string.pack(">I2 s1 z i16", 0x1234, "hi", "yo", -3)
+            local a, b, c, d, n = string.unpack(">I2 s1 z i16", s)
+            return a, b, c, d, n, string.packsize("!i1i8"), #s
+        ''', '5.3'), [0x1234, 'hi', 'yo', -3, 25, 16, 24])
+        self.assertIn('integer overflow', error_of('string.pack("i1", 200)', '5.3'))
+        self.assertIn('variable-length format', error_of('string.packsize("s")', '5.3'))
+
+    def test_env(self):
+        self.assertEqual(run('''
+            local function f(_ENV) return x end
+            local r = f({x = 7})
+            do local _ENV = {y = 3}; r = r + y end
+            local g = setmetatable({}, {__index = _G})
+            local h = load("z = 5; return z", "c", "t", g)
+            return r, h(), g.z, rawget(_G, "z") == nil, (debug.getupvalue(h, 1))
+        ''', '5.3'), [10, 5, 5, True, '_ENV'])
+
+    def test_env_assignment_redirects_globals(self):
+        self.assertEqual(run('''
+            X = 20
+            _ENV = setmetatable({}, {__index = _G})
+            X = X + 10
+            return X, _G.X
+        ''', '5.3'), [30, 20])
+
+    def test_numerals_and_escapes(self):
+        self.assertEqual(run('return 0xF0.0 | 0, 0x.8p4, 0x7fffffffffffffff + 1 == math.mininteger, '
+                             '"\\u{48}\\u{e9}"', '5.3'), [240, 8.0, True, 'H\xc3\xa9'])
+        self.assertIn("malformed number near '0.23e'", error_of('return 0.23e', '5.3'))
+        self.assertIn("near '\"abc\\x\"'", error_of('return "abc\\x"', '5.3'))
+
+    def test_lastmatch_rule(self):
+        self.assertEqual(run('return (string.gsub("a b cd", " *", "-"))', '5.3'), ['-a-b-c-d-'])
+        self.assertEqual(run('return (string.gsub("a b cd", " *", "-"))', '5.1'), ['-a--b--c-d-'])
+
+    def test_goto_errors(self):
+        self.assertIn("jumps into the scope of local 'aa'",
+                      error_of('goto l1; local aa ::l1:: ::l2:: print(3)', '5.3'))
+        self.assertIn("no visible label 'l1' for <goto> at line 1",
+                      error_of('do ::l1:: end goto l1', '5.3'))
+        # a label that ends its block is outside the local's scope
+        self.assertEqual(run('do goto l1; local a = 1; ::l1:: end return 1', '5.3'), [1])
+
+    def test_messages_and_arithmetic(self):
+        self.assertIn("attempt to index a nil value (global 'aaa')",
+                      error_of('aaa = nil; return aaa.b', '5.3'))
+        self.assertIn("attempt to index global 'aaa' (a nil value)",
+                      error_of('aaa = nil; return aaa.b', '5.1'))
+        self.assertIn('attempt to divide by zero', error_of('return 2 // 0', '5.3'))
+        self.assertIn("attempt to perform 'n%0'", error_of('return 1 % 0', '5.3'))
+        self.assertEqual(run('return math.mininteger // -1 == math.mininteger, 0^-1, '
+                             'string.format("%+.2A|%a", 12, 1)', '5.3'),
+                         [True, float('inf'), '+0X1.80P+3|0x1p+0'])
+        self.assertIn('no integer representation', error_of('return "0xffffffffffffffff.0" | 0', '5.3'))
+
+    def test_library_details(self):
+        self.assertEqual(run('''
+            local main, ismain = coroutine.running()
+            return ipairs{} == ipairs{}, type(main), ismain, math.type((math.modf(3))),
+                   string.format("%q", math.mininteger), io.flush()
+        ''', '5.3'), [True, 'thread', True, 'integer', '0x8000000000000000', True])
+        self.assertIn('invalid option', error_of('debug.getinfo(print, "X")', '5.3'))
+
+
 if __name__ == '__main__':
     unittest.main()

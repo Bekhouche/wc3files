@@ -334,22 +334,30 @@ def find(src, pattern, init=0, plain=False, find_mode=True):
           s1 += 1
 
 
-def gmatch(src, pattern):
-     """Generator of capture lists, as string.gmatch iterates them."""
+def gmatch(src, pattern, lastmatch_rule=False):
+     """Generator of capture lists, as string.gmatch iterates them.
+
+     `lastmatch_rule` is Lua 5.3.4's: a match may not end where the previous
+     one did, so an empty match right after a match is skipped. Lua 5.1
+     instead steps one character past every empty match."""
      ms = _MatchState(src, pattern)
      s = 0
+     last = -1
      while s <= ms.slen:
           ms.reset()
           e = ms.do_match(s, 0)
-          if e != -1:
+          if e != -1 and not (lastmatch_rule and e == last):
                result = ms.captures(s, e)
-               s = e + 1 if e == s else e
+               if lastmatch_rule:
+                    s = last = e
+               else:
+                    s = e + 1 if e == s else e
                yield result
           else:
                s += 1
 
 
-def gsub(src, pattern, repl, max_n=None):
+def gsub(src, pattern, repl, max_n=None, lastmatch_rule=False):
      """string.gsub. `repl` is a string with `%0`-`%9`, or a callable taking
      the capture list and returning a replacement string, or None to keep the
      match. Returns (text, count)."""
@@ -358,10 +366,25 @@ def gsub(src, pattern, repl, max_n=None):
      p = 1 if anchor else 0
      s = 0
      n = 0
+     last = -1
      out = []
      while max_n is None or n < max_n:
           ms.reset()
           e = ms.do_match(s, p)
+          if lastmatch_rule:
+               # Lua 5.3.4: no match may end where the previous one did
+               if e != -1 and e != last:
+                    n += 1
+                    out.append(_replacement(ms, s, e, repl))
+                    s = last = e
+               elif s < ms.slen:
+                    out.append(src[s])
+                    s += 1
+               else:
+                    break
+               if anchor:
+                    break
+               continue
           if e != -1:
                n += 1
                out.append(_replacement(ms, s, e, repl))

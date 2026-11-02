@@ -65,11 +65,15 @@ class Token:
 
 
 class LuaLexError(Exception):
-     def __init__(self, message, line, col):
+     """`lua_message`, when set, is the error as Lua words it (with its
+     `near` part); the interpreter reports that one."""
+
+     def __init__(self, message, line, col, lua_message=None):
           super().__init__(f'{message} at line {line}, column {col}')
           self.line = line
           self.col = col
           self.message = message
+          self.lua_message = lua_message
 
 
 class _Scanner:
@@ -194,7 +198,10 @@ def _try_read_long_bracket(scanner, as_comment=False):
      text_start = scanner.pos
      while True:
           if scanner.at_end():
-               raise LuaLexError('unterminated long bracket', start_line, start_col)
+               what = 'comment' if as_comment else 'string'
+               where = '' if scanner.lua51 else f' (starting at line {start_line})'
+               raise LuaLexError('unterminated long bracket', start_line, start_col,
+                                 f"unfinished long {what}{where} near '<eof>'")
           if scanner.peek() == ']' and scanner.source.startswith(closer, scanner.pos):
                text = scanner.source[text_start:scanner.pos]
                for _ in closer:
@@ -213,14 +220,30 @@ def _read_short_string(scanner):
      chars = []
      while True:
           if scanner.at_end() or scanner.peek() == '\n':
-               raise LuaLexError('unterminated string', start_line, start_col)
+               # Lua names what it has read so far, or <eof>
+               near = '<eof>' if scanner.at_end() else f"'{quote}{''.join(chars)}'"
+               raise LuaLexError('unterminated string', start_line, start_col,
+                                 f'unfinished string near {near}')
           ch = scanner.peek()
           if ch == quote:
                scanner.advance()
                break
           if ch == '\\':
                scanner.advance()
-               chars.append(_read_escape(scanner, start_line, start_col))
+               begin = scanner.pos
+               try:
+                    chars.append(_read_escape(scanner, start_line, start_col))
+               except LuaLexError as error:
+                    if error.lua_message is None:
+                         # as Lua's lexer buffer holds it: the string so far,
+                         # the escape, and the character that broke it
+                         text = scanner.source[begin:scanner.pos]
+                         if not scanner.at_end():
+                              text += scanner.peek()
+                         base = error.message.split(' \\')[0]
+                         error.lua_message = (f"{base} near "
+                                              f"'{quote}{''.join(chars)}\\{text}'")
+                    raise
                continue
           chars.append(scanner.advance())
      return Token('STRING', ''.join(chars), start_line, start_col)
@@ -243,7 +266,11 @@ def _read_escape(scanner, start_line, start_col):
                     digits += scanner.advance()
                else:
                     break
+          if int(digits) > 255:
+               raise LuaLexError('decimal escape too large', scanner.line, scanner.col)
           return chr(int(digits))
+     if ch == 'u' and not scanner.lua51:
+          return _read_utf8_escape(scanner)
      if ch == 'x':
           scanner.advance()
           hex_digits = ''
@@ -267,29 +294,74 @@ def _read_escape(scanner, start_line, start_col):
      return _ESCAPES[ch]
 
 
-def _read_number(scanner):
-     start_line, start_col = scanner.line, scanner.col
-     text = ''
-     if scanner.peek() == '0' and scanner.peek(1) in _HEX_MARKER:
-          text += scanner.advance()
-          text += scanner.advance()
-          while scanner.peek() in _HEX_DIGITS:
-               text += scanner.advance()
-          return Token('NUMBER', text, start_line, start_col)
+def _read_utf8_escape(scanner):
+     """Lua 5.3's `\\u{XXX}`: a code point up to 2^31, written as (extended)
+     UTF-8. Strings hold bytes, one per character."""
+     scanner.advance()                               # 'u'
+     if scanner.peek() != '{':
+          raise LuaLexError("missing '{'", scanner.line, scanner.col)
+     scanner.advance()
+     digits = ''
+     while scanner.peek() in _HEX_DIGITS:
+          # checked before the digit is taken, as Lua 5.3 does (5.3 stops at
+          # U+10FFFF; 5.4 allows up to 2^31)
+          if int(digits + scanner.peek(), 16) > 0x10FFFF:
+               raise LuaLexError('UTF-8 value too large', scanner.line, scanner.col)
+          digits += scanner.advance()
+     if not digits:
+          raise LuaLexError('hexadecimal digit expected', scanner.line, scanner.col)
+     if scanner.peek() != '}':
+          raise LuaLexError("missing '}'", scanner.line, scanner.col)
+     scanner.advance()
+     return utf8_encode(int(digits, 16))
 
-     while scanner.peek() in _DIGITS:
+
+def utf8_encode(code):
+     """Lua's luaO_utf8esc: UTF-8, extended to six bytes for values up to
+     0x7FFFFFFF. Returned as a str of byte values."""
+     if code < 0x80:
+          return chr(code)
+     out = []
+     limit = 0x3F
+     while code > limit:
+          out.append(0x80 | (code & 0x3F))
+          code >>= 6
+          limit >>= 1
+     out.append(((~limit << 1) & 0xFF) | code)
+     return ''.join(chr(b) for b in reversed(out))
+
+
+def _read_number(scanner):
+     """Read a numeral the way Lua's read_numeral does: take every hex digit,
+     '.' and exponent (with its sign) in a row, then check the whole thing is
+     a valid number - so `0xF0.0`, `0x.8p4` and `3e-2` read in full, and
+     `0.23e` or `3..2` is a malformed number rather than two tokens."""
+     start_line, start_col = scanner.line, scanner.col
+     text = scanner.advance()
+     exponent = {'e', 'E'}
+     if text == '0' and scanner.peek() in _HEX_MARKER:
           text += scanner.advance()
-     if scanner.peek() == '.':
-          text += scanner.advance()
-          while scanner.peek() in _DIGITS:
+          exponent = {'p', 'P'}
+     while True:
+          ch = scanner.peek()
+          if ch in exponent:
                text += scanner.advance()
-     if scanner.peek() in _EXPONENT_MARKER:
-          text += scanner.advance()
-          if scanner.peek() in _SIGN:
+               if scanner.peek() in _SIGN:
+                    text += scanner.advance()
+          elif ch in _HEX_DIGITS or ch == '.':
                text += scanner.advance()
-          while scanner.peek() in _DIGITS:
-               text += scanner.advance()
+          elif scanner.lua51 and (ch in _NAME_CONT):
+               text += scanner.advance()       # 5.1 also takes letters and '_'
+          else:
+               break
+     from .lua_vm import str_to_number
+     if str_to_number(text) is None or (scanner.lua51 and _is_hex_float(text)):
+          raise LuaLexError(f"malformed number near '{text}'", start_line, start_col)
      return Token('NUMBER', text, start_line, start_col)
+
+
+def _is_hex_float(text):
+     return text[:2] in ('0x', '0X') and any(c in text for c in '.pP')
 
 
 def _read_name(scanner):

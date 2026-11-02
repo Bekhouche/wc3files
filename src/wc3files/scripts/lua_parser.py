@@ -543,12 +543,19 @@ def _parse_atom(stream):
 
 
 def _literal_from_number(token):
+     # The lexer has already checked the numeral, with the interpreter's own
+     # conversion: hex integers wrap around, hex floats (0x1.8p3) and decimal
+     # integers too large for 64 bits become floats, as in Lua 5.3.
+     # A hex integer stays unwrapped here (0xFFFFFFFFFFFFFFFF, not -1) so the
+     # printer never writes a negative literal; the interpreter wraps it.
+     from .lua_vm import str_to_number
      text = token.value
-     if text[:2].lower() == '0x':
+     if text[:2].lower() == '0x' and all(c in '0123456789abcdefABCDEF' for c in text[2:]):
           return ir.Literal('int', int(text, 16))
-     if '.' in text or 'e' in text or 'E' in text:
-          return ir.Literal('real', float(text))
-     return ir.Literal('int', int(text))
+     value = str_to_number(text)
+     if isinstance(value, int):
+          return ir.Literal('int', value)
+     return ir.Literal('real', value)
 
 
 def _parse_prefixexp(stream):
