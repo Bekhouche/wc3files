@@ -70,6 +70,35 @@ triggers.read('war3map.wtg')
 The argument count cannot be guessed - get it wrong and every later parameter
 is read as something else - so the library refuses instead.
 
+### YDWE's ui folder
+
+An extended editor (YDWE and the plugins built on it) keeps its GUI
+functions not in `TriggerData.txt` but in a `ui` folder: `define.txt` with
+the type and category sections, and `event.txt`, `condition.txt`,
+`action.txt`, `call.txt` with one section per function (title,
+description, category, script name, arguments). `trigger-ui` converts
+between the two, as w3x2lni's ui-builder does:
+
+```bash
+wc3files trigger-ui TriggerData.txt TriggerStrings.txt ui/   # editor files -> ui folder
+wc3files trigger-ui ui/ plugin1/ plugin2/ out/               # ui folders, merged -> editor files
+wc3files trigger-ui ui/ out/ --lang zhCN                     # with a language's text
+```
+
+```python
+from wc3files.wtg import ydwe_ui
+
+ui = ydwe_ui.read_trigger_data(data_text, strings_text)
+ydwe_ui.write_ui(ui, 'ui')
+merged = ydwe_ui.merge(ydwe_ui.read_ui('ui'), ydwe_ui.read_ui('plugin'))
+data_text, strings_text = ydwe_ui.write_trigger_data(merged)
+```
+
+A later folder's function or type replaces an earlier one of the same name.
+Nothing is dropped either way: each function's version number and AI flags
+are kept, as is a stray line with no declaration. On the bundled Reforged
+files (1,448 functions), both directions give back the same definitions.
+
 ## Parsing the script
 
 Scripts are lexed and parsed to a real syntax tree, not pattern-matched.

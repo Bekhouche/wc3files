@@ -345,6 +345,36 @@ def _cmd_optimize(args):
     return 0
 
 
+def _cmd_trigger_ui(args):
+    """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
+    from wc3files.wtg import ydwe_ui
+    *sources, target = args.inputs
+    if not sources:
+        raise ValueError('give the input(s) and then the output')
+    if all(os.path.isdir(src) for src in sources):
+        merged = ydwe_ui.merge(*(ydwe_ui.read_ui(src, args.lang) for src in sources))
+        data, strings = ydwe_ui.write_trigger_data(merged)
+        os.makedirs(target, exist_ok=True)
+        for name, text in (('TriggerData.txt', data), ('TriggerStrings.txt', strings)):
+            with open(os.path.join(target, name), 'w', encoding='utf-8', newline='\r\n') as h:
+                h.write(text)
+        count = sum(len(v) for v in merged.functions.values())
+        print(f'Wrote TriggerData.txt and TriggerStrings.txt to {target} ({count} functions)')
+        return 0
+    if len(sources) > 2 or not all(os.path.isfile(src) for src in sources):
+        raise ValueError('give TriggerData.txt [TriggerStrings.txt] or ui folders, '
+                         'then the output')
+    texts = []
+    for src in sources:
+        with open(src, encoding='utf-8-sig', errors='replace') as h:
+            texts.append(h.read())
+    ui = ydwe_ui.read_trigger_data(texts[0], texts[1] if len(texts) > 1 else '')
+    ydwe_ui.write_ui(ui, target)
+    count = sum(len(v) for v in ui.functions.values())
+    print(f'Wrote the ui folder {target} ({count} functions)')
+    return 0
+
+
 def _cmd_lni(args):
     """Map -> Lni folder, or Lni folder -> map (by what the input is)."""
     from collections import Counter
@@ -1831,6 +1861,17 @@ def build_parser():
     p_opt.add_argument('--slk', action='store_true',
                        help='Then move object data into the tables (as `slk`).')
     p_opt.set_defaults(func=_cmd_optimize)
+
+    p_ui = subparsers.add_parser(
+        'trigger-ui', help=('Convert GUI trigger definitions between the World Editor\'s '
+                            'TriggerData.txt/TriggerStrings.txt and YDWE\'s ui folder; '
+                            'several folders are merged in order.'))
+    p_ui.add_argument('inputs', nargs='+',
+                      help=('TriggerData.txt [TriggerStrings.txt], or one or more ui folders '
+                            '(a base, then plugins), then the output: a ui folder, or a '
+                            'folder for the two .txt files.'))
+    p_ui.add_argument('--lang', help='Language subfolder of the ui folders to read (zhCN, ...).')
+    p_ui.set_defaults(func=_cmd_trigger_ui)
 
     p_lni = subparsers.add_parser(
         'lni', help=('Turn a map into a folder of text files (objects as Lni, '
