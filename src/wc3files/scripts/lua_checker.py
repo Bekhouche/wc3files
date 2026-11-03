@@ -90,7 +90,8 @@ _READS_ONLY = frozenset(('pairs', 'ipairs', 'next', 'type', 'tostring', 'print',
 class _Binding:
      """One local variable (or parameter) declared in the script."""
 
-     __slots__ = ('name', 'initial', 'assigned', 'is_function', 'library')
+     __slots__ = ('name', 'initial', 'assigned', 'is_function', 'library', 'shape',
+                  'function')
 
      def __init__(self, name, initial=None, is_function=False):
           self.name = name
@@ -98,6 +99,25 @@ class _Binding:
           self.assigned = False
           self.is_function = is_function
           self.library = None       # 'math' for `local Math = math`
+          self.shape = None         # a _Shape when its value is a table constructor
+          self.function = None      # the local function statement, for its arity
+
+
+class _Shape:
+     """What a table made by a constructor holds: the keys the script sets on
+     it. `open` once anything could add a key the checker does not see (the
+     table handed to a function, aliased, returned, given a computed key,
+     or the name assigned again)."""
+
+     __slots__ = ('name', 'keys', 'open', 'uses', 'probed')
+
+     def __init__(self, name, table):
+          self.name = name
+          self.keys = {_string_key(k) for k, _ in table.fields if k is not None}
+          self.open = None in self.keys
+          self.keys.discard(None)
+          self.uses = []            # (key, node, called)
+          self.probed = set()
 
 
 class _Globals:
@@ -109,6 +129,7 @@ class _Globals:
           self.replaced_libraries = set()
           self.probed = set()         # names or (library, member) tested before use
           self.dynamic = None         # a reason string when globals are written dynamically
+          self.shapes = {}            # global name -> _Shape
 
 
 def check_chunk(chunk, natives=None):
@@ -128,6 +149,7 @@ class _Checker:
           self.findings = []
           self.globals = _Globals()
           self.deferred = []
+          self.all_shapes = []
 
      # --- driver ------------------------------------------------------------
 
@@ -139,6 +161,7 @@ class _Checker:
           self.block(chunk.body, ())
           for check in self.deferred:
                check()
+          self.check_shapes()
           if self.globals.dynamic:
                self.note(None, f'globals are written dynamically ({self.globals.dynamic}); '
                                f'undefined names are not checked')
@@ -196,6 +219,9 @@ class _Checker:
                     binding = self.declare(name, initial)
                     if single:
                          binding.library = libraries[position]
+                         if isinstance(initial, ir.TableExpr):
+                              binding.shape = _Shape(name, initial)
+                              self.all_shapes.append(binding.shape)
           elif kind is ir.AssignStmt:
                for value in stmt.values:
                     self.expr(value)
@@ -203,7 +229,7 @@ class _Checker:
                for position, target in enumerate(stmt.targets):
                     self.assign(target, stmt.values[position] if single else None)
           elif kind is ir.LocalFunctionStmt:
-               self.declare(stmt.name, is_function=True)
+               self.declare(stmt.name, is_function=True).function = stmt
                self.function_body(stmt.params, stmt.body)
           elif kind is ir.FunctionStmt:
                self.function_statement(stmt)
@@ -262,6 +288,12 @@ class _Checker:
                library = self.library_of(ir.VarExpr(root))
                if member is not None and library is not None:
                     self.globals.members.setdefault(library, set()).add(member)
+               shape = self.shape_of(root)
+               if shape is not None:
+                    if member is not None:
+                         shape.keys.add(member)
+                    else:
+                         shape.open = True             # a.b.c(): a's own keys unknown
           self.function_body(stmt.params, stmt.body, is_method=is_method)
 
      def library_of(self, node):
@@ -279,11 +311,21 @@ class _Checker:
                binding = self.lookup(target.name)
                if binding is not None:
                     binding.assigned = True
+                    if binding.shape is not None:
+                         binding.shape.open = True
                else:
                     self.define_global(target.name, value)
                return
           if isinstance(target, ir.IndexExpr):
                obj = target.obj
+               if isinstance(obj, ir.VarExpr):
+                    shape = self.shape_of(obj.name)
+                    if shape is not None:
+                         key = _string_key(target.index)
+                         if key is None:
+                              shape.open = True
+                         else:
+                              shape.keys.add(key)
                self.expr(target.index)
                library = self.library_of(obj)
                if library is not None:
@@ -309,6 +351,12 @@ class _Checker:
 
      def define_global(self, name, value):
           self.globals.assigned.setdefault(name, []).append(value)
+          shape = self.globals.shapes.get(name)
+          if shape is not None:
+               shape.open = True                       # assigned more than once
+          elif len(self.globals.assigned[name]) == 1 and isinstance(value, ir.TableExpr):
+               shape = self.globals.shapes[name] = _Shape(name, value)
+               self.all_shapes.append(shape)
           if name in LUA53_LIBRARIES:
                self.globals.replaced_libraries.add(name)
 
@@ -321,6 +369,9 @@ class _Checker:
           unpack`, not a bug, and the name is then optional everywhere."""
           kind = type(node)
           if kind is ir.VarExpr:
+               shape = self.shape_of(node.name)
+               if shape is not None and not probe:
+                    shape.open = True                  # handed on: anything may follow
                if self.lookup(node.name) is None:
                     if probe:
                          self.globals.probed.add(node.name)
@@ -330,7 +381,8 @@ class _Checker:
           elif kind is ir.LuaCallExpr:
                self.call(node)
           elif kind is ir.LuaMethodCallExpr:
-               self.expr(node.obj)
+               if not self.member_use(node.obj, node.method, node, True):
+                    self.expr(node.obj)
                for arg in node.args:
                     self.expr(arg)
           elif kind is ir.BinaryExpr:
@@ -347,8 +399,16 @@ class _Checker:
                          self.expr(key)
                     self.expr(value)
 
-     def index(self, node, probe=False):
+     def index(self, node, probe=False, called=False):
           obj = node.obj
+          key = _string_key(node.index)
+          if key is not None and self.member_use(obj, key, node, called, probe):
+               if self.lookup(obj.name) is None:
+                    self.read_global(obj.name, obj)
+                    if probe:
+                         self.globals.probed.add((obj.name, key))
+                    self.deferred.append(lambda: self.check_member(obj.name, key, node))
+               return
           if isinstance(obj, ir.VarExpr) and self.lookup(obj.name) is None:
                self.read_global(obj.name, obj)
                key = _string_key(node.index)
@@ -387,8 +447,83 @@ class _Checker:
                          f'{name}() at line {getattr(node, "line", "?")}'
                scopes = [dict(scope) for scope in self.scopes]
                self.deferred.append(lambda: self.check_game_call(name, node, scopes))
+               self.deferred.append(lambda: self.check_arity(name, None, node, scopes))
+               return
+          if isinstance(func, ir.VarExpr):
+               binding = self.lookup(func.name)
+               if binding is not None and binding.function is not None:
+                    scopes = [dict(scope) for scope in self.scopes]
+                    self.deferred.append(
+                         lambda: self.check_arity(func.name, binding, node, scopes))
+          if isinstance(func, ir.IndexExpr):
+               self.index(func, called=True)
                return
           self.expr(func)
+
+     # --- tables of known shape ---------------------------------------------
+
+     def shape_of(self, name):
+          binding = self.lookup(name)
+          if binding is not None:
+               return binding.shape
+          return self.globals.shapes.get(name)
+
+     def member_use(self, obj, key, node, called, probe=False):
+          """Record `obj.key` on a table of known shape; True when obj is a
+          plain name (handled here, not walked as a value)."""
+          if not isinstance(obj, ir.VarExpr):
+               return False
+          shape = self.shape_of(obj.name)
+          if shape is None:
+               return self.lookup(obj.name) is None and False
+          if probe:
+               shape.probed.add(key)
+          else:
+               shape.uses.append((key, node, called))
+          return True
+
+     def check_shapes(self):
+          for shape in self.all_shapes:
+               if shape.open:
+                    continue
+               seen = set()
+               for key, node, called in shape.uses:
+                    if key in shape.keys or key in shape.probed or (key, called) in seen:
+                         continue
+                    seen.add((key, called))
+                    if called:
+                         self.issue(node, f"call to '{shape.name}.{key}', which is never set "
+                                          f"(the table's keys are {self.keys_text(shape)})")
+                    else:
+                         self.note(node, f"'{shape.name}.{key}' is read but never set "
+                                         f"(it is always nil)")
+
+     @staticmethod
+     def keys_text(shape):
+          keys = sorted(shape.keys)
+          if not keys:
+               return 'none'
+          return ', '.join(keys[:6]) + (', ...' if len(keys) > 6 else '')
+
+     def check_arity(self, name, binding, node, scopes):
+          """More arguments than a script function declares: Lua drops the
+          extra ones, which is rarely what was meant."""
+          if binding is not None:
+               if binding.assigned:
+                    return
+               decl = binding.function
+          else:
+               values = self.globals.assigned.get(name) or []
+               if len(values) != 1 or not isinstance(values[0], ir.FunctionStmt) or \
+                         values[0].method_name is not None or len(values[0].name_path) != 1:
+                    return
+               decl = values[0]
+          if decl.is_vararg:
+               return
+          count = self.argument_count(node.args, scopes)
+          if count is not None and count > len(decl.params):
+               self.note(node, f"'{name}' takes {len(decl.params)} argument(s), got {count}; "
+                               f"the extra ones are dropped")
 
      def read_global(self, name, node, called=False):
           self.deferred.append(lambda: self.check_name(name, node, called))

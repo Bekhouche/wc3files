@@ -178,6 +178,15 @@ Lua has no declarations, so the Lua checker works from what the script shows:
    Missing arguments whose parameters are handles are a note, since Lua
    passes nil, which is null for a handle.
 
+4. **Tables and functions the script defines.** A table made by a
+   constructor (`local M = {}`, `Lib = {}`) whose keys are all set by name
+   (`M.x = ...`, `function M:Update()`) is checked: a call to a key it never
+   sets (`M:Updtae()`) is an issue, a read a note. A table that could gain
+   keys out of sight (handed to a function, given a metatable, aliased,
+   assigned again, written with a computed key) is not checked. A call to a
+   script function with more arguments than it declares is a note: Lua drops
+   the extra ones.
+
 What it leaves alone, because it is valid Lua:
 
 - locals that shadow a native, and natives the script replaces with its own

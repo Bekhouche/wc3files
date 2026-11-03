@@ -118,6 +118,34 @@ class TestReportsMistakes(unittest.TestCase):
           self.assertIn('common.ai', notes(source)[0]['message'])
 
 
+class TestTablesAndArity(unittest.TestCase):
+
+     def test_members_of_a_known_table(self):
+          found = findings('local M = {speed = 1}\n'
+                           'function M:Update() end\n'
+                           'M:Updtae()\n'
+                           'local x = M.spead\n'
+                           'Lib = {}\nfunction Lib.go() end\nLib.gone()\n')
+          self.assertEqual([(f['severity'], f['line']) for f in found],
+                           [('issue', 3), ('note', 4), ('issue', 7)])
+          self.assertIn("call to 'M.Updtae', which is never set", found[0]['message'])
+
+     def test_tables_that_may_gain_keys_are_not_checked(self):
+          for source in ('local T = {}\nsetmetatable(T, {})\nT:Any()\n',
+                         'local T = {}\nlocal k = "x"\nT[k] = 1\nT.y()\n',
+                         'local T = {}\nlocal U = T\nT.y()\n',
+                         'local T = {}\nT = setmetatable({}, {})\nT.y()\n',
+                         'local T = {}\nif T.maybe then T.maybe() end\n'):
+               with self.subTest(source=source):
+                    self.assertEqual(issues(source), [])
+
+     def test_extra_arguments_to_a_script_function(self):
+          self.assertIn('the extra ones are dropped',
+                        notes('local function two(a, b) end\ntwo(1, 2, 3)\n')[0]['message'])
+          self.assertEqual(notes('local function v(a, ...) end\nv(1, 2, 3)\n'
+                                 'local function f(a) end\nf()\n'), [])
+
+
 class TestStaysSilent(unittest.TestCase):
 
      def test_bundled_sample(self):
