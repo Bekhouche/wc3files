@@ -271,6 +271,9 @@ RunReport .errors .warnings .messages .game_time .callbacks .ok
 run_map_script(source, chunkname='war3map.lua', seconds=10.0, **options)
 from wc3files.wtg.from_script import reconstruct_from_jass
 from wc3files.wtg import trigger_text
+from wc3files.wtg.merge import merge_triggers, TriggerMergeError
+merge_triggers(target_wtg, target_wct, source_wtg, source_wct, header_name='Header')
+    # get_data() dicts; the target's are changed in place -> {'variables', 'triggers', 'header'}
 ```
 
 Exceptions: `JassLexError`, `JassParseError`, `LuaLexError`, `LuaParseError` -

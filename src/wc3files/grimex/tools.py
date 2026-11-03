@@ -38,6 +38,7 @@ from wc3files.scripts.lua_vm import (
      LuaError, LuaTable, PyFunction, LuaFunction, to_text, to_bytes_text,
      number_to_str,
 )
+from .convert import convert
 from .objects import (
      ObjectData, ObjectMergerError, EXTENSIONS, MAP_FILES, GROUPS, resolve_type, valid_id,
 )
@@ -463,6 +464,9 @@ _OBJECTMERGER_USAGE = (
 
 # --- FileImporter ----------------------------------------------------------------
 
+_DIRECTORY_CONVERSIONS = {'.jpg': '.blp', '.bmp': '.blp', '.tga': '.blp',
+                          '.mdl': '.mdx'}
+
 _ICON_PREFIXES = {
      'CMD': 'ReplaceableTextures\\CommandButtons\\',
      'PAS': 'ReplaceableTextures\\PassiveButtons\\',
@@ -534,11 +538,15 @@ class FileImporter:
                     archive = to_text(value)
                elif value is not None:
                     raise ToolError('Invalid return values from callback function')
-          extension = os.path.splitext(archive)[1].lower()
-          if extension in ('.tga', '.bmp', '.jpg', '.mdl'):
-               self.ctx.log.append(f'{archive}: imported without the conversion to '
-                                   f'{".mdx" if extension == ".mdl" else ".blp"} the real '
-                                   f'FileImporter does')
+          converted = convert(disk, data, archive)
+          if converted is None:
+               self._put(archive, data)
+               return
+          for path, content in converted:
+               self._put(path, content)
+               self.ctx.log.append(f'{disk}: converted to {path}')
+
+     def _put(self, archive, data):
           existing = _find_member(self.ctx.files, archive)
           self.ctx.files[existing or archive] = data
           _register_import(self.ctx.files, archive)
@@ -551,10 +559,22 @@ class FileImporter:
                for filename in sorted(names):
                     full = os.path.join(folder, filename)
                     archive = os.path.relpath(full, real).replace(os.sep, '\\')
-                    for prefix, target in _ICON_PREFIXES.items():
+                    stem, extension = os.path.splitext(archive)
+                    target = _DIRECTORY_CONVERSIONS.get(extension.lower())
+                    if target is not None:
+                         converted = convert(full, self.ctx.read_disk(full) or b'',
+                                             stem + target)
+                         if converted is not None:
+                              for path, content in converted:
+                                   self._put(path, content)
+                              continue
+                         # not converted: the original file under its own path
+                         self.import_file(full, archive)
+                         continue
+                    for prefix, folder_path in _ICON_PREFIXES.items():
                          base = os.path.basename(archive)
                          if base.upper().startswith(prefix) and '\\' not in archive:
-                              archive = target + base[len(prefix):]
+                              archive = folder_path + base[len(prefix):]
                               break
                     self.import_file(full, archive)
 
@@ -831,8 +851,283 @@ def _ini_set(text, section, key, value):
      return '\r\n'.join(lines) + '\r\n'
 
 
-TOOLS = {tool.name.lower(): tool for tool in (ObjectMerger, FileImporter, FileExporter,
-                                              ConstantMerger)}
+# --- PathMapper, TileSetter, TriggerMerger ------------------------------------------
 
-# Grim Extension Pack tools that are recognized but not implemented here.
-UNSUPPORTED_TOOLS = ('TriggerMerger', 'PatchGenerator', 'PathMapper', 'TileSetter')
+def _parsed(cls, data):
+     handler = cls()
+     handler._data = handler._read(_reader(data))
+     return handler
+
+
+def _serialized(handler):
+     from wc3files.files import BinaryFile
+     writer = BinaryFile(b'', 'write')
+     writer.open()
+     handler._write(writer, handler.get_data())
+     return writer.file.getvalue()
+
+
+def _map_file(files, name):
+     member = _find_member(files, name)
+     if member is None:
+          raise ToolError(f'the map has no {name}')
+     return member
+
+
+def _no_lua(tool):
+     raise ToolError(f'Lua scripts for the {tool} are not supported: its Lua functions are '
+                     f'not documented; use the command-line form')
+
+
+_TILE_ID = re.compile(r'^(?:[A-Za-z0-9]{4})+$')
+_HEX_MASK = re.compile(r'^[0-9A-Fa-f]{1,2}$')
+
+
+class PathMapper:
+     """PathMapper: change the pathing map (war3map.wpm) where a tile or a
+     pathing value matches.
+
+          PathMapper <tiles | mask> <value> [check] [apply]
+
+     tiles are 4-character ground tile IDs written together (LdrtLgrs), a mask
+     is one hexadecimal byte; value is hexadecimal. The check is ! (tiles not
+     listed) for tiles, 1 (every mask bit set) or 0 (no bit outside the mask
+     set) for a mask; without one, a listed tile or a value equal to the mask
+     matches. The apply mode is |, & or ^; without one the value replaces the
+     cell's.
+
+     A pathing cell is a quarter of a tile in each direction; its tile is the
+     one at the nearest tile corner (war3map.w3e keeps a ground tile per
+     corner, and the game blends the four around a tile).
+     """
+
+     name = 'PathMapper'
+
+     def __init__(self, ctx):
+          self.ctx = ctx
+
+     def install(self, vm):
+          _no_lua(self.name)
+
+     def run_command(self, args, run_lua):
+          if args and args[0].lower().endswith('.lua'):
+               _no_lua(self.name)
+          if len(args) < 2:
+               raise ToolError('Wrong parameters for path mapper, usage:\n'
+                               'map.w3x lookuppaths tiles|mask value [check] [apply]')
+          selector, value = args[0], args[1]
+          check = apply = None
+          for extra in args[2:]:
+               if extra in ('|', '&', '^'):
+                    apply = extra
+               elif extra in ('!', '0', '1'):
+                    check = extra
+               else:
+                    raise ToolError(f'PathMapper: unknown mode {extra!r}')
+          try:
+               value = int(value, 16)
+          except ValueError:
+               raise ToolError(f'PathMapper: the value {args[1]!r} is not hexadecimal') from None
+          if not 0 <= value <= 0xFF:
+               raise ToolError(f'PathMapper: the value {args[1]} is not one byte')
+          if _HEX_MASK.match(selector):
+               if check == '!':
+                    raise ToolError('PathMapper: ! is a check for tiles, a mask takes 0 or 1')
+               self.map_cells(mask=int(selector, 16), check=check, value=value, apply=apply)
+          elif _TILE_ID.match(selector):
+               if check in ('0', '1'):
+                    raise ToolError('PathMapper: 0 and 1 are checks for a mask, tiles take !')
+               tiles = [selector[i:i + 4] for i in range(0, len(selector), 4)]
+               self.map_cells(tiles=tiles, check=check, value=value, apply=apply)
+          else:
+               raise ToolError(f'PathMapper: {selector!r} is neither tile IDs nor a hexadecimal mask')
+
+     def map_cells(self, value, tiles=None, mask=None, check=None, apply=None):
+          from wc3files.wpm import PathingFile
+          files = self.ctx.files
+          member = _map_file(files, 'war3map.wpm')
+          pathing = _parsed(PathingFile, files[member])
+          data = pathing.get_data()
+          width, height = data['width'], data['height']
+          cells = bytearray(data['cells'])
+          if tiles is not None:
+               cell_tiles = self._cell_tiles(width, height)
+               wanted = {tile.lower() for tile in tiles}
+          changed = 0
+          for index, old in enumerate(cells):
+               if tiles is not None:
+                    listed = cell_tiles[index] in wanted
+                    match = not listed if check == '!' else listed
+               elif check == '1':
+                    match = old & mask == mask
+               elif check == '0':
+                    match = old & ~mask & 0xFF == 0
+               else:
+                    match = old == mask
+               if not match:
+                    continue
+               new = (old | value if apply == '|' else old & value if apply == '&'
+                      else old ^ value if apply == '^' else value)
+               if new != old:
+                    cells[index] = new
+                    changed += 1
+          data['cells'] = bytes(cells)
+          files[member] = _serialized(pathing)
+          self.ctx.log.append(f'PathMapper: {changed} of {len(cells)} pathing cells changed')
+
+     def _cell_tiles(self, width, height):
+          from wc3files.w3e import TerrainFile
+          files = self.ctx.files
+          terrain = _parsed(TerrainFile, files[_map_file(files, 'war3map.w3e')]).get_data()
+          corners_x, corners_y = terrain['width'], terrain['height']
+          if (corners_x - 1) * 4 != width or (corners_y - 1) * 4 != height:
+               raise ToolError(f'war3map.wpm ({width}x{height}) does not match war3map.w3e '
+                               f'({corners_x}x{corners_y} tile corners)')
+          names = [tile.lower() for tile in terrain['ground_tilesets']]
+          points = terrain['tiles']
+          out = []
+          for y in range(height):
+               corner_y = y // 4 + (1 if y % 4 >= 2 else 0)
+               for x in range(width):
+                    corner_x = x // 4 + (1 if x % 4 >= 2 else 0)
+                    texture = points[corner_y * corners_x + corner_x]['ground_texture']
+                    out.append(names[texture] if texture < len(names) else None)
+          return out
+
+     def finish(self):
+          return []
+
+
+class TileSetter:
+     """TileSetter: set the map's tileset and its ground tiles (up to 16).
+
+          TileSetter <tileset> <tiles>
+
+     The ground tiles of war3map.w3e are kept by index, as the World Editor's
+     own tileset dialog does: the terrain keeps its layout and shows the new
+     tile at each index. A list shorter than the indices the terrain uses is
+     refused. The tileset letter is set in war3map.w3e and war3map.w3i.
+     """
+
+     name = 'TileSetter'
+
+     def __init__(self, ctx):
+          self.ctx = ctx
+
+     def install(self, vm):
+          _no_lua(self.name)
+
+     def run_command(self, args, run_lua):
+          if args and args[0].lower().endswith('.lua'):
+               _no_lua(self.name)
+          if len(args) != 2 or len(args[0]) != 1:
+               raise ToolError('Wrong parameters for tile setter, usage:\n'
+                               'map.w3x lookuppaths tileset tiles')
+          tileset, text = args
+          if not _TILE_ID.match(text):
+               raise ToolError(f'TileSetter: {text!r} is not a list of 4-character tile IDs')
+          tiles = [text[i:i + 4] for i in range(0, len(text), 4)]
+          if len(tiles) > 16:
+               raise ToolError(f'TileSetter: {len(tiles)} tiles, the limit is 16')
+          if len({t.lower() for t in tiles}) != len(tiles):
+               raise ToolError('TileSetter: a tile is listed twice')
+          self.set_tiles(tileset, tiles)
+
+     def set_tiles(self, tileset, tiles):
+          from wc3files.w3e import TerrainFile
+          files = self.ctx.files
+          member = _map_file(files, 'war3map.w3e')
+          terrain = _parsed(TerrainFile, files[member])
+          data = terrain.get_data()
+          used = max((point['ground_texture'] for point in data['tiles']), default=-1)
+          if used >= len(tiles):
+               raise ToolError(f'TileSetter: the terrain uses ground tile {used + 1} of the '
+                               f'map, the new list has {len(tiles)}')
+          data['main_tileset'] = tileset
+          data['ground_tilesets'] = list(tiles)
+          data['custom_tileset'] = True
+          files[member] = _serialized(terrain)
+          self.ctx.log.append(f'TileSetter: tileset {tileset}, tiles {"".join(tiles)}')
+          info = _find_member(files, 'war3map.w3i')
+          if info is None:
+               return
+          from wc3files.w3i import W3iFile
+          try:
+               w3i = _parsed(W3iFile, files[info])
+          except Exception as error:
+               self.ctx.log.append(f'TileSetter: war3map.w3i left as it is ({error})')
+               return
+          w3i.get_data()['map_main_ground_type'] = tileset
+          files[info] = _serialized(w3i)
+
+     def finish(self):
+          return []
+
+
+class TriggerMerger:
+     """TriggerMerger: merge the GUI variables and triggers of a wtg/wct pair
+     into the map (wc3files.wtg.merge). Each argument names one file of a
+     pair; the other is the file with the same name and the other extension."""
+
+     name = 'TriggerMerger'
+
+     def __init__(self, ctx):
+          self.ctx = ctx
+
+     def install(self, vm):
+          _no_lua(self.name)
+
+     def run_command(self, args, run_lua):
+          if args and args[0].lower().endswith('.lua'):
+               _no_lua(self.name)
+          if not args:
+               raise ToolError('Wrong parameters for trigger merger, usage:\n'
+                               'map.w3x lookuppaths file.wtg { morefiles }')
+          for path in args:
+               self.merge_pair(path)
+
+     def merge_pair(self, path):
+          from wc3files.wtg import MapTriggersFile, MapCustomTextTriggersFile
+          from wc3files.wtg.merge import merge_triggers, TriggerMergeError
+          stem, extension = os.path.splitext(path)
+          if extension.lower() not in ('.wtg', '.wct'):
+               raise ToolError(f'{path}: expected a .wtg or .wct file')
+          source_wtg = self.ctx.read_disk(stem + '.wtg')
+          source_wct = self.ctx.read_disk(stem + '.wct')
+          for data, ext in ((source_wtg, '.wtg'), (source_wct, '.wct')):
+               if data is None:
+                    raise ToolError(f"{stem + ext} doesn't exist")
+          files = self.ctx.files
+          wtg_member = _map_file(files, 'war3map.wtg')
+          wct_member = _map_file(files, 'war3map.wct')
+          try:
+               target_wtg = _parsed(MapTriggersFile, files[wtg_member])
+               target_wct = _parsed(MapCustomTextTriggersFile, files[wct_member])
+               source = _parsed(MapTriggersFile, source_wtg)
+               source_text = _parsed(MapCustomTextTriggersFile, source_wct)
+          except (ValueError, KeyError) as error:
+               raise ToolError(f'TriggerMerger: {error}') from None
+          try:
+               summary = merge_triggers(target_wtg.get_data(), target_wct.get_data(),
+                                        source.get_data(), source_text.get_data(),
+                                        header_name=os.path.basename(stem) + ' Header')
+          except TriggerMergeError as error:
+               raise ToolError(f'TriggerMerger: {error}') from None
+          files[wtg_member] = _serialized(target_wtg)
+          files[wct_member] = _serialized(target_wct)
+          self.ctx.log.append(f'TriggerMerger {path}: {len(summary["variables"])} variable(s), '
+                              f'{len(summary["triggers"])} trigger(s)'
+                              + (f', header in {summary["header"]!r}' if summary['header'] else ''))
+
+     def finish(self):
+          return []
+
+
+TOOLS = {tool.name.lower(): tool for tool in (ObjectMerger, FileImporter, FileExporter,
+                                              ConstantMerger, PathMapper, TileSetter,
+                                              TriggerMerger)}
+
+# Grim Extension Pack tools that are recognized but not implemented here: the
+# PatchGenerator writes World Editor patches (UMSWE), which have no use
+# outside an installed editor.
+UNSUPPORTED_TOOLS = ('PatchGenerator',)

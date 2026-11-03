@@ -1,5 +1,6 @@
 """Tests for wc3files.grimex: running a map's external tool calls
-(ObjectMerger, FileImporter, FileExporter, ConstantMerger).
+(ObjectMerger, FileImporter, FileExporter, ConstantMerger, PathMapper,
+TileSetter, TriggerMerger).
 
 What ObjectMerger does was read from Grim Extension Pack 1.0's own binary
 (names, argument rules, messages, the id generator); the cases below pin that
@@ -205,10 +206,10 @@ class TestCommandLines(unittest.TestCase):
             shutil.rmtree(work, ignore_errors=True)
 
     def test_unknown_and_unsupported_tools(self):
-        result = run('//! external Frobnicator x\n//! external TriggerMerger x\n')
+        result = run('//! external Frobnicator x\n//! external PatchGenerator x\n')
         self.assertIn('External not found in config file: "Frobnicator"',
                       str(result.errors[0]))
-        self.assertIn('TriggerMerger tool is not supported', str(result.errors[1]))
+        self.assertIn('PatchGenerator tool is not supported', str(result.errors[1]))
 
     def test_stop_on_error(self):
         source = ('//! external Frobnicator x\n'
@@ -268,6 +269,210 @@ class TestOtherTools(unittest.TestCase):
         text = result.files['war3mapMisc.txt'].decode()
         self.assertIn('MaxLevel=20', text)
         self.assertIn('GoldMax=9', text)
+
+
+def _bytes_of(cls, data):
+    from wc3files.grimex.tools import _serialized
+    handler = cls()
+    handler._data = data
+    return _serialized(handler)
+
+
+def _parse(cls, data):
+    from wc3files.grimex.tools import _parsed
+    return _parsed(cls, data).get_data()
+
+
+def _terrain(textures, tiles=('Ldrt', 'Lgrs')):
+    """A 2x2-tile terrain (3x3 corners) with these corner ground textures."""
+    from wc3files.w3e import TerrainFile
+    point = {'ground_height': 0x2000, 'water_level': 0, 'is_map_edge': False,
+             'is_ramp': False, 'is_blight': False, 'is_water': False, 'is_boundary': False,
+             'ground_variation': 0, 'cliff_variation': 0, 'layer_height': 2,
+             'cliff_texture': 0}
+    return _bytes_of(TerrainFile, {
+        'version': 11, 'main_tileset': 'L', 'custom_tileset': False,
+        'ground_tilesets': list(tiles), 'cliff_tilesets': ['CLdi'], 'width': 3, 'height': 3,
+        'offset_x': 0.0, 'offset_y': 0.0,
+        'tiles': [dict(point, ground_texture=t) for t in textures]})
+
+
+class TestFileImporterConversion(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        logger.disable('wc3files')
+
+    def setUp(self):
+        from wc3files.img import write_png, BmpFile
+        self.folder = tempfile.mkdtemp()
+        red = bytes([200, 30, 30, 255]) * (32 * 32)
+        with open(os.path.join(self.folder, 'AUTCMDBTNShared.png'), 'wb') as fh:
+            fh.write(write_png(32, 32, red))
+        with open(os.path.join(self.folder, 'infocard-x.png'), 'wb') as fh:
+            fh.write(write_png(32, 32, red))
+        os.makedirs(os.path.join(self.folder, 'dir', 'Textures'))
+        with open(os.path.join(self.folder, 'dir', 'Textures', 'wall.bmp'), 'wb') as fh:
+            fh.write(BmpFile.from_rgba(8, 4, bytes([1, 2, 3, 255]) * 32).to_bytes())
+        with open(os.path.join(self.folder, 'dir', 'Textures', 'photo.jpg'), 'wb') as fh:
+            fh.write(b'\xff\xd8 not a decodable jpeg')
+        shutil.copy(_helpers.sample_path('sample.mdl'),
+                    os.path.join(self.folder, 'dir', 'Model.mdl'))
+
+    def tearDown(self):
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    def blp(self, data):
+        from wc3files.img import BlpFile
+        image = BlpFile()
+        image.read(data)
+        return image.mip_size(0)
+
+    def test_icon_prefixes(self):
+        result = run(block('importfile("AUTCMDBTNShared.png", "Any.blp")',
+                           'importfile("infocard-x.png", "UI\\\\infocard-x.blp")',
+                           tool='FileImporter'), lookup_folders=[self.folder])
+        self.assertEqual(result.errors, [])
+        for path in ('ReplaceableTextures\\CommandButtons\\BTNShared.blp',
+                     'ReplaceableTextures\\AutocastButtons\\BTNShared.blp',
+                     'ReplaceableTextures\\CommandButtonsDisabled\\DISBTNShared.blp',
+                     'UI\\infocard-x.blp'):
+            self.assertEqual(self.blp(result.files[path]), (64, 64), path)
+        self.assertNotIn('Any.blp', result.files)
+
+    def test_same_extension_keeps_the_file(self):
+        result = run(block('importfile("infocard-x.png", "x.png")', tool='FileImporter'),
+                     lookup_folders=[self.folder])
+        with open(os.path.join(self.folder, 'infocard-x.png'), 'rb') as fh:
+            self.assertEqual(result.files['x.png'], fh.read())
+
+    def test_directory(self):
+        result = run(block('importdirectory("dir")', tool='FileImporter'),
+                     lookup_folders=[self.folder])
+        self.assertEqual(result.errors, [])
+        self.assertEqual(self.blp(result.files['Textures\\wall.blp']), (8, 4))
+        self.assertEqual(result.files['Model.mdx'][:4], b'MDLX')
+        # not converted: imported as it is, under its own path
+        self.assertEqual(result.files['Textures\\photo.jpg'], b'\xff\xd8 not a decodable jpeg')
+        self.assertNotIn('Textures\\wall.bmp', result.files)
+
+
+class TestPathMapperAndTileSetter(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        logger.disable('wc3files')
+
+    def map_files(self, cells=None):
+        from wc3files.wpm import PathingFile
+        cells = cells or bytes([0x40] * 64)
+        return {'war3map.w3e': _terrain([0, 1, 1, 1, 1, 1, 1, 1, 1]),
+                'war3map.wpm': _bytes_of(PathingFile, {'version': 0, 'width': 8,
+                                                       'height': 8, 'cells': cells})}
+
+    def cells(self, result):
+        from wc3files.wpm import PathingFile
+        return list(_parse(PathingFile, result.files['war3map.wpm'])['cells'])
+
+    def test_by_tile(self):
+        result = run('//! external PathMapper Ldrt 2 |\n', self.map_files())
+        self.assertEqual(result.errors, [])
+        cells = self.cells(result)
+        # the cells nearest the bottom-left corner, the one Ldrt corner
+        changed = [i for i, v in enumerate(cells) if v == 0x42]
+        self.assertEqual(changed, [0, 1, 8, 9])
+        result = run('//! external PathMapper Ldrt 0 !\n', self.map_files())
+        self.assertEqual(self.cells(result).count(0), 60)
+
+    def test_by_mask(self):
+        cells = bytes([0xCE, 0xCA, 0x40, 0x0A] * 16)
+        result = run('//! external PathMapper CE FD 1 &\n', self.map_files(cells))
+        self.assertEqual(self.cells(result)[:4], [0xCC, 0xCA, 0x40, 0x0A])
+        result = run('//! external PathMapper A F5 0 &\n', self.map_files(cells))
+        self.assertEqual(self.cells(result)[:4], [0xCE, 0xCA, 0x40, 0x00])
+        result = run('//! external PathMapper 40 48\n', self.map_files(cells))
+        self.assertEqual(self.cells(result)[:4], [0xCE, 0xCA, 0x48, 0x0A])
+
+    def test_path_mapper_errors(self):
+        for line in ('PathMapper Ldrt', 'PathMapper Ldrt 1FF', 'PathMapper CE 2 !',
+                     'PathMapper Ldr 2', 'PathMapper Ldrt 2 ?'):
+            with self.subTest(line=line):
+                self.assertEqual(len(run(f'//! external {line}\n', self.map_files()).errors), 1)
+
+    def test_tile_setter(self):
+        from wc3files.w3e import TerrainFile
+        result = run('//! external TileSetter Y YdrtYdtrYsqd\n', self.map_files())
+        self.assertEqual(result.errors, [])
+        terrain = _parse(TerrainFile, result.files['war3map.w3e'])
+        self.assertEqual((terrain['main_tileset'], terrain['ground_tilesets']),
+                         ('Y', ['Ydrt', 'Ydtr', 'Ysqd']))
+        # the terrain uses two tiles: one is too few
+        self.assertIn('the new list has 1',
+                      str(run('//! external TileSetter Y Ydrt\n', self.map_files()).errors[0]))
+        self.assertEqual(len(run('//! external TileSetter Y ' + 'Ydrt' * 17 + '\n',
+                                 self.map_files()).errors), 1)
+
+
+def _classic_triggers(variables, triggers, header=''):
+    from wc3files.wtg import MapTriggersFile, MapCustomTextTriggersFile
+    wtg = {'format_version': 7, 'subversion': None, 'game_version': 2,
+           'categories': [{'id': 0, 'name': 'Systems', 'is_comment': False}],
+           'variables': [{'name': name, 'type': 'integer', 'unknown': 1, 'is_array': False,
+                          'array_size': 1, 'is_initialized': True, 'initial_value': value}
+                         for name, value in variables],
+           'triggers': [{'name': name, 'description': '', 'is_comment': False,
+                         'is_enabled': True, 'is_custom_text': True, 'is_initially_on': True,
+                         'run_on_map_init': False, 'parent_id': 0, 'functions': []}
+                        for name, _ in triggers]}
+    wct = {'format_version': 1, 'subversion': None, 'global_comment': '',
+           'global_code': header, 'triggers': [text for _, text in triggers]}
+    return _bytes_of(MapTriggersFile, wtg), _bytes_of(MapCustomTextTriggersFile, wct)
+
+
+class TestTriggerMerger(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        logger.disable('wc3files')
+
+    def setUp(self):
+        self.folder = tempfile.mkdtemp()
+        wtg, wct = _classic_triggers([('Count', '5'), ('Extra', '1')],
+                                     [('Init', 'function NewInit takes nothing returns nothing\nendfunction'),
+                                      ('Spell', 'function Spell takes nothing returns nothing\nendfunction')],
+                                     header='function H2I takes handle h returns integer\nreturn 0\nendfunction')
+        for name, data in (('lib.wtg', wtg), ('lib.wct', wct)):
+            with open(os.path.join(self.folder, name), 'wb') as fh:
+                fh.write(data)
+
+    def tearDown(self):
+        shutil.rmtree(self.folder, ignore_errors=True)
+
+    def test_merge(self):
+        from wc3files.wtg import MapTriggersFile, MapCustomTextTriggersFile
+        wtg, wct = _classic_triggers([('Count', '0')], [('Init', 'old'), ('Mine', 'mine')],
+                                     header='// my header')
+        result = run('//! external TriggerMerger lib.wct\n',
+                     {'war3map.wtg': wtg, 'war3map.wct': wct}, lookup_folders=[self.folder])
+        self.assertEqual(result.errors, [])
+        triggers = _parse(MapTriggersFile, result.files['war3map.wtg'])
+        texts = _parse(MapCustomTextTriggersFile, result.files['war3map.wct'])
+        self.assertEqual([(v['name'], v['initial_value']) for v in triggers['variables']],
+                         [('Count', '5'), ('Extra', '1')])
+        self.assertEqual([t['name'] for t in triggers['triggers']],
+                         ['Init', 'Mine', 'Spell', 'lib Header'])
+        self.assertEqual(texts['triggers'][0].split('\n')[0],
+                         'function NewInit takes nothing returns nothing')
+        self.assertEqual(texts['triggers'][1], 'mine')
+        self.assertTrue(texts['triggers'][3].startswith('function H2I'))
+        self.assertEqual(texts['global_code'], '// my header')
+
+    def test_missing_partner(self):
+        os.remove(os.path.join(self.folder, 'lib.wct'))
+        wtg, wct = _classic_triggers([], [])
+        result = run('//! external TriggerMerger lib.wtg\n',
+                     {'war3map.wtg': wtg, 'war3map.wct': wct}, lookup_folders=[self.folder])
+        self.assertIn("lib.wct doesn't exist", str(result.errors[0]))
 
 
 class TestWorkspace(unittest.TestCase):

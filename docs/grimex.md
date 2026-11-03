@@ -3,7 +3,8 @@
 `wc3files.grimex` runs the external tool calls of a vJass map: the
 `//! external` commands and the `//! externalblock` blocks of Lua that the
 World Editor hands to Grim Extension Pack's tools (ObjectMerger, FileImporter,
-FileExporter, ConstantMerger) when the map is saved. It does what those tools
+FileExporter, ConstantMerger, PathMapper, TileSetter, TriggerMerger) when the
+map is saved. It does what those tools
 do, without the editor, without the tools and without Windows. The Lua runs in
 `wc3files.scripts.lua_vm`, a Lua interpreter written in Python.
 
@@ -75,6 +76,9 @@ An external runs in four steps, in the order JassHelper uses:
 | FileImporter | `importfile(disk, archive)`, `importdirectory(dir)`, `registercallback(fn)` | `directory`, or `diskpath archivepath ...` |
 | FileExporter | `exportfile(archive, disk)`, `exportgroup(group, dir)` | `[targetdir]` |
 | ConstantMerger | `mergefile(path)`, `setvalue(section, key, value)` | `war3mapMisc.txt ...` |
+| PathMapper | none | `LdrtLgrs 2 \|`, `CE FD 1 &` |
+| TileSetter | none | `L LdrtLgrsLgrd` |
+| TriggerMerger | none | `war3map.wtg ...` (or the `.wct` of the pair) |
 
 Every tool also has `log`, `logf` and `logt`, which write to the log
 (`done.log`). The group identifiers are globals: `current`, `original`,
@@ -192,6 +196,45 @@ The interpreter and the tools were checked in three ways:
    version does not define, and one installer loads a library without the
    header that makes `dofile` find it.
 
+### FileImporter conversion
+
+Asking for a `.blp` from a `.bmp`, `.tga` or `.png`, or for a `.mdx` from a
+`.mdl`, converts the file; `importdirectory` converts every `.jpg`, `.bmp`,
+`.tga` and `.mdl` and changes only the extension. A file that cannot be
+converted is imported as it is, under its own path, which is the manual's
+rule. BLP files are never changed.
+
+The icon prefixes of the manual work too. A file named `CMD...`, `PAS...` or
+`AUT...` (combined, as in `AUTPASCMDBTNIcon.tga`) is resized to 64x64, given
+the normal, passive or autocast border and written to
+`ReplaceableTextures\CommandButtons\`, `PassiveButtons\` or
+`AutocastButtons\` under the rest of its name. One disabled version goes to
+`ReplaceableTextures\CommandButtonsDisabled\DIS<rest of the name>`.
+`infocard-` and `level-infocard-` images get the attack/armor and the caster
+upgrade border, and keep their imported path.
+
+### PathMapper, TileSetter and TriggerMerger
+
+PathMapper changes `war3map.wpm` where a ground tile is (`Ldrt 40 !`: every
+cell not on Lordaeron Summer Dirt) or where the pathing value matches a mask
+(`CE FD 1 &`). The check and apply modes are those of the manual. A pathing
+cell is a quarter of a tile in each direction, and `war3map.w3e` keeps one
+ground tile per tile corner; the tile of a cell is taken from its nearest
+corner.
+
+TileSetter sets the tileset letter (in `war3map.w3e` and `war3map.w3i`) and
+up to 16 ground tiles. The terrain keeps its tile indices, as the editor's
+own tileset dialog does, so a list shorter than the indices in use is
+refused.
+
+TriggerMerger merges a `wtg`/`wct` pair (`wc3files.wtg.merge`). A variable,
+trigger or comment with the name of an existing one replaces it; the others
+are added in a category of the same name; the source's custom-script header
+becomes a new custom-text trigger, `<file name> Header`. On 38 real maps the
+`wct` holds one text per GUI or custom-script trigger, in the order of the
+`wtg`, and the merge keeps that order. Both maps must have the same layout
+(classic, or Reforged's item list).
+
 The corpus also shows why exact behaviour matters. LUA_OBJECT_ID's helper
 loops `until objectexists(id) or <the id has a bad character>`, the inverted
 condition, so with ObjectMerger's counter it returns the first id with a
@@ -200,12 +243,20 @@ with that script, and what this one does too.
 
 ## Limitations
 
-- **Images and models are imported as they are.** The real FileImporter
-  converts `.tga`, `.bmp` and `.jpg` to `.blp` and `.mdl` to `.mdx` on
-  import; here the file is imported unchanged and the log says so.
-- **TriggerMerger, PatchGenerator, PathMapper and TileSetter** are
-  recognized but not implemented; an external that calls them fails with a
-  clear message.
+- **JPEG images are not converted.** The package decodes the JPEG planes
+  inside BLP files, not ordinary JPEG files, so a `.jpg` is imported as it
+  is. The converted BLP files are paletted (no JPEG encoder), and the
+  borders are the classic ones of `wc3files.img.borders`, not the TGA files of
+  a Grim Extension Pack install.
+- **No Lua for PathMapper, TileSetter and TriggerMerger.** Their Lua
+  functions are not documented, so only the command-line form runs; a Lua
+  script or block for them fails with a clear message.
+- **TriggerMerger does not convert layouts.** A classic `wtg` cannot be
+  merged into a Reforged one, or the reverse. Like the real tool, it does not
+  look for duplicate JASS functions in the merged headers.
+- **PatchGenerator is not implemented.** It writes World Editor patches
+  (UMSWE), which have no use without an installed editor; calling it fails
+  with a clear message.
 - **Generated vJass needs a second compile.** A script that writes a `.j`
   file for the map to `//! import` (LUA_FILE_HEADER's `writejass`) affects the
   next compilation, as in the editor, where the map has to be saved twice.
