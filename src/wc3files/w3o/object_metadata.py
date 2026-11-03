@@ -39,7 +39,7 @@ _FILES = {
 # implementation, not guessed. No other bundled *MetaData.slk file has a 'data' column at all
 # (Units/Upgrades/Destructables/Doodads/Buffs all read back None here), so this only ever
 # changes Abilities' field names.
-_DATA_SLOT_LETTERS = 'ABCDEFGHIJ'
+_DATA_SLOT_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'  # Reforged goes past J (DataK..DataN)
 
 
 def field_display_name(field_def):

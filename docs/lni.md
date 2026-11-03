@@ -99,3 +99,37 @@ every file came back.
   the comment lines are not translated display names.
 - A folder written by w3x2lni cannot be read by wc3files, nor the other way
   round, unless it only holds object data in the syntax above.
+
+## 5. Slk and Obj modes
+
+w3x2lni's other two formats, for a whole map:
+
+```bash
+wc3files slk MyMap.w3x MyMap-release.w3x    # object data into the game's tables
+wc3files obj MyMap-release.w3x MyMap.w3x    # and back into object files
+```
+
+**Slk mode** moves every object file's data into the tables the game reads
+(`Units\UnitData.slk`, `Units\AbilityData.slk`, `Doodads\Doodads.slk`, ...).
+Only what no table has a column for stays in the object files: models,
+icons, tooltips (the metadata's `Profile` fields), and each custom object's
+parent. It is a format for releasing a map, not for editing it in the World
+Editor.
+
+Each object file is checked before it is converted: the tables and the
+smaller object file are read back, and every field that would not come back
+exactly (one equal to the game's default, a value a table rounds) is kept in
+the object file, which the game applies over the tables. An object file
+that still would not come back is left as it is, and so is a category whose
+tables the map already ships. On sample maps of the benchmark corpus, all
+116 object files converted, and Slk then Obj gave back the same objects,
+fields and values for every one.
+
+**Obj mode** is the reverse: the tables become ordinary object files again
+and are removed. A custom object's parent comes from the object file Slk
+mode left; for a map converted by another tool, without that, the report
+lists the objects whose parent had to be guessed.
+
+These tables were checked against the files of a real map that ships its
+data this way; the files this mode writes have not yet been loaded in a
+Reforged client, so test a converted map in the game before releasing it.

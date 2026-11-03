@@ -287,6 +287,28 @@ def _cmd_gamedata_extract(args):
     return 1 if profile['refused'] else 0
 
 
+def _cmd_slk_mode(args):
+    """Whole-map Slk mode (wc3files.w3x.modes.map_to_slk)."""
+    from wc3files.w3x.modes import map_to_slk
+    report = map_to_slk(args.input, args.output)
+    for name, outcome in report.items():
+        print(f'{name}: {outcome}')
+    print(f'Wrote {args.output}')
+    return 0
+
+
+def _cmd_obj_mode(args):
+    """Whole-map Obj mode (wc3files.w3x.modes.map_to_obj)."""
+    from wc3files.w3x.modes import map_to_obj
+    report = map_to_obj(args.input, args.output)
+    if not report:
+        print('no object-data tables in this map; nothing to do')
+    for name, outcome in report.items():
+        print(f'{name}: {outcome}')
+    print(f'Wrote {args.output}')
+    return 0
+
+
 def _cmd_lni(args):
     """Map -> Lni folder, or Lni folder -> map (by what the input is)."""
     from collections import Counter
@@ -1740,6 +1762,20 @@ def build_parser():
     p_gd.add_argument('--locale', default='enUS', help='Locale of the strings (CASC).')
     p_gd.add_argument('--name', help='A name for the profile (default: the folder name).')
     p_gd.set_defaults(func=_cmd_gamedata_extract)
+
+    p_slk = subparsers.add_parser(
+        'slk', help=('Slk mode: move a map\'s object data into the tables the game '
+                     'reads (Units\\UnitData.slk, ...), for release.'))
+    p_slk.add_argument('input', help='The .w3x/.w3m map.')
+    p_slk.add_argument('output', help='The map to write.')
+    p_slk.set_defaults(func=_cmd_slk_mode)
+
+    p_obj = subparsers.add_parser(
+        'obj', help=('Obj mode: turn a map\'s object-data tables back into object '
+                     'files the World Editor reads.'))
+    p_obj.add_argument('input', help='The .w3x/.w3m map.')
+    p_obj.add_argument('output', help='The map to write.')
+    p_obj.set_defaults(func=_cmd_obj_mode)
 
     p_lni = subparsers.add_parser(
         'lni', help=('Turn a map into a folder of text files (objects as Lni, '

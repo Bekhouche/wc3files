@@ -18,6 +18,8 @@ wc3files pack out/ MyMap.edited.w3x     # repack a directory
 
 For a folder that is text rather than binary, use [Lni mode](lni.md):
 `wc3files lni MyMap.w3x MyMap/` and `wc3files lni MyMap/ Out.w3x`.
+`wc3files slk` and `wc3files obj` convert a whole map's object data to the
+game's tables and back ([Slk and Obj modes](lni.md#5-slk-and-obj-modes)).
 
 `unpack` then `pack` is the whole edit cycle: unpack, change files on disk,
 pack. `pack` round-trips through the archive writer, so the result is a fresh
