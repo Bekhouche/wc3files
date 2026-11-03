@@ -157,7 +157,21 @@ wc3files optimize MyMap.w3x Release.w3x --remove-unused-objects --remove-we-only
   what the game runs), the import list, and the regions, cameras and sounds
   when the script recreates them (it does when the editor wrote it).
   `war3mapUnits.doo` and the minimap icons are kept.
-- `--slk` then runs Slk mode (section 5).
+- `--mdx-squeeze` (w3x2lni's `mdx_squf`) cuts the precision of version 800
+  models: the low 16 bits of the vertex, normal, extent, texture-coordinate
+  and bone-key floats become zero, so each value moves by at most about 0.8%
+  of itself. The files keep their size but compress far better: on 1,752
+  corpus models, 34.6% smaller once compressed, and one sample map went from
+  14.2 MB to 10.9 MB. It is lossy; newer model versions are left alone.
+- `--computed-text` (w3x2lni's `computed_text`) writes the values of
+  `<A000,DataA1>` references into the map's text, in its object files, skin
+  files and `war3map.wts` (edited in place): the referenced field, the map's
+  value or the game's default, rounded down to a whole number, times 100 for
+  `,%`; `mindmg`, `maxdmg` and `realhp` are computed. A reference it cannot
+  work out is left as it is. Like w3x2lni's, this is an approximation of how
+  the game fills these in.
+- `--slk` then runs Slk mode (section 5). It includes the doodads
+  (w3x2lni's `slk_doodad`).
 
 Size: the first two passes make a map slightly smaller. Slk mode makes the
 object files smaller but the map larger, since each custom object's rows in

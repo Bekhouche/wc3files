@@ -29,6 +29,7 @@ an id the script builds at run time (from pieces, or arithmetic on ids); a
 map that does that should not use this pass.
 """
 
+import math
 import os
 import re
 import tempfile
@@ -190,6 +191,182 @@ def remove_unused_objects(files):
           if 'skin' not in name.lower():
                removed[ext] = sorted(drop)
      return files, {'removed': removed, 'kept': len(keep)}
+
+
+def squeeze_models(files):
+     """(files, report): every version 800 .mdx squeezed (see
+     wc3files.mdl.squeeze: lossy, about 0.8% precision, a third smaller once
+     compressed)."""
+     from wc3files.mdl.squeeze import squeeze_mdx
+     files = dict(files)
+     squeezed = []
+     for name, data in files.items():
+          if data is not None and name.lower().endswith('.mdx'):
+               out = squeeze_mdx(data)
+               if out is not data:
+                    files[name] = out
+                    squeezed.append(name)
+     return files, {'squeezed': squeezed}
+
+
+_REFERENCE = re.compile(r'<([^<>]*)>')
+_COMPUTED_TYPES = ('w3a', 'w3u', 'w3t', 'w3q')
+
+
+def computed_text(files):
+     """(files, report): the <A000,DataA1> references in the map's own
+     tooltips and other text replaced by the values they stand for, as
+     w3x2lni's computed_text does: the referenced object's field (the map's
+     change, else the game's default), at that level, rounded down to a
+     whole number; `,%` multiplies by 100 first; mindmg/maxdmg/realhp are
+     computed from the damage and life fields. A reference that cannot be
+     worked out is left as it is, and counted."""
+     from wc3files.w3o.data import ObjectFileType
+     from wc3files.w3o.object_base_data import BaseObjectData
+     from wc3files.w3o.object_metadata import ObjectMetaData, field_display_name
+     files = dict(files)
+     metadata = ObjectMetaData.default()
+     base_data = BaseObjectData.default()
+     loaded = {}         # ext -> [(name, ObjectFile)]: the object file and its skin file
+     for ext in _COMPUTED_TYPES:
+          for prefix in ('war3map', 'war3mapskin'):
+               name = next((n for n in files if n.lower() == f'{prefix}.{ext}'), None)
+               if name is not None:
+                    loaded.setdefault(ext, []).append((name, _object(files[name], ext)))
+
+     def columns(ext, object_id):
+          """lower-case column -> value for an object, map over game."""
+          object_type = ObjectFileType(ext)
+          mods = None
+          for _, obj in loaded.get(ext, []):
+               data = obj.export_data()[ext] or {}
+               found = (data.get('custom') or {}).get(object_id) or \
+                    (data.get('original') or {}).get(object_id)
+               if found:
+                    mods = dict(mods or {}, **found)
+          base_id = (mods or {}).get('ID', object_id)
+          row = base_data.get(object_type, base_id)
+          if row is None and mods is None:
+               return None
+          out = {str(k).lower(): v for k, v in (row or {}).items()}
+          fields = metadata.fields(object_type)
+          for field_id, mod in (mods or {}).items():
+               if field_id == 'ID' or field_id not in fields:
+                    continue
+               column = field_display_name(fields[field_id])
+               value = mod.get('value')
+               if isinstance(value, dict):
+                    for level, v in value.items():
+                         out[f'{column}{level}'.lower() if level else column.lower()] = v
+               else:
+                    out[column.lower()] = value
+          return out
+
+     cache = {}
+
+     def lookup(object_id):
+          if object_id not in cache:
+               cache[object_id] = next((c for c in (columns(e, object_id)
+                                                    for e in _COMPUTED_TYPES) if c), None)
+          return cache[object_id]
+
+     def number(value):
+          try:
+               return float(value)
+          except (TypeError, ValueError):
+               return None
+
+     def value_of(reference):
+          parts = reference.split(',')
+          if len(parts) < 2:
+               return None
+          row = lookup(parts[0][:4])
+          if row is None:
+               return None
+          key = parts[1].strip().lower()
+          get = lambda k: number(row.get(k)) or 0.0
+          if key in ('mindmg1', 'mindmg2'):
+               n = key[-1]
+               result = get(f'dmgplus{n}') + get(f'dice{n}')
+          elif key in ('maxdmg1', 'maxdmg2'):
+               n = key[-1]
+               result = get(f'dmgplus{n}') + get(f'dice{n}') * get(f'sides{n}')
+          elif key == 'realhp':
+               result = get('hp')
+          else:
+               result = number(row.get(key))
+               if result is None:
+                    m = re.match(r'^(.*\D)(\d+)$', key)
+                    levels = number(row.get('levels'))
+                    if m and levels is not None and int(m.group(2)) > levels:
+                         result = 0.0                # past the last level
+               if result is None:
+                    return None
+          if len(parts) > 2 and parts[2].strip() == '%':
+               result *= 100
+          return str(int(math.floor(result + 0.00005)))
+
+     replaced = failed = 0
+     trigstrings = set()
+
+     def substitute_text(text):
+          nonlocal replaced, failed
+
+          def one(m):
+               nonlocal replaced, failed
+               out = value_of(m.group(1))
+               if out is None:
+                    failed += 1
+                    return m.group(0)
+               replaced += 1
+               return out
+          return _REFERENCE.sub(one, text)
+
+     for ext, entries in loaded.items():
+      for name, obj in entries:
+          data = obj.export_data()[ext]
+          changed = False
+          for table in ('original', 'custom'):
+               for mods in (data.get(table) or {}).values():
+                    for field_id, mod in mods.items():
+                         if field_id == 'ID':
+                              continue
+                         value = mod.get('value')
+                         items = value.items() if isinstance(value, dict) else [(None, value)]
+                         for level, text in list(items):
+                              if isinstance(text, str):
+                                   m = re.match(r'^TRIGSTR_(\d+)$', text.strip(), re.I)
+                                   if m:
+                                        trigstrings.add(int(m.group(1)))
+                                        continue
+                              if not isinstance(text, str) or '<' not in text:
+                                   continue
+                              new = substitute_text(text)
+                              if new != text:
+                                   changed = True
+                                   if level is None:
+                                        mod['value'] = new
+                                   else:
+                                        mod['value'][level] = new
+          if changed:
+               files[name] = _object_bytes(obj, ext)
+     # text the objects keep in war3map.wts, edited in place there
+     wts_name = next((n for n in files if n.lower() == 'war3map.wts'), None)
+     if trigstrings and wts_name is not None:
+          raw = files[wts_name]
+          bom = raw.startswith(b'\xef\xbb\xbf')
+          text = raw.decode('utf-8-sig', 'replace')
+          pattern = re.compile(r'(STRING\s+(\d+)\s*(?://[^\n]*\r?\n\s*)*\{\r?\n)(.*?)(\r?\n\})',
+                               re.DOTALL)
+
+          def entry(m):
+               if int(m.group(2)) not in trigstrings or '<' not in m.group(3):
+                    return m.group(0)
+               return m.group(1) + substitute_text(m.group(3)) + m.group(4)
+          new = pattern.sub(entry, text)
+          if new != text:
+               files[wts_name] = (b'\xef\xbb\xbf' if bom else b'') + new.encode('utf-8')
+     return files, {'replaced': replaced, 'left': failed}
 
 
 # Files only the World Editor reads: the triggers (the script is what the

@@ -312,10 +312,12 @@ def _cmd_obj_mode(args):
 def _cmd_optimize(args):
     """Run the optimizer passes the options name (wc3files.w3x.optimize)."""
     from wc3files.w3x.modes import _read_files, _write_map, map_to_slk
-    from wc3files.w3x.optimize import remove_unused_objects, remove_we_only
-    if not (args.remove_unused_objects or args.remove_we_only or args.slk):
+    from wc3files.w3x.optimize import (remove_unused_objects, remove_we_only,
+                                       squeeze_models, computed_text)
+    if not (args.remove_unused_objects or args.remove_we_only or args.slk or
+            args.mdx_squeeze or args.computed_text):
         raise ValueError('choose at least one of --remove-unused-objects, '
-                         '--remove-we-only, --slk')
+                         '--remove-we-only, --mdx-squeeze, --computed-text, --slk')
     files = _read_files(args.input)
     if args.remove_unused_objects:
         files, report = remove_unused_objects(files)
@@ -324,6 +326,13 @@ def _cmd_optimize(args):
         else:
             count = sum(len(v) for v in report['removed'].values())
             print(f"unused objects: removed {count}, kept {report['kept']}")
+    if args.computed_text:
+        files, report = computed_text(files)
+        print(f"computed text: {report['replaced']} reference(s) written in, "
+              f"{report['left']} left as they were")
+    if args.mdx_squeeze:
+        files, report = squeeze_models(files)
+        print(f"models: {len(report['squeezed'])} squeezed")
     if args.remove_we_only:
         files, report = remove_we_only(files)
         print('editor-only files: removed ' + (', '.join(report['removed']) or 'none'))
@@ -1814,6 +1823,11 @@ def build_parser():
                        help='Drop custom objects nothing refers to.')
     p_opt.add_argument('--remove-we-only', action='store_true',
                        help='Drop the files only the World Editor reads.')
+    p_opt.add_argument('--mdx-squeeze', action='store_true',
+                       help='Cut the precision of version 800 models so they compress '
+                            'about a third better (lossy, about 0.8%%).')
+    p_opt.add_argument('--computed-text', action='store_true',
+                       help='Write the values of <A000,DataA1> references into the text.')
     p_opt.add_argument('--slk', action='store_true',
                        help='Then move object data into the tables (as `slk`).')
     p_opt.set_defaults(func=_cmd_optimize)
