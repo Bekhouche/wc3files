@@ -28,9 +28,15 @@ class W3iFile(object):
                   screen number; six fog fields between the weather id and the sound name
                   (a linear-fog range, a max opacity and three unidentified ints); ten
                   water-rendering settings after the version-33 camera zoom; and `hud_skin`
-                  in every player record, between the race and the fixed-start-position
-                  flag. 182 of the game's 186 version-39 maps and 66 of 66 in the benchmark
-                  corpus read and rewrite byte-for-byte.
+                  in the player records, between the race and the fixed-start-position
+                  flag - but only in files from editor version 6140 on (61 of the game's
+                  191 version-39 maps: editors 6140, 7000, 7003). The 130 from editors
+                  6117 and 6127 have no `hud_skin`, and `players_hud_skin` is False for
+                  them. A wrong layout can still re-serialize to the same bytes (126 of
+                  the 130 do, with the name's first bytes read as the start-position
+                  flag), so the reader keeps a layout only when it is exact and its
+                  players are plausible; on the game's maps exactly one layout passes,
+                  and it is the one the editor version predicts. All 191 read.
                   An earlier pass derived this from byte counts alone and got two things
                   wrong: it concluded the sound string and light byte had been dropped
                   (they had not - the fog block is simply new), and it could not tell why
@@ -79,29 +85,70 @@ class W3iFile(object):
                if file_type not in [item.value for item in W3iFileType]:
                     raise ValueError(f"Invalid map info file type: {file_type}")
 
-          try:
+          if self._peek_version(file_path) != 39:
                with BinaryFile(file_path, 'read') as reader:
                     self._data = self._read(reader)
-          # UnicodeDecodeError is itself a ValueError, so it has to be named
-          # before the re-raise below or it would pass straight through.
-          except (UnicodeDecodeError, struct.error, IndexError, TypeError,
-                  KeyError, EOFError) as exc:
-               # A v39 file that derails mid-parse is an understood gap, not a
-               # crash: say so plainly instead of surfacing whatever the
-               # primitive reader happened to raise.
-               if self._peek_version(file_path) == 39:
-                    raise ValueError(
+               return
+
+          # Version 39 has two player-record layouts, with and without
+          # `hud_skin` (see the class docstring). A misaligned parse can
+          # still write back the same bytes, so a layout is kept only when
+          # its parse is exact and its players are plausible; when both
+          # are, the editor version decides.
+          candidates = []
+          failure = None
+          for hud_skin in (True, False):
+               try:
+                    with BinaryFile(file_path, 'read') as reader:
+                         data = self._read(reader, hud_skin=hud_skin)
+                    self._data = data
+                    self._verify_v39(file_path)
+               except (UnicodeDecodeError, struct.error, IndexError, TypeError,
+                       KeyError, EOFError) as exc:
+                    # UnicodeDecodeError is a ValueError, so it is named
+                    # before the ValueError below.
+                    failure = failure or ValueError(
                          f"war3map.w3i version 39: this file does not match "
                          f"the layout this package derived for version 39 "
                          f"({type(exc).__name__}). Version 39 is "
-                         f"undocumented; 125 of the 186 version-39 maps the "
-                         f"game ships read and rewrite byte-for-byte, and "
-                         f"this is one of the rest. See TODO.md."
-                    ) from None
-               raise
+                         f"undocumented; see TODO.md.")
+                    continue
+               except ValueError as exc:
+                    failure = failure or exc
+                    continue
+               if self._plausible_players(data):
+                    candidates.append((hud_skin, data))
+          self._data = {}
+          if not candidates:
+               raise failure or ValueError(
+                    "war3map.w3i version 39: neither player-record layout gives "
+                    "plausible players (a start-position flag that is not a small "
+                    "number, or a name that is not text). Version 39 is undocumented; "
+                    "see TODO.md.")
+          if len(candidates) == 2:
+               editor = candidates[0][1].get('editor_version', 0)
+               wanted = editor >= self.V39_HUD_SKIN_EDITOR
+               candidates = [c for c in candidates if c[0] == wanted]
+          self._data = candidates[0][1]
 
-          if self._data.get('file_version') == 39:
-               self._verify_v39(file_path)
+     # The first editor version seen writing `hud_skin` into version-39
+     # player records (6140, 7000 and 7003 do; 6117 and 6127 do not).
+     V39_HUD_SKIN_EDITOR = 6140
+
+     @staticmethod
+     def _plausible_players(data):
+          for player in data.get('players', []):
+               if not 0 <= player.get('fixed_start_position', -1) <= 0xFF:
+                    return False
+               if not (0 <= player.get('type', -1) <= 4 and 0 <= player.get('race', -1) <= 6):
+                    return False
+               if any(0xDC80 <= ord(char) <= 0xDCFF for char in player.get('name', '')):
+                    return False
+               for key in ('start_x', 'start_y'):
+                    value = player.get(key, 0.0)
+                    if value != value or value in (float('inf'), float('-inf')):
+                         return False
+          return True
 
      @staticmethod
      def _peek_version(file_path):
@@ -119,11 +166,9 @@ class W3iFile(object):
           """Refuse a version-39 file this parser cannot reproduce exactly.
 
           Version 39 is undocumented - no public spec covers it, and it first
-          appears with the 3.0.0 editor. Its layout here was derived from the
-          465 maps the installed game ships, and it reads 125 of the 186
-          version-39 ones correctly; the rest differ somewhere this work has
-          not pinned down (the player record carries an extra int in some
-          maps, and nothing in the head reliably predicts which).
+          appears with the 2.0.4 editor. Its layout here was derived from the
+          maps the installed game ships (all 191 version-39 ones read) and
+          checked against HiveWE's parser.
 
           Rather than hand back a plausible-looking misreading, the parse is
           checked against the bytes it came from: anything that does not
@@ -321,12 +366,14 @@ class W3iFile(object):
 
      # ---- read -------------------------------------------------------------------
 
-     def _read(self, reader):
+     def _read(self, reader, hud_skin=True):
           data = {'file_version': self._read_i32(reader)}
           version = data['file_version']
 
           if 25 <= version <= 33 or version == 39:
                self._read_head(reader, data, version)
+               if version >= 39 and not hud_skin:
+                    data['players_hud_skin'] = False
                self._read_players(reader, data, version)
                self._read_forces(reader, data)
                self._read_upgrades(reader, data)
@@ -450,12 +497,10 @@ class W3iFile(object):
                     'type': self._read_i32(reader),
                     'race': self._read_i32(reader),
                }
-               if version >= 39:
-                    # Present on every version-39 player. Not having it was
-                    # what made some version-39 maps read and others not:
-                    # the records looked as though they sometimes carried an
-                    # extra int and sometimes did not, and nothing in the
-                    # head predicted which. They all carry it.
+               if version >= 39 and data.get('players_hud_skin', True):
+                    # Only in files from editor 6140 on (61 of the game's
+                    # 191 version-39 maps); players_hud_skin is False for
+                    # the others.
                     player['hud_skin'] = self._read_i32(reader)
                player['fixed_start_position'] = self._read_i32(reader)
                player['name'] = self._read_str(reader)
@@ -665,7 +710,7 @@ class W3iFile(object):
                self._write_i32(writer, player['id'])
                self._write_i32(writer, player['type'])
                self._write_i32(writer, player['race'])
-               if version >= 39:
+               if version >= 39 and data.get('players_hud_skin', True):
                     self._write_i32(writer, player.get('hud_skin', 0))
                self._write_i32(writer, player['fixed_start_position'])
                self._write_str(writer, player.get('name', ''))
