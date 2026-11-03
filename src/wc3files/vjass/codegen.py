@@ -213,6 +213,22 @@ class FunctionCompiler(object):
         return out
 
     def statement(self, stmt, hoisted):
+        # Each JASS statement remembers the vJass statement it came from (a
+        # plain attribute, read by the emitter for the source map); a nested
+        # one stamped already keeps its own, more precise place.
+        before = len(hoisted)
+        out = self._statement(stmt, hoisted)
+        loc = getattr(stmt, 'loc', None)
+        if loc is not None:
+            for produced in list(out) + hoisted[before:]:
+                if getattr(produced, 'loc', None) is None:
+                    try:
+                        produced.loc = loc
+                    except AttributeError:
+                        pass
+        return out
+
+    def _statement(self, stmt, hoisted):
         if getattr(stmt, 'is_debug', False) and not self.options.debug:
             return []
         if isinstance(stmt, ast.LocalDecl):

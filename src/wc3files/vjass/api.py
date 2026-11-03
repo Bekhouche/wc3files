@@ -2,7 +2,7 @@
 import os
 
 from .compiler import Compiler
-from .emitter import emit
+from .emitter import emit, emit_with_map
 from .errors import VJassError
 from .gamedata import load_api
 from .options import CompileOptions
@@ -24,8 +24,11 @@ class CompileResult(object):
         Every file pulled in by `//! import`.
     """
 
-    def __init__(self, jass, program, warnings, externals, imports, options):
+    def __init__(self, jass, program, warnings, externals, imports, options,
+                 source_map=None):
         self.jass = jass
+        # output line (1-based) -> the vJass Location it was compiled from
+        self.source_map = source_map or {}
         self._program = program
         self.warnings = warnings
         self.externals = externals
@@ -44,6 +47,24 @@ class CompileResult(object):
         same common.j/Blizzard.j it was compiled against."""
         from wc3files.scripts.checker import check_program
         return check_program(self.program)
+
+    def source_location(self, line):
+        """The vJass Location an output line came from: its own, else the
+        nearest line above it that has one (inside the same function), or
+        None for generated code with no source."""
+        for candidate in range(line, 0, -1):
+            loc = self.source_map.get(candidate)
+            if loc is not None:
+                return loc
+            if self.jass_lines()[candidate - 1].startswith(('function ', 'constant function ')):
+                return None
+        return None
+
+    def jass_lines(self):
+        lines = getattr(self, '_lines', None)
+        if lines is None:
+            lines = self._lines = self.jass.split('\n')
+        return lines
 
     def write(self, path):
         with open(path, 'w', encoding='utf-8', newline='\n') as fh:
@@ -103,9 +124,9 @@ class VJassCompiler(object):
         compiler = Compiler(options, self._api())
         compiler.warnings.extend(pre.warnings)
         program = compiler.compile(pre)
-        text = emit(program)
+        text, source_map = emit_with_map(program)
         return CompileResult(text, program, compiler.warnings, pre.externals,
-                             pre.imports, options)
+                             pre.imports, options, source_map)
 
     def compile_file(self, path, output=None):
         """Compile a file. `//! import` paths resolve relative to it. With

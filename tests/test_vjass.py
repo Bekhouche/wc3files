@@ -146,6 +146,29 @@ endstruct
         self.assertIn('integer s__User_n = 0', jass)
 
 
+class TestSourceMap(unittest.TestCase):
+    """A finding on the compiled JASS points back at the vJass line."""
+
+    def test_checker_findings_map_to_source_lines(self):
+        source = ('library L\n'
+                  '    function Hello takes nothing returns nothing\n'
+                  '        local trigger t = CreateTrigger()\n'
+                  '        call KillUnit(t)\n'
+                  '    endfunction\n'
+                  'endlibrary\n'
+                  'struct S\n'
+                  '    method m takes nothing returns nothing\n'
+                  '        local timer x = CreateTimer()\n'
+                  '        call SetUnitX(x, 1.0)\n'
+                  '    endmethod\n'
+                  'endstruct\n')
+        result = VJassCompiler().compile(source, 'map.j')
+        lines = sorted(result.source_location(f['line']).line for f in result.validate()
+                       if f['severity'] == 'issue')
+        self.assertEqual(lines, [4, 10])
+        self.assertEqual(result.source_location(1), None)
+
+
 class TestLibraryOrder(unittest.TestCase):
 
     def order(self, source):

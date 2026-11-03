@@ -103,6 +103,7 @@ class Emitter(object):
 
     def __init__(self):
         self.lines = []
+        self.locations = {}       # output line index -> vJass Location
 
     def program(self, program):
         lines = self.lines
@@ -142,6 +143,9 @@ class Emitter(object):
 
     def function(self, function):
         prefix = 'constant ' if function.is_constant else ''
+        loc = getattr(function, 'loc', None)
+        if loc is not None:
+            self.locations[len(self.lines)] = loc
         self.lines.append(f'{prefix}function {function.name} takes '
                           f'{self.params(function.params)} returns '
                           f'{function.returns}')
@@ -154,6 +158,9 @@ class Emitter(object):
 
     def statement(self, stmt, depth):
         pad = INDENT * depth
+        loc = getattr(stmt, 'loc', None)
+        if loc is not None:
+            self.locations[len(self.lines)] = loc
         out = self.lines.append
         if isinstance(stmt, ir.Local):
             array = 'array ' if stmt.is_array else ''
@@ -226,3 +233,10 @@ class Emitter(object):
 
 def emit(program):
     return Emitter().program(program)
+
+
+def emit_with_map(program):
+    """(JASS text, {output line number (1-based): vJass Location})."""
+    emitter = Emitter()
+    text = emitter.program(program)
+    return text, {index + 1: loc for index, loc in emitter.locations.items()}

@@ -139,7 +139,9 @@ file: `[lookupfolders]`, `[forcemethodevaluate]` and `[noimplicitthis]`.
 By default an undeclared name is left in the output as written, with a warning,
 because JassHelper does the same and a script compiled in parts (custom code
 without the editor's generated globals) relies on it. `--check`, or
-`result.validate()`, runs the JASS checker over the output.
+`result.validate()`, runs the JASS checker over the output. A finding is reported at the vJass
+line its code came from (`result.source_map`, `result.source_location(line)`),
+or at the compiled line for code the compiler generated itself.
 
 ## Differences from JassHelper
 
