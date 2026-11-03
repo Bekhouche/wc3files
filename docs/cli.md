@@ -163,6 +163,12 @@ wc3files replay-mmd replay.w3g            # the W3MMD meta data a replay carries
 wc3files replay-actions replay.w3g        # per-player action totals
 ```
 
+An unfinished replay also reads: the `TempReplay.w3g` the game leaves after a
+crash or a hang has no header yet (the game writes it when the game ends),
+and its last block may be cut short. Its players, chat and actions are read
+up to the last whole block, and `replay-actions` takes the length from the
+recorded time slots. Such a replay is written back only unchanged.
+
 ## An installed game
 
 ```bash

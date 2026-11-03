@@ -64,8 +64,13 @@ class ReplayBlockError(ValueError):
     pass
 
 
-def parse_stream(data, marker_already_consumed=False):
+def parse_stream(data, marker_already_consumed=False, unfinished_tail=None):
     """Parse a replay tail into `(reforged_players, game_start, blocks)`.
+
+    `unfinished_tail`, a list, is for a replay the game never finished: the
+    block stream then stops at the zero padding of its last block or at a
+    block cut short, and the bytes from there on are appended to the list
+    instead of raising.
 
     `marker_already_consumed` says the caller already ate the `0x19` byte, so
     the game-start record begins at its length field. That is what the
@@ -113,8 +118,18 @@ def parse_stream(data, marker_already_consumed=False):
 
     blocks = []
     while pos < size:
-        blocks.append(_read_block(data, pos, size))
+        if unfinished_tail is not None:
+            if data[pos] == 0:
+                break                       # the padding of the last block
+            try:
+                blocks.append(_read_block(data, pos, size))
+            except ReplayBlockError:
+                break                       # a block cut short
+        else:
+            blocks.append(_read_block(data, pos, size))
         pos = blocks[-1]['_end']
+    if unfinished_tail is not None:
+        unfinished_tail.append(data[pos:])
 
     for block in blocks:
         del block['_end']

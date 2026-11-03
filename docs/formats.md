@@ -104,7 +104,7 @@ Plus icon authoring: `resize_box`, `resize_nearest`, `composite_over`,
 | `.toc` | `TocFile` | ✓ | ✓ | Frame-definition manifests |
 | `.pkb` `.pkcf` `.pkmm` | `PkbFile`, `PkcfFile`, `PkmmFile` | ✓ | ✓ | Popcorn effect files |
 | `.wai` | `WaiFile` | ✓ | ✓ | AI scripts. The condition tree is not fully pinned down |
-| `.w3g` | `ReplayFile` | ✓ | ✓ | Replays, including W3MMD meta data and player actions |
+| `.w3g` | `ReplayFile` | ✓ | ✓ | Replays, including W3MMD meta data and player actions; also the unfinished `TempReplay.w3g` of a crash or hang |
 
 ## Known limits
 

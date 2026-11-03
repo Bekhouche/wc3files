@@ -886,9 +886,15 @@ def _cmd_replay_actions(args):
             apm_totals[player_id] += 1
 
     minutes = (data['header']['sub'].get('replay_length') or 0) / 60000.0
+    unfinished = getattr(replay, 'unfinished', False)
+    if unfinished:
+        # The game never wrote this replay's header (a crash or a hang),
+        # so its length is the sum of the recorded time slots.
+        minutes = sum(block.get('time_increment') or 0 for block in blocks) / 60000.0
 
     print(f"actions      : {sum(totals.values())}")
-    print(f"length       : {minutes:.1f} min")
+    print(f"length       : {minutes:.1f} min"
+          + (' (unfinished replay: up to the last recorded time slot)' if unfinished else ''))
     print(f"id mapping   : {'shifted at 0x%02X' % threshold if threshold else 'classic'}")
     print()
     header = f"{'player':24} {'actions':>9} {'apm-actions':>12}"

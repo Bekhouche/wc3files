@@ -322,6 +322,8 @@ class ReplayCompressedData:
         # valid but different - and measurably smaller - file: across 25 real
         # replays a rebuild came out 5-7% smaller every time. Holding the
         # original records lets write() reproduce an unedited replay exactly.
+        if len(compressed_data) != compressed_size:
+            raise EOFError('the block is cut short by the end of the file')
         self._raw_blocks.append({
             'compressed': bytes(compressed_data),
             'uncompressed_size': uncompressed_size,
@@ -339,7 +341,7 @@ class ReplayCompressedData:
 
         return decompressed
 
-    def read(self, reader) -> None:
+    def read(self, reader, partial_ok=False) -> None:
         """
         Parse the compressed replay data from the provided reader.
 
@@ -361,10 +363,35 @@ class ReplayCompressedData:
         uncompressed_data = bytearray()
         self._raw_blocks = []
 
-        # Process each compressed block.
-        for _ in range(num_blocks):
-            block = self._read_compressed_block(reader, is_reforged)
-            uncompressed_data.extend(block)
+        # Process each compressed block. An unfinished replay (partial_ok)
+        # has no block count: every block is read, and one cut short by the
+        # end of the file is kept as raw bytes.
+        self._partial_tail = b''
+        if num_blocks is None:
+            block_header = 12 if is_reforged else 8
+            while reader.size() - reader.tell() >= block_header:
+                start = reader.tell()
+                recorded = len(self._raw_blocks)
+                try:
+                    block = self._read_compressed_block(reader, is_reforged)
+                except (ValueError, zlib.error, EOFError, struct.error):
+                    if not partial_ok:
+                        raise
+                    # a block that failed may have been recorded before it did
+                    del self._raw_blocks[recorded:]
+                    reader.seek(start)
+                    self._partial_tail = reader.read(BinaryDataType.BYTES,
+                                                     reader.size() - start)
+                    break
+                uncompressed_data.extend(block)
+            if not self._partial_tail and reader.tell() < reader.size():
+                # fewer bytes left than a block header
+                self._partial_tail = reader.read(BinaryDataType.BYTES,
+                                                 reader.size() - reader.tell())
+        else:
+            for _ in range(num_blocks):
+                block = self._read_compressed_block(reader, is_reforged)
+                uncompressed_data.extend(block)
 
         # Each compressed block decompresses to a full, fixed-size chunk (matching the size
         # it was originally compressed from) even when its real content is shorter than that
@@ -377,6 +404,11 @@ class ReplayCompressedData:
 
         data = bytes(uncompressed_data)
         self._data = {}
+        if partial_ok and not any(data):
+            # The game stopped before recording anything: the blocks hold
+            # only zeros (seen in a crash folder's TempReplay.w3g).
+            self._data['_empty'] = True
+            return
         # Seen as the constant b'\x10\x01\x00\x00' across every real replay checked -
         # meaning/semantics undetermined, kept verbatim rather than assumed to be padding.
         self._data['_leading_bytes'] = data[:4]
@@ -526,10 +558,12 @@ class ReplayCompressedData:
         # leave-game). Parse it, and fall back to carrying it verbatim if
         # anything in there is not recognized, so an unusual replay still
         # round-trips rather than failing to read at all.
+        unfinished_tail = [] if partial_ok else None
         try:
             reforged_players, game_start, parsed = _blocks.parse_stream(
                 tail,
                 marker_already_consumed=self._data['_has_reforged_metadata_marker'],
+                unfinished_tail=unfinished_tail,
             )
         except _blocks.ReplayBlockError:
             self._data['_raw_tail'] = tail
@@ -537,6 +571,10 @@ class ReplayCompressedData:
             self._data['reforged_players'] = reforged_players
             self._data['game_start'] = game_start
             self._data['blocks'] = parsed
+            if unfinished_tail:
+                # an unfinished replay: what follows the last whole block
+                # (a block cut short, the zero padding)
+                self._data['_unfinished_tail'] = unfinished_tail[0]
 
     def get_data(self) -> Dict[str, Any]:
         """
@@ -632,6 +670,7 @@ class ReplayCompressedData:
             out.extend(_blocks.build_stream(data.get('reforged_players'),
                                             data.get('game_start'),
                                             data['blocks']))
+            out.extend(data.get('_unfinished_tail', b''))
         else:
             out.extend(data.get('_raw_tail', b''))
         return bytes(out)

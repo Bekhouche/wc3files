@@ -299,6 +299,89 @@ class TestSyntheticReplay(unittest.TestCase):
                 replay.write(os.path.join(tmp, 'empty.w3g'))
 
 
+def _chat(i):
+    return {'id': blocks_mod.CHAT_MESSAGE, 'player_id': 1, 'flags': 0x20,
+            'mode': 0, 'text': f'message number {i}'}
+
+
+class TestUnfinishedReplay(unittest.TestCase):
+    """Replays the game never finished (TempReplay.w3g after a crash or a
+    hang). The game writes the header when the game ends, so these have 68
+    zero bytes there (or a header saying 0 bytes), then real blocks, the
+    last one possibly cut short. Measured: the 6 such files among 378
+    distinct local replays now read, decode their actions and write back
+    byte-for-byte."""
+
+    def finished(self, count=20, block_size=64):
+        tail = blocks_mod.build_stream([], None, [_chat(i) for i in range(count)])
+        replay = ReplayFile()
+        replay.import_data(_replay_data(tail=tail))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'done.w3g')
+            replay.write(path, block_size=block_size)
+            with open(path, 'rb') as fh:
+                return fh.read()
+
+    def read(self, data):
+        tmp = tempfile.mkdtemp()
+        path = os.path.join(tmp, 'TempReplay.w3g')
+        with open(path, 'wb') as fh:
+            fh.write(data)
+        replay = ReplayFile()
+        replay.read(path)
+        out = os.path.join(tmp, 'again.w3g')
+        return replay, path, out
+
+    def test_zeroed_header(self):
+        data = bytes(68) + self.finished()[68:]
+        replay, _, out = self.read(data)
+        self.assertTrue(replay.unfinished)
+        compressed = replay.get_data()['compressed_data']
+        self.assertEqual(compressed['GameName'], 'Test Game')
+        self.assertEqual(len(compressed['blocks']), 20)
+        replay.write(out)
+        with open(out, 'rb') as fh:
+            self.assertEqual(fh.read(), data)
+
+    def test_last_block_cut_short(self):
+        data = bytes(68) + self.finished()[68:]
+        data = data[:-20]
+        replay, _, out = self.read(data)
+        compressed = replay.get_data()['compressed_data']
+        self.assertLess(len(compressed['blocks']), 20)
+        self.assertGreater(len(compressed['blocks']), 0)
+        self.assertGreater(len(replay.compressed_data._partial_tail), 0)
+        replay.write(out)
+        with open(out, 'rb') as fh:
+            self.assertEqual(fh.read(), data)
+
+    def test_nothing_recorded(self):
+        import zlib
+        block = zlib.compress(bytes(8192))
+        data = bytes(68) + struct.pack('<III', len(block), 8192, 0) + block
+        replay, _, out = self.read(data)
+        self.assertTrue(replay.get_data()['compressed_data'].get('_empty'))
+        replay.write(out)
+        with open(out, 'rb') as fh:
+            self.assertEqual(fh.read(), data)
+
+    def test_an_edited_unfinished_replay_is_refused(self):
+        replay, _, out = self.read(bytes(68) + self.finished()[68:])
+        replay.compressed_data.get_data()['GameName'] = 'Renamed'
+        with self.assertRaises(ValueError):
+            replay.write(out)
+
+    def test_block_stream_stops_at_padding_or_a_cut(self):
+        raw = blocks_mod.build_stream([], None, [_chat(0), _chat(1)])
+        for data, expected in ((raw + bytes(40), 2), (raw[:-3], 1)):
+            tail = []
+            _, _, parsed = blocks_mod.parse_stream(data, unfinished_tail=tail)
+            self.assertEqual(len(parsed), expected)
+            self.assertEqual(blocks_mod.build_stream([], None, parsed) + tail[0], data)
+        with self.assertRaises(blocks_mod.ReplayBlockError):
+            blocks_mod.parse_stream(raw[:-3])
+
+
 class TestReplayBlockStream(unittest.TestCase):
     """The block stream that used to be carried as an opaque `_raw_tail`.
 
