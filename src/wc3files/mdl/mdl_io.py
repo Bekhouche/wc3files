@@ -1006,6 +1006,8 @@ def _parse_light(tokens):
             light['ambientIntensity'] = float(_parse_number(tokens.next()))
         elif key == 'AmbColor':
             light['ambientColor'] = _read_vector(tokens)
+        elif key == 'ShadowIntensity':
+            light['shadowIntensity'] = float(_parse_number(tokens.next()))
         else:
             tokens._i -= 1
             leftover = _parse_node_body(tokens, light['node'])
@@ -1626,6 +1628,8 @@ def _write_light_lines(light):
     lines.append(f'\tColor {{ {_fmt_floats(light.get("color") or [1, 1, 1])} }},')
     lines.append(f'\tAmbIntensity {_fmt_num(light.get("ambientIntensity", 0.0))},')
     lines.append(f'\tAmbColor {{ {_fmt_floats(light.get("ambientColor") or [0, 0, 0])} }},')
+    if 'shadowIntensity' in light:
+        lines.append(f'\tShadowIntensity {_fmt_num(light["shadowIntensity"])},')
     lines.append('}')
     return lines
 
