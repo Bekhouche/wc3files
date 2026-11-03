@@ -354,7 +354,6 @@ def _parse(text):
           if reader.pos >= len(text):
                return sections
           if reader.at("['") or reader.at('["'):
-               start = reader.pos
                reader.pos += 1
                name = reader.string()
                reader.skip_space(False)

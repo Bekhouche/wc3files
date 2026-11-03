@@ -648,10 +648,9 @@ _COMMON_AI = None
 def _common_ai_natives():
      global _COMMON_AI
      if _COMMON_AI is None:
-          import os
           from .jass_parser import parse
-          path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gamedata',
-                              'common.ai')
+          from wc3files import gamedata
+          path = gamedata.path('scripts/gamedata/common.ai')
           with open(path, 'r', encoding='utf-8', errors='replace') as handle:
                _COMMON_AI = frozenset(n.name for n in parse(handle.read()).natives)
      return _COMMON_AI

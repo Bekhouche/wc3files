@@ -274,6 +274,19 @@ def _report_script_check(path, findings):
     return 1 if issues else 0
 
 
+def _cmd_gamedata_extract(args):
+    """Extract a game-data profile from an install."""
+    from wc3files import gamedata
+    profile = gamedata.extract(args.install, args.output, locale=args.locale, name=args.name)
+    print(f"{profile['source']}: {len(profile['files'])} table(s) written to {args.output}")
+    if profile['missing']:
+        print(f"not in this version ({len(profile['missing'])}, the bundled copy is used): "
+              + ', '.join(os.path.basename(m) for m in profile['missing']))
+    for relative, why in profile['refused'].items():
+        print(f'refused {relative}: {why}', file=sys.stderr)
+    return 1 if profile['refused'] else 0
+
+
 def _cmd_lni(args):
     """Map -> Lni folder, or Lni folder -> map (by what the input is)."""
     from collections import Counter
@@ -1265,6 +1278,10 @@ def build_parser():
         prog='wc3files',
         description='Read/write Warcraft III map, campaign, and replay files.',
     )
+    parser.add_argument('--game-data', metavar='PROFILE', default=None,
+                        help=('Read game tables (object data, natives, GUI triggers) from '
+                              'a profile made by gamedata-extract instead of the bundled '
+                              'Reforged ones.'))
     parser.add_argument('-v', '--verbose', action='store_true',
                          help='Show this package\'s own debug/info logging (quiet by default).')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -1715,6 +1732,15 @@ def build_parser():
                        help='Stop the script after this many steps (0: no limit).')
     p_lua.set_defaults(func=_cmd_lua)
 
+    p_gd = subparsers.add_parser(
+        'gamedata-extract', help=('Copy a game install\'s data tables (classic MPQ or '
+                                  'CASC) into a profile folder for --game-data.'))
+    p_gd.add_argument('install', help='The game install folder.')
+    p_gd.add_argument('output', help='The profile folder to write.')
+    p_gd.add_argument('--locale', default='enUS', help='Locale of the strings (CASC).')
+    p_gd.add_argument('--name', help='A name for the profile (default: the folder name).')
+    p_gd.set_defaults(func=_cmd_gamedata_extract)
+
     p_lni = subparsers.add_parser(
         'lni', help=('Turn a map into a folder of text files (objects as Lni, '
                      'the rest as JSON or as they are), or such a folder back into a map.'))
@@ -1768,6 +1794,10 @@ def build_parser():
 def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if getattr(args, 'game_data', None):
+        from wc3files import gamedata
+        gamedata.use(args.game_data)
 
     if not args.verbose:
         logger.remove()

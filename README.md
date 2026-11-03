@@ -34,6 +34,7 @@ Full documentation lives in [docs/](docs/README.md):
 - [Command line](docs/cli.md) - the `wc3files` command and its 28 subcommands
 - [vJass and Zinc](docs/vjass.md) - compiling vJass and Zinc to JASS, as JassHelper does
 - [External tools and Lua](docs/grimex.md) - running a map's ObjectMerger, FileImporter and other tool calls, and the Lua interpreter
+- [Game data for other versions](docs/gamedata.md) - profiles of 1.24, 1.27, 1.32... tables extracted from an install, used with `--game-data`
 - [Lni mode](docs/lni.md) - a map as a folder of text files (objects as Lni, the rest as JSON) and back, for git
 - [Triggers and scripts](docs/triggers.md) - GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script
 
