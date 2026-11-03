@@ -309,6 +309,33 @@ def _cmd_obj_mode(args):
     return 0
 
 
+def _cmd_optimize(args):
+    """Run the optimizer passes the options name (wc3files.w3x.optimize)."""
+    from wc3files.w3x.modes import _read_files, _write_map, map_to_slk
+    from wc3files.w3x.optimize import remove_unused_objects, remove_we_only
+    if not (args.remove_unused_objects or args.remove_we_only or args.slk):
+        raise ValueError('choose at least one of --remove-unused-objects, '
+                         '--remove-we-only, --slk')
+    files = _read_files(args.input)
+    if args.remove_unused_objects:
+        files, report = remove_unused_objects(files)
+        if report.get('skipped'):
+            print(f"unused objects: skipped ({report['skipped']})")
+        else:
+            count = sum(len(v) for v in report['removed'].values())
+            print(f"unused objects: removed {count}, kept {report['kept']}")
+    if args.remove_we_only:
+        files, report = remove_we_only(files)
+        print('editor-only files: removed ' + (', '.join(report['removed']) or 'none'))
+    if args.slk:
+        for name, outcome in map_to_slk(None, args.output, files).items():
+            print(f'{name}: {outcome}')
+    else:
+        _write_map(files, args.output)
+    print(f'Wrote {args.output}')
+    return 0
+
+
 def _cmd_lni(args):
     """Map -> Lni folder, or Lni folder -> map (by what the input is)."""
     from collections import Counter
@@ -1776,6 +1803,20 @@ def build_parser():
     p_obj.add_argument('input', help='The .w3x/.w3m map.')
     p_obj.add_argument('output', help='The map to write.')
     p_obj.set_defaults(func=_cmd_obj_mode)
+
+    p_opt = subparsers.add_parser(
+        'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '
+                          'drop unused objects and editor-only files, move object '
+                          'data to the game\'s tables.'))
+    p_opt.add_argument('input', help='The .w3x/.w3m map.')
+    p_opt.add_argument('output', help='The map to write.')
+    p_opt.add_argument('--remove-unused-objects', action='store_true',
+                       help='Drop custom objects nothing refers to.')
+    p_opt.add_argument('--remove-we-only', action='store_true',
+                       help='Drop the files only the World Editor reads.')
+    p_opt.add_argument('--slk', action='store_true',
+                       help='Then move object data into the tables (as `slk`).')
+    p_opt.set_defaults(func=_cmd_optimize)
 
     p_lni = subparsers.add_parser(
         'lni', help=('Turn a map into a folder of text files (objects as Lni, '

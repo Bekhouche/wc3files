@@ -133,3 +133,33 @@ lists the objects whose parent had to be guessed.
 These tables were checked against the files of a real map that ships its
 data this way; the files this mode writes have not yet been loaded in a
 Reforged client, so test a converted map in the game before releasing it.
+
+## 6. Optimizing a map
+
+```bash
+wc3files optimize MyMap.w3x Release.w3x --remove-unused-objects --remove-we-only --slk
+```
+
+- `--remove-unused-objects` drops the custom objects nothing refers to. A
+  custom object is kept if its id appears in a script (a rawcode, a
+  four-character string, `FourCC`, or an integer literal equal to it), in
+  the placed units, items and doodads, in the map info, in any text or table
+  file, or in a field of another object that is kept (ability, build and
+  research lists, buffs, tooltips), followed until nothing new turns up. A
+  changed standard object is never removed. This errs on the side of
+  keeping; what it cannot see is an id a script builds at run time, so a map
+  doing that should not use it. On sample maps of the corpus it removed
+  2,244 of 19,023 custom objects, and a check of every removed id against
+  the scripts found only incidental matches (comments, hex numbers, sound
+  variable names).
+- `--remove-we-only` drops the files only the World Editor reads, the six
+  w3x2lni drops: the triggers (`war3map.wtg`, `war3map.wct`; the script is
+  what the game runs), the import list, and the regions, cameras and sounds
+  when the script recreates them (it does when the editor wrote it).
+  `war3mapUnits.doo` and the minimap icons are kept.
+- `--slk` then runs Slk mode (section 5).
+
+Size: the first two passes make a map slightly smaller. Slk mode makes the
+object files smaller but the map larger, since each custom object's rows in
+the tables are complete; on one sample map it added 110 KB to 14 MB. Its use
+is the release format, not the size.
