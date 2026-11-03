@@ -16,6 +16,9 @@ wc3files unpack MyMap.w3x out/          # extract to loose files
 wc3files pack out/ MyMap.edited.w3x     # repack a directory
 ```
 
+For a folder that is text rather than binary, use [Lni mode](lni.md):
+`wc3files lni MyMap.w3x MyMap/` and `wc3files lni MyMap/ Out.w3x`.
+
 `unpack` then `pack` is the whole edit cycle: unpack, change files on disk,
 pack. `pack` round-trips through the archive writer, so the result is a fresh
 archive rather than a patched copy of the original.

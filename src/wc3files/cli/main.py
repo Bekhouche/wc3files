@@ -274,6 +274,23 @@ def _report_script_check(path, findings):
     return 1 if issues else 0
 
 
+def _cmd_lni(args):
+    """Map -> Lni folder, or Lni folder -> map (by what the input is)."""
+    from collections import Counter
+    from wc3files.lni import map_to_lni, lni_to_map, MANIFEST
+    if os.path.isdir(args.input):
+        if not os.path.isfile(os.path.join(args.input, MANIFEST)):
+            raise ValueError(f'{args.input} is not an Lni folder (no {MANIFEST})')
+        files = lni_to_map(args.input, args.output)
+        print(f'Built {args.output} ({len(files)} files)')
+        return 0
+    manifest = map_to_lni(args.input, args.output)
+    kinds = Counter(entry['kind'] for entry in manifest['files'])
+    print(f"Wrote {args.output}: {kinds.get('lni', 0)} object file(s) as Lni, "
+          f"{kinds.get('json', 0)} as JSON, {kinds.get('raw', 0)} as they are")
+    return 0
+
+
 def _cmd_run_map(args):
     """Run a map script in wc3files.scripts.wc3_runtime and report what failed."""
     from wc3files.scripts.wc3_runtime import MapRuntime, load_map_script
@@ -1697,6 +1714,13 @@ def build_parser():
     p_lua.add_argument('--max-steps', type=int, default=50_000_000,
                        help='Stop the script after this many steps (0: no limit).')
     p_lua.set_defaults(func=_cmd_lua)
+
+    p_lni = subparsers.add_parser(
+        'lni', help=('Turn a map into a folder of text files (objects as Lni, '
+                     'the rest as JSON or as they are), or such a folder back into a map.'))
+    p_lni.add_argument('input', help='A .w3x/.w3m map, or an Lni folder.')
+    p_lni.add_argument('output', help='The folder to write, or the map to build.')
+    p_lni.set_defaults(func=_cmd_lni)
 
     p_run_map = subparsers.add_parser(
         'run-map', help=('Run a map script without the game (common.j stubs, '

@@ -23,6 +23,7 @@ print(sorted(archive.files))          # war3map.w3i, war3map.j, war3map.doo, ...
 | [Command line](cli.md) | The `wc3files` command and its 28 subcommands |
 | [vJass and Zinc](vjass.md) | Compiling vJass and Zinc to JASS, as JassHelper does |
 | [External tools and Lua](grimex.md) | Running a map's ObjectMerger and other tool calls, and the Lua interpreter |
+| [Lni mode](lni.md) | A map as a folder of text files and back, for version control |
 | [Triggers and scripts](triggers.md) | GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script |
 
 ## What a Warcraft III map is
