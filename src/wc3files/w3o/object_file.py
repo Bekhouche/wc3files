@@ -491,10 +491,38 @@ class ObjectFile(object):
           else:
                raise ValueError("Invalid file type")
           
-     def filter(object_type=ObjectFileType.File, table=['original', 'custom'], keep=[], remove=[]):
-          #print(object_type, table, keep, remove)
-          x = 0
-          
+     def filter(self, object_type=ObjectFileType.File, table=('original', 'custom'),
+                keep=None, remove=None):
+          """Keeps only the object ids in `keep` (when given), then drops the
+          ids in `remove`, in the given tables ('original', 'custom' or both).
+
+          `object_type` is an ObjectFileType or its extension ('w3u', ...);
+          ObjectFileType.File (the default) applies the filter to every loaded
+          object type. Ids that are not present are ignored, and the remaining
+          entries keep the order they were read in. Returns self."""
+          object_type = ObjectFileType(object_type)
+          if isinstance(table, str):
+               table = (table,)
+          for name in table:
+               if name not in ('original', 'custom'):
+                    raise ValueError(f"unknown object table: {name!r}")
+          if object_type == ObjectFileType.File:
+               types = [key for key, value in self._data.items() if value is not None]
+          else:
+               types = [object_type.value] if self._data.get(object_type.value) else []
+          keep = set(keep) if keep else None
+          remove = set(remove) if remove else None
+          for type_ in types:
+               for name in table:
+                    entries = self._data[type_].get(name) or {}
+                    if keep is not None:
+                         entries = {key: value for key, value in entries.items() if key in keep}
+                    if remove is not None:
+                         entries = {key: value for key, value in entries.items() if key not in remove}
+                    self._data[type_][name] = entries
+                    self._data_total[type_][name] = len(entries)
+          return self
+
      def get_object_type(self):
           return self._data_type
 

@@ -327,5 +327,67 @@ class TestObjectFileMutationHooks(unittest.TestCase):
             obj.clear_hooks('bogus')
 
 
+class TestObjectFileFilter(unittest.TestCase):
+    """ObjectFile.filter (issue #3) was a stub with no `self` whose body did
+    nothing. The data is the real sample.w3u (original hfoo, custom h000) with
+    its custom unit copied under two more ids."""
+
+    def setUp(self):
+        import copy
+        self.obj = ObjectFile()
+        self.obj.read(_helpers.sample_path('sample.w3u'))
+        custom = self.obj.export_data()['w3u']['custom']
+        custom['h001'] = copy.deepcopy(custom['h000'])
+        custom['h002'] = copy.deepcopy(custom['h000'])
+
+    def ids(self, table):
+        return list(self.obj.export_data()['w3u'][table])
+
+    def test_remove_drops_the_listed_ids(self):
+        self.assertIs(self.obj.filter(remove=['h001']), self.obj)
+        self.assertEqual(self.ids('custom'), ['h000', 'h002'])
+        self.assertEqual(self.ids('original'), ['hfoo'])
+
+    def test_keep_keeps_only_the_listed_ids(self):
+        self.obj.filter(ObjectFileType.Units, keep=['h002', 'hfoo', 'hNOT'])
+        self.assertEqual(self.ids('custom'), ['h002'])
+        self.assertEqual(self.ids('original'), ['hfoo'])
+
+    def test_table_selects_where_the_filter_applies(self):
+        self.obj.filter('w3u', table='original', remove=['hfoo', 'h000'])
+        self.assertEqual(self.ids('original'), [])
+        self.assertEqual(self.ids('custom'), ['h000', 'h001', 'h002'])
+
+    def test_other_object_type_is_left_alone(self):
+        self.obj.filter('w3a', remove=['h000'])
+        self.assertEqual(self.ids('custom'), ['h000', 'h001', 'h002'])
+
+    def test_unknown_table_raises(self):
+        with self.assertRaises(ValueError):
+            self.obj.filter(table='customs', remove=['h000'])
+
+    def test_filtered_file_writes_and_reads_back(self):
+        self.obj.filter(remove=['h000', 'h002'])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'filtered.w3u')
+            self.obj.write(out)
+            reread = ObjectFile()
+            reread.read(out)
+        data = reread.export_data()['w3u']
+        self.assertEqual(list(data['custom']), ['h001'])
+        self.assertEqual(data['custom']['h001']['ID'], 'hfoo')
+        self.assertEqual(data['original']['hfoo']['utst']['value'], 999)
+
+    def test_no_arguments_keeps_the_file_byte_identical(self):
+        obj = ObjectFile()
+        obj.read(_helpers.sample_path('sample.w3u'))
+        obj.filter()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'same.w3u')
+            obj.write(out)
+            self.assertEqual(_helpers.read_bytes(out),
+                             _helpers.read_bytes(_helpers.sample_path('sample.w3u')))
+
+
 if __name__ == '__main__':
     unittest.main()
