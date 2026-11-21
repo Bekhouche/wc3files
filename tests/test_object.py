@@ -2,6 +2,7 @@
 metadata-driven schema/base-data/enum/string pipeline. The metadata-side
 assertions are pinned to facts already verified once (and documented in
 TODO.md) against a real Reforged install - not guesses."""
+import copy
 import os
 import tempfile
 import unittest
@@ -9,6 +10,8 @@ import unittest
 import _helpers
 from wc3files import ObjectFile
 from wc3files.data import BinaryDataType, ObjectFileType
+from wc3files.files.binary_file import BinaryFile
+from wc3files.w3o.object_file import ObjectTable
 from wc3files.w3o.object_metadata import ObjectMetaData
 from wc3files.w3o.object_base_data import BaseObjectData
 from wc3files.w3o.object_editor_enums import ObjectEditorEnums
@@ -35,6 +38,60 @@ class TestObjectFileRoundTrip(unittest.TestCase):
             out = os.path.join(tmp, 'roundtrip.w3u')
             self.obj.write(out)
             self.assertEqual(_helpers.read_bytes(out), original)
+
+
+class TestObjectTableFilter(unittest.TestCase):
+    """ObjectTable.filter (issue #2): `remove` used to keep exactly the listed
+    ids instead of dropping them. The table is built from the real custom
+    unit of sample.w3u, copied under two more ids."""
+
+    def setUp(self):
+        obj = ObjectFile()
+        obj.read(_helpers.sample_path('sample.w3u'))
+        custom = obj.export_data()['w3u']['custom']
+        self.data = {'h000': custom['h000'],
+                     'h001': copy.deepcopy(custom['h000']),
+                     'h002': copy.deepcopy(custom['h000'])}
+
+    def table(self):
+        table = ObjectTable(ObjectFileType.Units, 'custom')
+        table.load(dict(self.data))
+        return table
+
+    def test_remove_drops_the_listed_ids(self):
+        table = self.table()
+        table.filter(remove=['h000'])
+        self.assertEqual(list(table.get()), ['h001', 'h002'])
+        self.assertEqual(len(table), 2)
+
+    def test_keep_keeps_only_the_listed_ids_in_table_order(self):
+        table = self.table()
+        table.filter(keep=['h002', 'h000', 'hNOT'])
+        self.assertEqual(list(table.get()), ['h000', 'h002'])
+        self.assertEqual(len(table), 2)
+
+    def test_keep_then_remove(self):
+        table = self.table()
+        table.filter(keep=['h000', 'h001'], remove=['h001'])
+        self.assertEqual(list(table.get()), ['h000'])
+
+    def test_no_arguments_changes_nothing(self):
+        table = self.table()
+        table.filter()
+        self.assertEqual(list(table.get()), ['h000', 'h001', 'h002'])
+
+    def test_filtered_table_writes_and_reads_back(self):
+        table = self.table()
+        table.filter(remove=['h001'])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'table.bin')
+            with BinaryFile(out, 'write') as writer:
+                table.write(writer)
+            reread = ObjectTable(ObjectFileType.Units, 'custom')
+            with BinaryFile(out, 'read') as reader:
+                reread.read(reader)
+        self.assertEqual(list(reread.get()), ['h000', 'h002'])
+        self.assertEqual(reread.get(), table.get())
 
 
 class TestObjectMetadataPipeline(unittest.TestCase):

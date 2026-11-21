@@ -268,14 +268,17 @@ class ObjectTable(object):
                          writer.write(BinaryDataType.BYTES, self._rawcode_bytes(
                               stored_end if stored_end is not None else end_token))
 
-     def filter(self, remove=[], keep=[]):
-          if len(keep):
-               self._data = {key: self._data[key] for key in keep if key in self._data}
-               self._data_total = len(self._data)
-
-          if len(remove):
-               self._data = {key: self._data[key] for key in remove if key in self._data}
-               self._data_total = len(self._data)
+     def filter(self, remove=None, keep=None):
+          """Keeps only the ids in `keep` (when given), then drops the ids in
+          `remove`. Ids that are not in the table are ignored; the order of
+          the remaining entries is kept."""
+          if keep:
+               keep = set(keep)
+               self._data = {key: value for key, value in self._data.items() if key in keep}
+          if remove:
+               remove = set(remove)
+               self._data = {key: value for key, value in self._data.items() if key not in remove}
+          self._data_total = len(self._data)
 
      def get(self):
           return self._data
