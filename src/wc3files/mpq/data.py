@@ -80,17 +80,22 @@ class MPQFileHeaderExtendedFieldsFormatV3(Enum):
     BET_TABLE_POS_64 = 'BET_TABLE_POS_64'
     HET_TABLE_POS_64 = 'HET_TABLE_POS_64'
 
+# The fields a version-4 header adds after version 3, in file order (StormLib's
+# TMPQHeader: HashTableSize64 ... BetTableSize64, dwRawChunkSize, then six MD5
+# digests).
 class MPQFileHeaderExtendedFieldsFormatV4(Enum):
     HASH_TABLE_SIZE_64 = 'HASH_TABLE_SIZE_64'
     BLOCK_TABLE_SIZE_64 = 'BLOCK_TABLE_SIZE_64'
     HI_BLOCK_TABLE_SIZE_64 = 'HI_BLOCK_TABLE_SIZE_64'
     HET_TABLE_SIZE_64 = 'HET_TABLE_SIZE_64'
     BET_TABLE_SIZE_64 = 'BET_TABLE_SIZE_64'
-
-class MPQFileHeaderExtendedFieldsFormatV4(Enum):
-    EXTENDED_BLOCK_TABLE_OFFSET = 'EXTENDED_BLOCK_TABLE_OFFSET'
-    HASH_TABLE_OFFSET_HIGH = 'HASH_TABLE_OFFSET_HIGH'
-    BLOCK_TABLE_OFFSET_HIGH = 'BLOCK_TABLE_OFFSET_HIGH'
+    RAW_CHUNK_SIZE = 'RAW_CHUNK_SIZE'
+    MD5_BLOCK_TABLE = 'MD5_BLOCK_TABLE'
+    MD5_HASH_TABLE = 'MD5_HASH_TABLE'
+    MD5_HI_BLOCK_TABLE = 'MD5_HI_BLOCK_TABLE'
+    MD5_BET_TABLE = 'MD5_BET_TABLE'
+    MD5_HET_TABLE = 'MD5_HET_TABLE'
+    MD5_MPQ_HEADER = 'MD5_MPQ_HEADER'
 
 class MPQUserDataFields(Enum):
     MAGIC = 'MAGIC'
