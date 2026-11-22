@@ -161,5 +161,17 @@ class TestBundledIconBorders(unittest.TestCase):
                                      f'{a} and {b} produced identical output - border wiring bug')
 
 
+class TestVersionFlag(unittest.TestCase):
+    def test_version_prints_the_package_version_and_exits_with_zero(self):
+        import contextlib
+        import io
+        import wc3files
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as caught:
+            main(['--version'])
+        self.assertEqual(caught.exception.code, 0)
+        self.assertEqual(out.getvalue().strip(), f'wc3files {wc3files.__version__}')
+
+
 if __name__ == '__main__':
     unittest.main()
