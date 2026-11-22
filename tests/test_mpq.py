@@ -579,8 +579,8 @@ class TestExportStaysInsideTheFolder(unittest.TestCase):
         with open(os.path.join(out, 'evil', 'war3map.j'), 'rb') as handle:
             self.assertEqual(handle.read(), b'KEEP')
         if skipped is not None:
-            self.assertEqual(sorted(skipped), sorted(['../../evil2.txt', self.outside]
-                                                     + (['..\\..\\evil.txt'] if os.sep == '\\' else [])))
+            self.assertEqual(sorted(skipped),
+                             sorted(['..\\..\\evil.txt', '../../evil2.txt', self.outside]))
 
     def test_mpq_file_export(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -604,6 +604,41 @@ class TestExportStaysInsideTheFolder(unittest.TestCase):
             out = os.path.join(tmp, 'a', 'b')
             self.assertEqual(main(['unpack', source, out]), 0)
             self._check(tmp, out, None)
+
+
+class TestExportCreatesFolders(unittest.TestCase):
+    """Archive names separate folders with a backslash, on every platform."""
+
+    def test_member_in_a_folder_is_written_inside_that_folder(self):
+        files = {'war3map.j': b'J', 'Units\\Custom.txt': b'A', 'war3mapImported\\a\\b.blp': b'B'}
+        for cls in (MpqFile, W3xFile):
+            with self.subTest(cls=cls.__name__), tempfile.TemporaryDirectory() as tmp:
+                source = os.path.join(tmp, 'folders.w3x')
+                MpqWriter().write(files, source)
+                archive = cls()
+                archive.read(source)
+                if cls is MpqFile:
+                    archive.read_files()
+                archive.export(tmp)
+                root = os.path.join(tmp, 'folders')
+                with open(os.path.join(root, 'Units', 'Custom.txt'), 'rb') as handle:
+                    self.assertEqual(handle.read(), b'A')
+                with open(os.path.join(root, 'war3mapImported', 'a', 'b.blp'), 'rb') as handle:
+                    self.assertEqual(handle.read(), b'B')
+                self.assertFalse(any('\\' in name for name in os.listdir(root)))
+
+    def test_export_then_build_keeps_the_member_names(self):
+        files = {'war3map.j': b'J', 'Units\\Custom.txt': b'A'}
+        with tempfile.TemporaryDirectory() as tmp:
+            source = os.path.join(tmp, 'folders.w3x')
+            MpqWriter().write(files, source)
+            archive = W3xFile()
+            archive.read(source)
+            archive.export(tmp)
+            archive.build(os.path.join(tmp, 'folders'), os.path.join(tmp, 'repacked.w3x'))
+            again = W3xFile()
+            again.read(os.path.join(tmp, 'repacked.w3x'))
+            self.assertEqual({k: v for k, v in again.files.items() if k != '(listfile)'}, files)
 
 
 if __name__ == '__main__':
