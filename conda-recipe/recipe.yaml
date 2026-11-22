@@ -36,8 +36,6 @@ requirements:
     # without them.
     - loguru
     - tqdm
-    # Used for a single pandas.isna() call when reading SYLK tables.
-    - pandas
 
 tests:
   - python:

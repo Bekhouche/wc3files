@@ -1,5 +1,5 @@
 import ast
-import pandas as pd
+import math
 from loguru import logger
 
 
@@ -186,7 +186,7 @@ class SlkFile:
         tokens that aren't valid Python literals, such as a genuinely blank column header.
         """
         if not isinstance(value, str):
-            return value  # pandas already inferred a proper type (e.g. int64) for this column
+            return value  # already a number: the SYLK reader parses numeric tokens itself
         try:
             return ast.literal_eval(value)
         except (ValueError, SyntaxError):
@@ -309,7 +309,7 @@ class SlkFile:
                 if keyless and column == id_column:
                     continue
                 value = row[column] if column in row else (key if column == id_column else None)
-                if value is None or pd.isna(value):
+                if value is None or (isinstance(value, float) and math.isnan(value)):
                     continue
                 lines.append(cell(x, y, value))
 
