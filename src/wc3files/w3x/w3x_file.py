@@ -14,6 +14,7 @@ from wc3files.mpq.files import extract_references, is_scan_candidate
 from wc3files.mpq.sectors import read_block
 from wc3files.mpq import compression as _compression
 from wc3files.files.binary_file import fspath
+from wc3files.mpq.export import export_files
 
 
 class W3xReadMode(Enum):
@@ -58,17 +59,12 @@ class W3xFile(object):
           self.protected = False
 
      def export(self, path):
+          """Write every member under <path>/<map name>/. A member whose name would
+          land outside that folder is skipped with a warning; the skipped names
+          are returned."""
           path = fspath(path)
-          if not os.path.exists(os.path.join(path, self.current_name)):
-               os.mkdir(os.path.join(path, self.current_name))
+          return export_files(self.files, os.path.join(path, self.current_name))
 
-          for file in self.files:
-               if len(file.split('\\')) > 1:
-                    if not os.path.exists(os.path.basename(os.path.join(path, self.current_name, file))):
-                         os.makedirs(os.path.dirname(os.path.join(path, self.current_name, file)), exist_ok=True)
-               f = open(os.path.join(path, self.current_name, file), 'wb')
-               f.write(self.files[file] or b'')
-               f.close()
 
      # Both are per-block-table-index metadata (checksums/timestamps for '(attributes)', a
      # digital signature for '(signature)') computed against the EXACT block table this
