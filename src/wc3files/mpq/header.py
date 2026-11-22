@@ -1,4 +1,6 @@
 import struct
+
+from loguru import logger
 from ..data import BinaryDataType
 from .data import *
 
@@ -29,10 +31,13 @@ class MpqHeader:
                     data = reader.read(BinaryDataType.BYTES, num=12)
                     extended_header = dict(zip([field.value for field in MPQFileHeaderExtendedFieldsFormatV2], struct.unpack(MpqUnpack.HEADER_v2.value, data)))
                     header.update(extended_header)
-               elif header[MPQFileHeaderFields.FORMAT_VERSION.value] == 2:
-                    print('Format 3 (WoW - Cataclysm beta or newer)')
-               elif header[MPQFileHeaderFields.FORMAT_VERSION.value] == 3:
-                    print('Format 4 (WoW - Cataclysm beta or newer)')
+               elif header[MPQFileHeaderFields.FORMAT_VERSION.value] != 0:
+                    # Read as format 0, as Warcraft III does whatever this field says.
+                    # Map protectors set it to junk (41 of 1,025 benchmark maps, e.g.
+                    # 37103), so raising here would refuse maps the game plays. The
+                    # extended fields of v3/v4 archives (format 2 and 3) are not read.
+                    logger.debug('MPQ format version {} read as format 0',
+                                 header[MPQFileHeaderFields.FORMAT_VERSION.value])
                self._data.update(header)
           else:
                raise ValueError("Invalid MPQ file header. Got:", magic)
