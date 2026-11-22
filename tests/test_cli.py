@@ -173,6 +173,23 @@ class TestVersionFlag(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), f'wc3files {wc3files.__version__}')
 
 
+class TestPythonDashM(unittest.TestCase):
+    """`python -m wc3files` failed: "No module named wc3files.__main__"."""
+
+    def test_python_m_wc3files(self):
+        import subprocess
+        import sys
+        import wc3files
+        src = os.path.dirname(os.path.dirname(os.path.abspath(wc3files.__file__)))
+        env = dict(os.environ, PYTHONPATH=src)
+        for module in ('wc3files', 'wc3files.cli'):
+            with self.subTest(module=module):
+                result = subprocess.run([sys.executable, '-m', module, '--version'],
+                                        capture_output=True, text=True, env=env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), f'wc3files {wc3files.__version__}')
+
+
 class TestProtectedMaps(unittest.TestCase):
     """unpack, lni, slk, obj and optimize read a map without its (listfile)
     as almost empty and wrote that out with status 0; run-map said it had no

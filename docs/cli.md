@@ -7,6 +7,9 @@ wc3files --help
 wc3files <command> --help     # every command documents its own options
 ```
 
+When that command is not on your path (common on Windows), `python -m
+wc3files` runs the same thing: `python -m wc3files unpack MyMap.w3x out/`.
+
 28 commands, grouped below by what they are for.
 
 ## Archives
