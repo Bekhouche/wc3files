@@ -957,5 +957,22 @@ class TestExportCreatesFolders(unittest.TestCase):
             self.assertEqual({k: v for k, v in again.files.items() if k != '(listfile)'}, files)
 
 
+class TestOneCipher(unittest.TestCase):
+    """W3xFile used to carry its own copy of the MPQ cipher. Its encrypt()
+    never masked the key to 32 bits (OverflowError on every platform) and read
+    words through ctypes.c_ulong, which is 8 bytes on 64-bit Linux and macOS."""
+
+    DATA = bytes(range(256)) * 4 + b'xyz'   # a tail that is not a whole word
+    KEY = 0x12345678
+
+    def test_w3x_encrypt_works_and_matches_the_cipher(self):
+        encrypted = W3xFile().encrypt(bytearray(self.DATA), self.KEY)
+        self.assertEqual(bytes(encrypted), MpqCipher().encrypt(self.DATA, self.KEY))
+        self.assertEqual(W3xFile().decrypt(bytes(encrypted), self.KEY), self.DATA)
+
+    def test_w3x_uses_the_shared_cipher(self):
+        self.assertTrue(W3xFile().crypt_table is MpqCipher().crypt_table)
+
+
 if __name__ == '__main__':
     unittest.main()

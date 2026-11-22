@@ -1,11 +1,9 @@
 import os
 import re
 import struct
-import ctypes
 from enum import Enum
 from loguru import logger
 from tqdm import tqdm
-from io import BytesIO
 from wc3files.data import *
 from wc3files.files import BinaryFile
 from wc3files.w3o.object_file import ObjectFile
@@ -15,7 +13,7 @@ from wc3files.mpq.files import extract_references, is_scan_candidate
 from wc3files.mpq.sectors import read_block
 from wc3files.mpq import compression as _compression
 from wc3files.files.binary_file import fspath
-from wc3files.mpq.cipher import hash_name, plain_name
+from wc3files.mpq.cipher import MpqCipher, hash_name, plain_name
 from wc3files.mpq.hash_table import build_hash_index, find_hash_entry
 from wc3files.mpq.export import export_files
 
@@ -389,55 +387,21 @@ class W3xFile(object):
 
                return file_data
 
+     # The cipher lives in wc3files.mpq.cipher. This class had its own copy:
+     # decrypt() was the same code, and encrypt() never worked (it did not
+     # mask the key to 32 bits, and read words through ctypes.c_ulong, which
+     # is 8 bytes on 64-bit Linux and macOS). These stay as thin wrappers so
+     # existing callers keep working.
+     _cipher = MpqCipher()
+
      def initialize_crypt_table(self):
-          self.crypt_table = {}
-          seed = 0x00100001
-
-          for index1 in range(0x100):
-               for index2 in range(index1, index1 + 0x500, 0x100):
-                    seed = (seed * 125 + 3) % 0x2AAAAB
-                    temp1 = (seed & 0xFFFF) << 0x10
-
-                    seed = (seed * 125 + 3) % 0x2AAAAB
-                    temp2 = (seed & 0xFFFF)
-
-                    self.crypt_table[index2] = (temp1 | temp2)
+          self.crypt_table = self._cipher.crypt_table
 
      def encrypt(self, buffer, key):
-          buffer_length = len(buffer)
-          seed = 0xEEEEEEEE
-          for i in range(0, buffer_length, 4):
-               seed += self.crypt_table[0x400 + (key & 0xFF)]
-               ch = ctypes.c_ulong.from_buffer_copy(buffer[i:i+4]).value ^ (key + seed)
-               key = ((~key << 0x15) + 0x11111111) | (key >> 0x0B)
-               seed = ctypes.c_ulong.from_buffer_copy(buffer[i:i+4]).value + seed + (seed << 5) + 3
-
-               buffer[i:i+4] = ch.to_bytes(4, byteorder='little')
-          
-          return buffer
+          return self._cipher.encrypt(buffer, key)
 
      def decrypt(self, buffer, key):
-          seed1 = key
-          seed2 = 0xEEEEEEEE
-          result = BytesIO()
-
-          for i in range(len(buffer) // 4):
-               seed2 += self.crypt_table[0x400 + (seed1 & 0xFF)]
-               seed2 &= 0xFFFFFFFF
-               value = struct.unpack("<I", buffer[i*4:i*4+4])[0]
-               value = (value ^ (seed1 + seed2)) & 0xFFFFFFFF
-
-               seed1 = ((~seed1 << 0x15) + 0x11111111) | (seed1 >> 0x0B)
-               seed1 &= 0xFFFFFFFF
-               seed2 = value + seed2 + (seed2 << 5) + 3 & 0xFFFFFFFF
-
-               result.write(struct.pack("<I", value))
-
-          rem = len(buffer) % 4
-          if rem:
-               result.write(buffer[-rem:])
-
-          return result.getvalue()
+          return self._cipher.decrypt(buffer, key)
      
      def hash(self, lpszString, hash_type):
           # The bytes of the name, ASCII-only upper-casing: see
