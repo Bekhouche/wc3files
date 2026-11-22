@@ -42,6 +42,134 @@ class TestExplode(unittest.TestCase):
                compression.explode(b'\x02\x04\x00')
 
 
+def _reference_explode(data):
+     """The bit-at-a-time decoder explode() replaced, kept as the reference."""
+     tables = [compression._dcl_table(c) for c in
+               (compression._LITLEN, compression._LENLEN, compression._DISTLEN)]
+     state = {'pos': 0, 'buffer': 0, 'count': 0}
+
+     def bits(need):
+          value = state['buffer']
+          while state['count'] < need:
+               if state['pos'] >= len(data):
+                    raise compression.MpqCompressionError('ends early')
+               value |= data[state['pos']] << state['count']
+               state['pos'] += 1
+               state['count'] += 8
+          state['buffer'] = value >> need
+          state['count'] -= need
+          return value & ((1 << need) - 1)
+
+     def decode(table):
+          count, symbols = table
+          code = first = index = 0
+          for length in range(1, compression._MAXBITS + 1):
+               code |= bits(1) ^ 1
+               if code - first < count[length]:
+                    return symbols[index + code - first]
+               index += count[length]
+               first = (first + count[length]) << 1
+               code <<= 1
+          raise compression.MpqCompressionError('invalid code')
+
+     litcode, lencode, distcode = tables
+     coded, dictionary = bits(8), bits(8)
+     out = bytearray()
+     while True:
+          if bits(1):
+               symbol = decode(lencode)
+               length = compression._LEN_BASE[symbol] + bits(compression._LEN_EXTRA[symbol])
+               if length == 519:
+                    return bytes(out)
+               shift = 2 if length == 2 else dictionary
+               distance = (decode(distcode) << shift) + bits(shift) + 1
+               start = len(out) - distance
+               for i in range(length):
+                    out.append(out[start + i])
+          else:
+               out.append(decode(litcode) if coded else bits(8))
+
+
+class _DclWriter:
+     """A minimal PKWare DCL encoder, to build streams of every kind."""
+
+     def __init__(self, coded, dictionary):
+          self.coded, self.dictionary = coded, dictionary
+          self.value, self.count = coded | dictionary << 8, 16
+          self.codes = [{symbol: (length, code) for symbol, length, code in
+                         compression._dcl_codes(compression._dcl_table(c))}
+                        for c in (compression._LITLEN, compression._LENLEN, compression._DISTLEN)]
+
+     def bits(self, value, count):
+          self.value |= value << self.count
+          self.count += count
+
+     def code(self, table, symbol):
+          length, code = self.codes[table][symbol]
+          for i in range(length - 1, -1, -1):
+               self.bits(((code >> i) & 1) ^ 1, 1)
+
+     def literal(self, byte):
+          self.bits(0, 1)
+          if self.coded:
+               self.code(0, byte)
+          else:
+               self.bits(byte, 8)
+
+     def match(self, length, distance):
+          self.bits(1, 1)
+          symbol = next(s for s in range(16) if compression._LEN_BASE[s] <= length
+                        < compression._LEN_BASE[s] + (1 << compression._LEN_EXTRA[s]))
+          self.code(1, symbol)
+          self.bits(length - compression._LEN_BASE[symbol], compression._LEN_EXTRA[symbol])
+          if length == 519:
+               return
+          shift = 2 if length == 2 else self.dictionary
+          self.code(2, (distance - 1) >> shift)
+          self.bits((distance - 1) & ((1 << shift) - 1), shift)
+
+     def finish(self):
+          self.match(519, 0)
+          return self.value.to_bytes((self.count + 7) // 8, 'little')
+
+
+class TestExplodeAgainstTheReference(unittest.TestCase):
+     """explode() finds each code with a table lookup. It must give the same
+     bytes as the bit-at-a-time decoder, for every kind of stream."""
+
+     def stream(self, rng, coded, dictionary, steps):
+          writer = _DclWriter(coded, dictionary)
+          produced = 0
+          for _ in range(steps):
+               if produced < 1 or rng.random() < 0.45:
+                    writer.literal(rng.randrange(256))
+                    produced += 1
+                    continue
+               length = rng.choice([2, 3, 4, 7, 8, 9, 15, 16, 30, 100, 264, 518])
+               limit = 256 if length == 2 else 64 << dictionary
+               distance = rng.randint(1, min(produced, limit))
+               writer.match(length, distance)
+               produced += length
+          return writer.finish()
+
+     def test_same_output_as_the_reference(self):
+          import random
+          rng = random.Random(1)
+          for coded in (0, 1):
+               for dictionary in (4, 5, 6):
+                    for trial in range(6):
+                         data = self.stream(rng, coded, dictionary, rng.randint(1, 400))
+                         with self.subTest(coded=coded, dictionary=dictionary, trial=trial):
+                              self.assertEqual(compression.explode(data), _reference_explode(data))
+
+     def test_a_cut_stream_ends_early(self):
+          import random
+          data = self.stream(random.Random(2), 1, 6, 200)
+          for cut in (len(data) - 1, len(data) // 2, 3):
+               with self.subTest(cut=cut), self.assertRaises(compression.MpqCompressionError):
+                    compression.explode(data[:cut])
+
+
 class TestHuffman(unittest.TestCase):
 
      SAMPLES = [
