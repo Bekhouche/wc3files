@@ -27,7 +27,7 @@ from .symbols import (ScopeInfo, Symbol, FuncInfo, VarInfo, FieldInfo,
                       StructInfo, ModuleInfo, ModuleUse, FuncInterfaceInfo,
                       DynamicArrayInfo, DispatchSlot, out_type, type_name)
 from .storage import make_storage, PlainStorage
-from .emitter import int_lit, str_lit
+from .emitter import int_lit
 from .parser import parse_lines, parse_member_tokens
 
 

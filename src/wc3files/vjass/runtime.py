@@ -18,11 +18,11 @@ initializer.
 from wc3files.scripts import ir
 
 from . import ast
-from .codegen import Ctx, InitPlaceholder, Placed
-from .emitter import wrap, int_lit, str_lit, NULL, ParenExpr, unwrap, Comment
+from .codegen import Ctx, InitPlaceholder
+from .emitter import int_lit, str_lit, NULL, ParenExpr, Comment
 from .errors import VJassError
 from .storage import make_storage, PlainStorage
-from .symbols import (FuncInfo, StructInfo, FieldInfo, out_type, type_name)
+from .symbols import (FuncInfo, FieldInfo, out_type)
 
 INIT_CHUNK = 400
 

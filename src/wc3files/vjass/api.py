@@ -2,7 +2,7 @@
 import os
 
 from .compiler import Compiler
-from .emitter import emit, emit_with_map
+from .emitter import emit_with_map
 from .errors import VJassError
 from .gamedata import load_api
 from .options import CompileOptions

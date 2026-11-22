@@ -1,5 +1,4 @@
 import json
-from loguru import logger
 from .object_file import ObjectFileType
 
 class JsonFile(object):

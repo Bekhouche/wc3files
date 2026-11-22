@@ -76,7 +76,7 @@ with every entry, as this package itself used to, take the decoy and fail.
 
 import random
 
-from .data import MPQHashTableEntry, MPQBlockTableEntry, MPQFileDataType, MPQHashType, MpqProtectionLevel
+from .data import MPQHashTableEntry, MPQBlockTableEntry, MPQHashType, MpqProtectionLevel
 
 _DECOYS_PER_FILE = {
      MpqProtectionLevel.NONE: 0,

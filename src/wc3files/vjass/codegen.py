@@ -9,7 +9,7 @@ tree rather than a rewrite of names.
 from wc3files.scripts import ir
 
 from . import ast
-from .emitter import ParenExpr, wrap, int_lit, str_lit, TRUE, FALSE, Comment
+from .emitter import ParenExpr, wrap, int_lit, str_lit, TRUE, FALSE
 from .errors import VJassError
 from .storage import offset, PlainStorage
 from .symbols import (VarInfo, FieldInfo, FuncInfo, StructInfo,
@@ -864,7 +864,7 @@ class FunctionCompiler(object):
         if isinstance(callee, TypeVal):
             t = callee.type
             if len(expr.args) != 1:
-                raise self.error(f'a typecast takes one value', node)
+                raise self.error('a typecast takes one value', node)
             if isinstance(t, VJASS_TYPES) or t == 'integer':
                 value = self.typed_value(expr.args[0])
                 return Val(wrap(value.ir), t)

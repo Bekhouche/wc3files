@@ -1,7 +1,4 @@
 import os
-import struct
-from tqdm import tqdm
-from io import BytesIO
 from .data import *
 from wc3files.files import BinaryFile
 from .cipher import MpqCipher
