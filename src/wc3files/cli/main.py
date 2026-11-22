@@ -7,6 +7,7 @@ import sys
 
 from loguru import logger
 
+from wc3files import __version__
 from wc3files.w3x import W3xFile
 from wc3files.w3o import ObjectFile, SlkFile, BaseObjectData, BaseObjectStrings, CombinedBaseData
 from wc3files.w3o.object_metadata import ObjectMetaData
@@ -1381,6 +1382,7 @@ def build_parser():
                         help=('Read game tables (object data, natives, GUI triggers) from '
                               'a profile made by gamedata-extract instead of the bundled '
                               'Reforged ones.'))
+    parser.add_argument('--version', action='version', version=f'wc3files {__version__}')
     parser.add_argument('-v', '--verbose', action='store_true',
                          help='Show this package\'s own debug/info logging (quiet by default).')
     subparsers = parser.add_subparsers(dest='command', required=True)
