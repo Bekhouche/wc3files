@@ -7,12 +7,10 @@ _INDENT = '    '
 _IDENT_RE = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 # Node types that are already unambiguous as the left side of `.`/`[`/`(`/`:`
-# (a "prefixexp" in Lua grammar terms) without extra parens - BinaryExpr is
-# included because _print_expr always wraps it in its own parens already (see
-# below), so `(a + b)(...)` is syntactically safe as printed. Everything else
-# (a literal, a unary expression, a table/function literal, `...`) is not a
-# valid prefixexp on its own and needs explicit wrapping parens.
-_SAFE_AS_PREFIX = (ir.VarExpr, ir.IndexExpr, ir.LuaCallExpr, ir.LuaMethodCallExpr, ir.BinaryExpr)
+# (a "prefixexp" in Lua grammar terms) without extra parens. Everything else
+# (a literal, an operation, a table/function literal, `...`) is not a valid
+# prefixexp on its own and needs explicit wrapping parens.
+_SAFE_AS_PREFIX = (ir.VarExpr, ir.IndexExpr, ir.LuaCallExpr, ir.LuaMethodCallExpr)
 
 
 def print_chunk(chunk):
@@ -194,10 +192,51 @@ def _print_expr_bare(expr, depth=0):
           # comment starter) for a double-negation and keeps every unary form
           # unambiguous, at the cost of `- x` instead of the more idiomatic
           # `-x` (structural round-trip is the bar, not idiomatic spacing).
-          return f'{expr.op} {_print_expr(expr.operand, depth)}'
+          return f'{expr.op} {_operand(expr.operand, _UNARY_PRECEDENCE, depth)}'
      if isinstance(expr, ir.BinaryExpr):
-          return f'({_print_expr(expr.left, depth)} {expr.op} {_print_expr(expr.right, depth)})'
+          # Parentheses only where precedence or associativity needs them.
+          # Wrapping every operation made a long `a .. b .. c ...` chain come
+          # back as ~60 nested pairs, deeper than the parser could read again
+          # (two corpus scripts failed that way).
+          precedence = _PRECEDENCE[expr.op]
+          right_assoc = expr.op in _RIGHT_ASSOCIATIVE
+          left = _operand(expr.left, precedence + (1 if right_assoc else 0), depth)
+          right = _operand(expr.right, precedence + (0 if right_assoc else 1), depth)
+          return f'{left} {expr.op} {right}'
      raise TypeError(f'unhandled Lua expression node: {type(expr).__name__}')
+
+
+# Lua 5.3's operator precedence, lowest first (reference manual, 3.4.8).
+# `..` and `^` are right associative, every other binary operator left.
+_PRECEDENCE = {}
+for _level, _ops in enumerate((
+          ('or',), ('and',), ('<', '>', '<=', '>=', '~=', '=='), ('|',), ('~',), ('&',),
+          ('<<', '>>'), ('..',), ('+', '-'), ('*', '/', '//', '%')), start=1):
+     for _op in _ops:
+          _PRECEDENCE[_op] = _level
+_UNARY_PRECEDENCE = 11
+_PRECEDENCE['^'] = 12
+_RIGHT_ASSOCIATIVE = {'..', '^'}
+
+
+def _precedence(expr):
+     """The binding strength of an expression as printed: an operator's level,
+     or above every level for anything that is not an operation, or that
+     carries its own parentheses."""
+     if getattr(expr, 'paren', False):
+          return 99
+     if isinstance(expr, ir.BinaryExpr):
+          return _PRECEDENCE[expr.op]
+     if isinstance(expr, ir.UnaryExpr):
+          return _UNARY_PRECEDENCE
+     return 99
+
+
+def _operand(expr, minimum, depth):
+     """`expr` printed as an operand that must bind at least as tightly as
+     `minimum`, in parentheses when it does not."""
+     text = _print_expr(expr, depth)
+     return text if _precedence(expr) >= minimum else f'({text})'
 
 
 def _print_prefix(expr, depth=0):
