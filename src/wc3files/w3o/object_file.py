@@ -53,12 +53,17 @@ class ObjectTable(object):
           # {entry id: (modification records in file order, entry snapshot)}
           # for entries that repeat a field; see read().
           self._repeats = {}
+          # When an id repeats in the table: the ids in file order, and
+          # {position: (entry, new id, repeats)} for the earlier copies.
+          self._order = []
+          self._shadowed = {}
 
-     def load(self, data, new_ids=None, repeats=None):
+     def load(self, data, new_ids=None, repeats=None, duplicates=None):
           self._data = data
           self._data_total = len(data)
           self._new_ids = dict(new_ids or {})
           self._repeats = dict(repeats or {})
+          self._order, self._shadowed = duplicates if duplicates else ([], {})
 
      @staticmethod
      def _rawcode_bytes(code):
@@ -104,13 +109,21 @@ class ObjectTable(object):
           self._data_total = reader.read(BinaryDataType.INT)
           if not (0 <= self._data_total <= self.MAX_ENTRIES):
                raise ValueError(f"implausible object table entry count: {self._data_total}")
-          for _ in range(self._data_total):
+          last_position = {}
+          for position in range(self._data_total):
                ORG_ID = reader.read(BinaryDataType.BYTES).decode('latin-1')
                NEW_ID = reader.read(BinaryDataType.BYTES).decode('latin-1')
 
-               IDX = ORG_ID
+               IDX = NEW_ID if self._data_table == 'custom' else ORG_ID
+               if IDX in last_position:
+                    # The same id again: keep the earlier entry hidden (see the
+                    # end of read()).
+                    self._shadowed[last_position[IDX]] = (
+                         self._data[IDX], self._new_ids.pop(IDX, None), self._repeats.pop(IDX, None))
+               last_position[IDX] = position
+               self._order.append(IDX)
+
                if self._data_table == 'custom':
-                    IDX = NEW_ID
                     self._data[IDX] = {'ID': ORG_ID}
                else:
                     self._data[IDX] = {}
@@ -208,30 +221,48 @@ class ObjectTable(object):
                if repeated:
                     self._repeats[IDX] = (records, copy.deepcopy(self._data[IDX]))
 
-          # Entries are held in a dict keyed by object id, which cannot hold
-          # two entries that share one. A real map does exactly that: its
-          # table declares four entries and only three distinct ids, so one
-          # was being dropped on read and the rebuilt file came out an entry
-          # short with a smaller count in its header. Losing data quietly is
-          # worse than refusing, so the two are required to agree.
-          if len(self._data) != self._data_total:
-               raise ValueError(
-                    f"object table declares {self._data_total} entries but "
-                    f"only {len(self._data)} distinct object ids were read - "
-                    f"{self._data_total - len(self._data)} entry/entries share "
-                    f"an id and would be lost, so the table is refused rather "
-                    f"than silently returned incomplete.")
+          # A table can hold two entries with the same id: a real map
+          # (War_in_the_Plaguelands_Mp_1.26c.w3x, war3map.w3d) declares 277
+          # entries over 276 ids. The entry dict keeps the last one, which is
+          # what get() returns; the earlier copy is kept hidden, at its place,
+          # so the table writes back as it was. Which of the two the game uses
+          # has not been checked; the last one is the guess a later entry
+          # overriding an earlier one suggests.
+          if not self._shadowed:
+               self._order = []
+
+     def _entries_in_file_order(self):
+          """(id, entry, new id, repeats) for every entry to write, in file
+          order: a hidden earlier copy of a repeated id (see read()) at its own
+          place, entries added since the read at the end. An id that has been
+          removed (filter) takes its hidden copies with it."""
+          def live(idx):
+               return (idx, self._data[idx], self._new_ids.get(idx), self._repeats.get(idx))
+          if not self._order:
+               return [live(idx) for idx in self._data]
+          entries = []
+          for position, idx in enumerate(self._order):
+               if idx not in self._data:
+                    continue
+               if position in self._shadowed:
+                    entries.append((idx,) + self._shadowed[position])
+               else:
+                    entries.append(live(idx))
+          listed = set(self._order)
+          entries.extend(live(idx) for idx in self._data if idx not in listed)
+          return entries
 
      def write(self, writer: BinaryFile):
-          writer.write(BinaryDataType.INT, self._data_total)
-          for idx in self._data.keys():
-               if 'ID' in self._data[idx]:
-                    writer.write(BinaryDataType.BYTES, self._rawcode_bytes(self._data[idx]['ID']))
+          entries = self._entries_in_file_order()
+          writer.write(BinaryDataType.INT, len(entries))
+          for idx, entry_data, entry_new_id, entry_repeats in entries:
+               if 'ID' in entry_data:
+                    writer.write(BinaryDataType.BYTES, self._rawcode_bytes(entry_data['ID']))
                     writer.write(BinaryDataType.BYTES, self._rawcode_bytes(idx))
                     end_token = self._rawcode_bytes(idx)
                else:
                     writer.write(BinaryDataType.BYTES, self._rawcode_bytes(idx))
-                    new_id = self._new_ids.get(idx)
+                    new_id = entry_new_id
                     writer.write(BinaryDataType.BYTES,
                                  self._rawcode_bytes(new_id) if new_id else b'\x00\x00\x00\x00')
                     end_token = b'\x00\x00\x00\x00'
@@ -240,8 +271,8 @@ class ObjectTable(object):
                     writer.write(BinaryDataType.INT, 1)
                     writer.write(BinaryDataType.INT, 0)
 
-               repeats = self._repeats.get(idx)
-               if repeats is not None and repeats[1] == self._data[idx]:
+               repeats = entry_repeats
+               if repeats is not None and repeats[1] == entry_data:
                     # Unchanged since read and it repeats a field: write the
                     # modification list exactly as read (see read()).
                     records = repeats[0]
@@ -261,9 +292,9 @@ class ObjectTable(object):
                     # the order the file lists them and dicts keep that, so
                     # sorting here rewrote every entry whose mods were not
                     # already alphabetical.
-                    for mod in self._data[idx].keys():
+                    for mod in entry_data.keys():
                          if mod != 'ID':
-                              entry = self._data[idx][mod]
+                              entry = entry_data[mod]
                               stored_end = entry.get('end')
                               if isinstance(entry['value'], dict):
                                    for level in entry['value'].keys():
@@ -291,7 +322,7 @@ class ObjectTable(object):
                     order = list(range(len(mods)))
                     sequences = []
                     for position in order:
-                         entry = self._data[idx][mods[position]]
+                         entry = entry_data[mods[position]]
                          stored_seq = entry.get('seq')
                          if isinstance(stored_seq, dict):
                               sequences.append(stored_seq.get(levels[position]))
@@ -316,11 +347,11 @@ class ObjectTable(object):
                          writer.write(BinaryDataType.BYTES,
                                       self._rawcode_bytes(ends[mod]))
                else:
-                    mod_keys = [mod for mod in self._data[idx].keys() if mod != 'ID']
+                    mod_keys = [mod for mod in entry_data.keys() if mod != 'ID']
                     writer.write(BinaryDataType.INT, len(mod_keys))
 
                     for mod in mod_keys:
-                         entry = self._data[idx][mod]
+                         entry = entry_data[mod]
                          stored_end = entry.get('end')
                          writer.write(BinaryDataType.BYTES, self._rawcode_bytes(mod))
                          writer.write(BinaryDataType.INT, entry['type'])
@@ -372,6 +403,8 @@ class ObjectFile(object):
           self._original_new_ids = {}
           # {object type: {'original'|'custom': ObjectTable._repeats}}
           self._repeats = {}
+          # {object type: {'original'|'custom': (ObjectTable._order, ._shadowed)}}
+          self._duplicates = {}
 
      def import_data(self, data):
           self._data = data
@@ -498,6 +531,9 @@ class ObjectFile(object):
                               self._original_new_ids[object_type_] = original._new_ids
                               self._repeats[object_type_] = {'original': original._repeats,
                                                              'custom': custom._repeats}
+                              self._duplicates[object_type_] = {
+                                   'original': (original._order, original._shadowed),
+                                   'custom': (custom._order, custom._shadowed)}
                               self._data[object_type_] = {'original': original.get(), 'custom': custom.get()}
                               self._data_total[object_type_]['original'] = len(self._data[object_type_]['original'])
                               self._data_total[object_type_]['custom'] = len(self._data[object_type_]['custom'])
@@ -509,6 +545,9 @@ class ObjectFile(object):
                     self._original_new_ids[object_type] = original._new_ids
                     self._repeats[object_type] = {'original': original._repeats,
                                                   'custom': custom._repeats}
+                    self._duplicates[object_type] = {
+                         'original': (original._order, original._shadowed),
+                         'custom': (custom._order, custom._shadowed)}
                     self._data[object_type] = {'original': original.get(), 'custom': custom.get()}
                     self._data_total[object_type]['original'] = len(self._data[object_type]['original'])
                     self._data_total[object_type]['custom'] = len(self._data[object_type]['custom'])
@@ -545,14 +584,16 @@ class ObjectFile(object):
 
                                    original = ObjectTable(ObjectFileType(object_type_), 'original', skin=skin)
                                    repeats = self._repeats.get(object_type_, {})
+                                   duplicates = self._duplicates.get(object_type_, {})
                                    original.load(self._data[object_type_]['original'],
                                                  self._original_new_ids.get(object_type_),
-                                                 repeats.get('original'))
+                                                 repeats.get('original'), duplicates.get('original'))
                                    original.write(writer)
 
                                    custom = ObjectTable(ObjectFileType(object_type_), 'custom', skin=skin)
                                    custom.load(self._data[object_type_]['custom'],
-                                               repeats=repeats.get('custom'))
+                                               repeats=repeats.get('custom'),
+                                               duplicates=duplicates.get('custom'))
                                    custom.write(writer)
                               else:
                                    writer.write(BinaryDataType.INT, 0)
@@ -572,14 +613,16 @@ class ObjectFile(object):
 
                          original = ObjectTable(ObjectFileType(object_type), 'original', skin=effective_skin)
                          repeats = self._repeats.get(object_type, {})
+                         duplicates = self._duplicates.get(object_type, {})
                          original.load(self._data[object_type]['original'],
                                        self._original_new_ids.get(object_type),
-                                       repeats.get('original'))
+                                       repeats.get('original'), duplicates.get('original'))
                          original.write(writer)
 
                          custom = ObjectTable(ObjectFileType(object_type), 'custom', skin=effective_skin)
                          custom.load(self._data[object_type]['custom'],
-                                     repeats=repeats.get('custom'))
+                                     repeats=repeats.get('custom'),
+                                     duplicates=duplicates.get('custom'))
                          custom.write(writer)
           else:
                raise ValueError("Invalid file type")
