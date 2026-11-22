@@ -1,5 +1,4 @@
 import struct
-from io import BytesIO
 from ..data import BinaryDataType
 from .data import *
 from .cipher import MpqCipher

@@ -14,3 +14,26 @@ from .object_override import build_override_tables, rebuild_object_table, litera
 from .world_edit_strings import WorldEditStrings
 from .units_file import UnitsFile
 from .utils import DEC2ID
+
+# What this package re-exports, and what `from ... import *` brings in.
+__all__ = [
+    'WesFile',
+    'WtsFile',
+    'SlkFile',
+    'CfgFile',
+    'JsonFile',
+    'ObjectFile',
+    'ObjectMetaData',
+    'object_table_to_slk',
+    'validate_object_table',
+    'ObjectEditorEnums',
+    'BaseObjectData',
+    'BaseObjectStrings',
+    'CombinedBaseData',
+    'build_override_tables',
+    'rebuild_object_table',
+    'literal_table_paths',
+    'WorldEditStrings',
+    'UnitsFile',
+    'DEC2ID',
+]

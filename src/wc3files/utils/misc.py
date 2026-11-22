@@ -1,4 +1,3 @@
-import sys
 
 
 b2i = lambda b: b if isinstance(b, int) else int.from_bytes(b, 'little')

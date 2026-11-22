@@ -1,5 +1,4 @@
 from enum import Enum
-from collections import namedtuple
 
 class MpqMagicType(Enum):
     MPQ_ARCHIVE_V1 = b'MPQ\x1a'  # Standard MPQ archive header

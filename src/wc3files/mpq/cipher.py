@@ -1,6 +1,5 @@
 import struct
 from io import BytesIO
-from .data import *
 
 def name_bytes(name):
      """The bytes an archive member name is hashed from.

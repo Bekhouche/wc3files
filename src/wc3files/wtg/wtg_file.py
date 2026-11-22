@@ -2,7 +2,7 @@ import struct
 from ..data import BinaryDataType
 from .data import WtgFileType, TriggerItemType
 from wc3files.files import BinaryFile
-from .trigger_data import TriggerData, EVENT, CONDITION, ACTION, CALL
+from .trigger_data import TriggerData
 from wc3files.files.binary_file import fspath
 
 

@@ -15,3 +15,41 @@ from .lua_vm import LuaVM, LuaError, LuaTable, LuaFunction, PyFunction, run_with
 from .lua_stdlib import LuaHost, LuaExit
 from .jass_to_lua import jass_to_lua
 from .wc3_runtime import MapRuntime, RunReport, run_map_script
+
+# What this package re-exports, and what `from ... import *` brings in.
+__all__ = [
+    'ScriptFile',
+    'tokenize_jass',
+    'JassLexError',
+    'parse_jass',
+    'JassParseError',
+    'print_jass',
+    'check_jass',
+    'NativeSignatures',
+    'find_reachable',
+    'remove_dead_code',
+    'build_rename_table',
+    'apply_rename',
+    'tokenize_lua',
+    'LuaLexError',
+    'parse_lua',
+    'LuaParseError',
+    'print_lua',
+    'obfuscate_lua',
+    'check_lua',
+    'JassVM',
+    'JassRuntimeError',
+    'run_script',
+    'LuaVM',
+    'LuaError',
+    'LuaTable',
+    'LuaFunction',
+    'PyFunction',
+    'run_with_stack',
+    'LuaHost',
+    'LuaExit',
+    'jass_to_lua',
+    'MapRuntime',
+    'RunReport',
+    'run_map_script',
+]

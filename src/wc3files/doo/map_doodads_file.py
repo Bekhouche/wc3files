@@ -44,10 +44,7 @@ refused rather than returned, so this can report nothing wrong and be wrong.
 """
 import struct
 
-from loguru import logger
 
-from ..data import BinaryDataType
-from wc3files.files import BinaryFile
 
 MAGIC = b'W3do'
 

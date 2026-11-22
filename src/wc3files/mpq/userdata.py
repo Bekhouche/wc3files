@@ -1,4 +1,3 @@
-import struct
 from ..data import BinaryDataType
 from .data import *
 

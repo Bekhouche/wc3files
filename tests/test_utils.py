@@ -70,8 +70,8 @@ class TestFloatByteOrder(unittest.TestCase):
     def setUp(self):
         import importlib
         from unittest import mock
-        # import_module, because the package attribute `wc3files.files` is
-        # rebound to wc3files.mpq.files on import.
+        # import_module: the modules themselves, whatever the package
+        # attributes of the same name hold.
         modules = [importlib.import_module('wc3files.files.binary_file'),
                    importlib.import_module('wc3files.utils.converter')]
         for module in modules:

@@ -1,3 +1,7 @@
+# Deliberate re-exports: this package's namespace is the flat table of every
+# format's data enums. pyflakes reports every star import as unused; a literal
+# __all__ would have to list every public name of the modules below and be kept
+# in step by hand.
 from .bin import *
 from ..doo.data import *
 from ..imp.data import *

@@ -1,7 +1,7 @@
 import struct
 import zlib
 from dataclasses import dataclass
-from typing import ByteString, Dict, Any, List, Optional
+from typing import ByteString, Dict, Any, List
 # It is best to import only what is needed rather than using wildcard imports.
 from ..data import BinaryDataType
 from .data import ReplayRace

@@ -1,3 +1,7 @@
+# Deliberate re-exports: this package's namespace is the whole public API,
+# gathered from each format package. pyflakes reports every star import as
+# unused; a literal __all__ would have to list every public name of the modules
+# below and be kept in step by hand.
 from .version import __version__
 from .data import *
 from .files import *
