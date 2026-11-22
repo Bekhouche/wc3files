@@ -497,5 +497,32 @@ class TestLuaPrinterParentheses(unittest.TestCase):
         self.assertEqual(_grouping(self.value(printed)), _grouping(self.value(source)))
 
 
+class TestLuaNesting(unittest.TestCase):
+    """The parser had one function per precedence level: about 80 nested
+    parentheses overflowed Python's stack with a RecursionError, which is not
+    a LuaParseError, and 5.3 mode had no limit of its own. Real Lua stops at
+    200 levels (LUAI_MAXCCALLS) in both versions, and so does this now."""
+
+    @staticmethod
+    def source(depth):
+        return 'x = ' + '(' * depth + '1' + ')' * depth
+
+    def test_deep_nesting_parses(self):
+        for version in ('5.1', '5.3'):
+            parse(self.source(190), version=version)
+
+    def test_too_deep_is_a_parse_error(self):
+        with self.assertRaises(LuaParseError) as caught:
+            parse(self.source(500))
+        self.assertIn('too many C levels', str(caught.exception))
+        with self.assertRaises(LuaParseError) as caught:
+            parse(self.source(500), version='5.1')
+        self.assertIn('too many syntax levels', str(caught.exception))
+
+    def test_long_chains_are_flat(self):
+        parse('x = ' + ' .. '.join(['"a"'] * 5000))
+        parse('x = ' + ' + '.join(['1'] * 5000))
+
+
 if __name__ == '__main__':
     unittest.main()

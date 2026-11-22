@@ -375,5 +375,36 @@ endfunction
             raise unittest.SkipTest('every local fixture is in the known-bad list')
 
 
+def _globals(line):
+    return chr(10).join(['globals', line, 'endglobals', ''])
+
+
+class TestNesting(unittest.TestCase):
+    """The parser recursed once per precedence tier, so 120 nested
+    parentheses overflowed Python's stack with a RecursionError, which is
+    not a JassParseError. It now takes 200 levels and reports deeper input."""
+
+    @staticmethod
+    def source(depth):
+        return _globals('integer x = ' + '(' * depth + '1' + ')' * depth)
+
+    def test_deep_nesting_parses(self):
+        parse(self.source(190))
+
+    def test_too_deep_is_a_parse_error(self):
+        with self.assertRaises(JassParseError) as caught:
+            parse(self.source(500))
+        self.assertIn('nested more than 200 levels', str(caught.exception))
+
+    def test_a_long_sum_is_flat(self):
+        parse(_globals('integer x = ' + ' + '.join(['1'] * 5000)))
+
+    def test_grouping_is_unchanged(self):
+        program = parse(_globals('integer x = 1 + 2 * 3 - 4 == 5 and not 6 < 7 or 8'))
+        printed = print_program(program).splitlines()
+        # The same text main printed before this change.
+        self.assertIn('    integer x = (((((1 + (2 * 3)) - 4) == 5) and (not 6 < 7)) or 8)', printed)
+
+
 if __name__ == '__main__':
     unittest.main()

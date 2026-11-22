@@ -1,5 +1,6 @@
 from .jass_lexer import tokenize
 from . import ir
+from .nesting import MAX_LEVELS, room_for
 
 
 class JassParseError(Exception):
@@ -66,7 +67,13 @@ class _TokenStream:
 def parse(source):
      """Parse JASS source text into an ir.Program. Raises JassParseError (with
      line/col) rather than silently mis-parsing anything it doesn't recognize,
-     per this package's established convention (see W3iFile's version guard)."""
+     per this package's established convention (see W3iFile's version guard).
+     That includes an expression nested deeper than scripts.nesting.MAX_LEVELS."""
+     with room_for():
+          return _parse(source)
+
+
+def _parse(source):
      tokens = tokenize(source, keep_comments=True)
      # Comments carry no structural meaning, so they are lifted off here and
      # the parser proper never sees them. They are kept on the Program
@@ -350,23 +357,36 @@ def _parse_arg_list(stream):
 
 
 def _parse_expr(stream):
-     return _parse_binary(stream, 0)
+     # Nesting is counted so that a script nested too deeply fails with a
+     # JassParseError (see scripts/nesting.py), not a RecursionError.
+     stream.levels = getattr(stream, 'levels', 0) + 1
+     if stream.levels > MAX_LEVELS:
+          raise JassParseError(f'expression nested more than {MAX_LEVELS} levels deep',
+                               stream.peek())
+     try:
+          return _parse_binary(stream, 0)
+     finally:
+          stream.levels -= 1
 
 
-def _parse_binary(stream, tier):
-     if tier >= len(_PRECEDENCE):
-          return _parse_unary(stream)
+# The tier of each binary operator in _PRECEDENCE (0 binds least).
+_TIER = {op: tier for tier, ops in enumerate(_PRECEDENCE) for op in ops}
 
-     left = _parse_binary(stream, tier + 1)
-     ops = _PRECEDENCE[tier]
+
+def _parse_binary(stream, minimum):
+     """Precedence climbing over _PRECEDENCE: every binary operator whose
+     tier is at least `minimum`, all of them left associative. It used to
+     recurse once per tier, so each pair of parentheses cost a dozen Python
+     frames and 120 of them overflowed the stack."""
+     left = _parse_unary(stream)
      while True:
           op = _peek_binary_op(stream)
-          if op not in ops:
-               break
+          tier = _TIER.get(op)
+          if tier is None or tier < minimum:
+               return left
           _advance_binary_op(stream)
           right = _parse_binary(stream, tier + 1)
           left = ir.BinaryExpr(op, left, right)
-     return left
 
 
 def _peek_binary_op(stream):
