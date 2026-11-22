@@ -121,6 +121,11 @@ of the script, and exits with status 1 when there is an issue. It works on
 JASS and on Reforged Lua; what it checks is described in [Triggers and
 scripts](triggers.md#checking-a-script).
 
+`jass` and `trigger-text` also take a `.w3x`/`.w3m` map and read its
+`war3map.lua` or `war3map.j`, or its `war3map.wtg`, without unpacking it:
+`wc3files jass --check MyMap.w3x`. Findings then name the member, as in
+`MyMap.w3x:war3map.lua:120: issue: ...`.
+
 `run-map` runs a map's script against stubs of the game API and prints its
 runtime errors and argument warnings, exiting with status 1 on an error;
 `--seconds`, `--players` and `--messages` are explained in [Running a map

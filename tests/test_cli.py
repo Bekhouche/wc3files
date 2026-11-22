@@ -173,6 +173,49 @@ class TestVersionFlag(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), f'wc3files {wc3files.__version__}')
 
 
+class TestCommandsTakeAMap(unittest.TestCase):
+    """`jass --check` and `trigger-text` needed the member unpacked first:
+    "Invalid script file type: w3m"."""
+
+    def setUp(self):
+        from wc3files import W3xFile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.map = os.path.join(self.tmp.name, 'map.w3m')
+        files = {'war3map.j': _helpers.read_bytes(_helpers.sample_path('sample.j')),
+                 'war3map.wtg': _helpers.read_bytes(_helpers.sample_path('sample.wtg'))}
+        W3xFile().build_from_files(files, self.map)
+
+    def run_command(self, argv):
+        import contextlib
+        import io
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            rc = main(argv)
+        return rc, out.getvalue(), err.getvalue()
+
+    def test_jass_check_reads_the_maps_script(self):
+        rc, out, err = self.run_command(['jass', '--check', self.map])
+        self.assertIn(rc, (0, 1), err)
+        self.assertIn('issue(s)', err)
+        self.assertNotIn('Invalid script file type', err)
+        rc, out, err = self.run_command(['jass', self.map])
+        self.assertIn('function', out)
+
+    def test_trigger_text_reads_the_maps_triggers(self):
+        rc, out, err = self.run_command(['trigger-text', self.map])
+        self.assertEqual(rc, 0, err)
+        self.assertIn('Sample Trigger', out)
+
+    def test_a_map_without_the_member(self):
+        from wc3files import W3xFile
+        empty = os.path.join(self.tmp.name, 'empty.w3x')
+        W3xFile().build_from_files({'war3map.w3i': b'\x00' * 8}, empty)
+        rc, out, err = self.run_command(['trigger-text', empty])
+        self.assertEqual(rc, 1)
+        self.assertIn('has no war3map.wtg', err)
+
+
 class TestPythonDashM(unittest.TestCase):
     """`python -m wc3files` failed: "No module named wc3files.__main__"."""
 
