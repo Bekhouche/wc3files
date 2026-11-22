@@ -677,6 +677,55 @@ class TestEncryptedMembersInFolders(unittest.TestCase):
                     self.assertEqual(mpq.files.get(name), expected)
 
 
+class TestDeepReadSkipsAnUnreadableBlock(unittest.TestCase):
+    """A guessed name can point at a block that is not that file. In DEEP
+    mode that block is skipped and the other files are still recovered; a
+    file the listfile names must still raise."""
+    FILES = {
+        'war3map.j': b'function main takes nothing returns nothing\nendfunction\n',
+        'war3map.w3i': b'map info ' * 20,
+        'war3map.wts': b'STRING 0\r\n{\r\nName\r\n}\r\n',
+    }
+
+    def _corrupt(self, path, name):
+        """Overwrite the first sector offset of `name` with a value past the
+        end of its block, as a decoy's garbage table would hold."""
+        import struct
+        archive = MpqFile()
+        archive.read(path)
+        blocks = archive.mpq_block_table.get_data()
+        entry = archive.mpq_hash_table.get_hash_table_entry(name, block_table=blocks)
+        offset = blocks[entry['FileBlockIndex']]['BlockOffset']
+        with open(path, 'r+b') as handle:
+            handle.seek(offset)
+            handle.write(struct.pack('<I', 0xFFFFFFF0))
+
+    def test_deep_read_skips_the_block_and_recovers_the_rest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'protected.w3x')
+            MpqWriter(protection=MpqProtectionLevel.SAFE, rng=random.Random(1)).write(self.FILES, path)
+            self._corrupt(path, 'war3map.w3i')
+
+            w3x = W3xFile()
+            w3x.read(path, mode='deep')
+            mpq = MpqFile()
+            mpq.read(path)
+            mpq.read_files()
+            for files in (w3x.files, mpq.files):
+                self.assertNotIn('war3map.w3i', files)
+                self.assertEqual(files['war3map.j'], self.FILES['war3map.j'])
+                self.assertEqual(files['war3map.wts'], self.FILES['war3map.wts'])
+
+    def test_a_listed_file_with_a_bad_table_still_raises(self):
+        from wc3files.mpq.sectors import MpqBlockError
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'plain.w3x')
+            MpqWriter().write(self.FILES, path)
+            self._corrupt(path, 'war3map.w3i')
+            with self.assertRaises(MpqBlockError):
+                W3xFile().read(path)
+
+
 class TestHashLookupProbes(unittest.TestCase):
     """find_hash_entry walks the table from the name's home slot, as the MPQ
     format, Storm and StormLib do."""

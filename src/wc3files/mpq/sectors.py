@@ -38,6 +38,11 @@ _SINGLE_UNIT = MPQFileDataType.SINGLE_UNIT.value
 _SECTOR_CRC = MPQFileDataType.SECTOR_CRC.value
 
 
+class MpqBlockError(ValueError):
+     """A block whose layout cannot be right: its sector offsets do not
+     increase, or point past the end of the block."""
+
+
 def read_block(reader, block_entry, offset, sector_size, decrypt, key):
      """The data of one file.
 
@@ -67,6 +72,11 @@ def read_block(reader, block_entry, offset, sector_size, decrypt, key):
           return unpack(raw, file_size)[:file_size]
 
      count = (file_size + sector_size - 1) // sector_size
+     if count == 0:
+          # An empty file has no sectors, and the one-entry "table" some
+          # archives store for it holds arbitrary bytes (real maps carry
+          # them): there is nothing to check or read.
+          return b''
      pieces = []
      if flags & (_COMPRESSED | _IMPLODED):
           entries = count + 1 + (1 if flags & _SECTOR_CRC else 0)
@@ -75,6 +85,17 @@ def read_block(reader, block_entry, offset, sector_size, decrypt, key):
           if encrypted:
                table = decrypt(table, key - 1)
           positions = struct.unpack('<%dI' % entries, table)
+          # A decoy entry, or a name that collides with an unrelated entry,
+          # can point at data that is not a sector table at all. Reading it
+          # used to pass a negative size on to read(); say what is wrong
+          # instead, so a caller probing candidate names can skip it.
+          if (positions[0] < 4 * entries
+                  or any(b < a for a, b in zip(positions, positions[1:count + 1]))
+                  or positions[count] > block_entry['BlockSize']):
+               raise MpqBlockError(
+                    f"sector offset table of the block at {offset} is not valid "
+                    f"(first {positions[0]}, last {positions[count]}, "
+                    f"block size {block_entry['BlockSize']})")
           reader.seek(offset + positions[0])
           blob = _read(reader, positions[count] - positions[0])
           base = positions[0]
