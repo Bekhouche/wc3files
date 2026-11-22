@@ -40,5 +40,54 @@ class TestDooRoundTrip(unittest.TestCase):
                 MapUnitsFile().read(bad)
 
 
+class TestSkinsAreOneLayoutPerFile(unittest.TestCase):
+    """Since 1.32 every record of a file carries a skin id, or none does, and
+    the file version does not say which. The writers decided per record, so
+    a record added by code chose on its own: a doodad without `has_skin` got
+    a skin, a unit without one did not, and the file mixed two layouts that
+    the game reads out of step."""
+
+    def reread(self, cls, writer, name):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, name)
+            writer.write(path)
+            again = cls()
+            again.read(path)
+            return again.get_data()
+
+    def check(self, cls, sample, key, name):
+        from copy import deepcopy
+        for skins in (True, False):
+            with self.subTest(file=name, skins=skins):
+                source = cls()
+                source.read(_helpers.sample_path(sample))
+                source.get_data()['skins'] = skins
+                data = self.reread(cls, source, name)
+                self.assertEqual(data['skins'], skins)
+                # A record added by code, with neither has_skin nor skin.
+                added = {k: v for k, v in deepcopy(data[key][0]).items()
+                         if k not in ('has_skin', 'skin')}
+                data[key].append(added)
+                writer = cls()
+                writer._data = data
+                again = self.reread(cls, writer, name)
+                self.assertEqual({record['has_skin'] for record in again[key]}, {skins})
+                self.assertEqual(len(again[key]), len(data[key]))
+
+    def test_units(self):
+        from wc3files.doo.map_units_file import MapUnitsFile as Units
+        self.check(Units, 'sample.doo', 'units', 'war3mapUnits.doo')
+
+    def test_doodads(self):
+        from wc3files.doo.map_doodads_file import MapDoodadsFile
+        self.check(MapDoodadsFile, 'sample_doodads_v8_11.doo', 'doodads', 'war3map.doo')
+
+    def test_reading_records_the_files_choice(self):
+        from wc3files.doo.map_doodads_file import MapDoodadsFile
+        doodads = MapDoodadsFile()
+        doodads.read(_helpers.sample_path('sample_doodads_v13_11.doo'))
+        self.assertIs(doodads.get_data()['skins'], True)
+
+
 if __name__ == '__main__':
     unittest.main()

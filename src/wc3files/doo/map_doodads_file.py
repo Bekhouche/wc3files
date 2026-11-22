@@ -15,7 +15,10 @@ to land exactly on the end of the file:
     float    rotation           radians
     float[3] scale
     char[4]  skin               Reforged; present when the next byte looks
-                                printable, the same test MapUnitsFile uses
+                                printable, the same test MapUnitsFile uses.
+                                In every record of a file or in none: the
+                                file's `skins` decides it on write (see
+                                doo/skins.py)
     int      unknown_v13        format 13 only
     byte     flags
     byte     life               percent
@@ -44,7 +47,7 @@ refused rather than returned, so this can report nothing wrong and be wrong.
 """
 import struct
 
-
+from .skins import file_skins, writer_skins, record_skin
 
 MAGIC = b'W3do'
 
@@ -117,6 +120,7 @@ class MapDoodadsFile(object):
                 f'{count} doodads and {special_count} special doodads')
 
         return {'version': version, 'subversion': subversion,
+                'skins': file_skins(doodads),
                 'doodads': doodads, 'special_version': special_version,
                 'specials': specials}
 
@@ -202,8 +206,9 @@ class MapDoodadsFile(object):
 
         out = bytearray(MAGIC)
         out += struct.pack('<iii', version, subversion, len(doodads))
+        skins = writer_skins(data.get('skins'), doodads)
         for doodad in doodads:
-            out += self._write_doodad(doodad, version, subversion)
+            out += self._write_doodad(doodad, version, subversion, skins)
 
         specials = data.get('specials', [])
         out += struct.pack('<ii', data.get('special_version', 0), len(specials))
@@ -213,7 +218,7 @@ class MapDoodadsFile(object):
                                special.get('x', 0), special.get('y', 0))
         return bytes(out)
 
-    def _write_doodad(self, doodad, version, subversion):
+    def _write_doodad(self, doodad, version, subversion, skins=None):
         out = bytearray()
         out += doodad['id'].encode('latin-1')[:4].ljust(4, b'\0')
         out += struct.pack('<i', doodad.get('variation', 0))
@@ -221,7 +226,8 @@ class MapDoodadsFile(object):
         out += struct.pack('<f', doodad.get('rotation', 0.0))
         out += struct.pack('<fff', *doodad.get('scale', (1.0, 1.0, 1.0)))
 
-        if doodad.get('has_skin', doodad.get('skin') != doodad['id']):
+        # Every record of a file has a skin, or none does (see doo/skins.py).
+        if record_skin(doodad, skins):
             out += doodad.get('skin', doodad['id']).encode('latin-1')[:4].ljust(4, b'\0')
 
         if version >= 13:
