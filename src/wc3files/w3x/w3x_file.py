@@ -14,7 +14,7 @@ from wc3files.mpq.files import extract_references, is_scan_candidate
 from wc3files.mpq.sectors import read_block
 from wc3files.mpq import compression as _compression
 from wc3files.files.binary_file import fspath
-from wc3files.mpq.cipher import plain_name
+from wc3files.mpq.cipher import hash_name, plain_name
 from wc3files.mpq.export import export_files
 
 
@@ -139,7 +139,9 @@ class W3xFile(object):
                names = []
                if listfile:
                     for line in listfile.splitlines():
-                         name = line.decode('utf8', 'replace').strip()
+                         # surrogateescape keeps a name that is not UTF-8 as its
+                         # own bytes, so it still hashes to its entry.
+                         name = line.decode('utf8', 'surrogateescape').strip()
                          if name:
                               names.append(name)
 
@@ -421,32 +423,11 @@ class W3xFile(object):
           return result.getvalue()
      
      def hash(self, lpszString, hash_type):
-          seed1 = 0x7FED7FED
-          seed2 = 0xEEEEEEEE
-
-          # MPQ hashes the name's bytes, not its characters. Indexing the
-          # crypt table by code point breaks the moment a name is not plain
-          # ASCII: a real map here carries a listfile entry that does not
-          # decode as UTF-8, so it arrived as U+FFFD and the lookup asked for
-          # crypt_table[65789] and brought down the whole archive. Encoding
-          # back to bytes keeps every index inside 0..255, and
-          # surrogateescape returns the original byte when the name came from
-          # a surrogateescape decode.
-          if isinstance(lpszString, (bytes, bytearray)):
-               raw = bytes(lpszString)
-          else:
-               try:
-                    raw = lpszString.encode('cp1252', errors='surrogateescape')
-               except UnicodeEncodeError:
-                    raw = lpszString.encode('utf-8', errors='surrogateescape')
-
-          for ch in raw.upper():
-               value = self.crypt_table[(hash_type.value << 8) + (ch & 0xFF)]
-               
-               seed1 = (value ^ (seed1 + seed2)) & 0xFFFFFFFF
-               seed2 = ch + seed1 + seed2 + (seed2 << 5) + 3 & 0xFFFFFFFF
-
-          return seed1
+          # The bytes of the name, ASCII-only upper-casing: see
+          # wc3files.mpq.cipher.hash_name. Names are UTF-8 decoded with
+          # surrogateescape here, as in the listfile and the deep scan, so a
+          # code-page byte comes back as itself and a Reforged name as UTF-8.
+          return hash_name(self.crypt_table, lpszString, hash_type.value)
      
      def get_hash_table_entry(self, filename, language=0, platform=0):
           hash_a = self.hash(filename, MPQHashType.MPQ_HASH_NAME_A)
