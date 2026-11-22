@@ -98,6 +98,21 @@ class TestWtsRoundTrip(unittest.TestCase):
             self.assertEqual(reread.resolve('TRIGSTR_000'), 'Sample Map')
             self.assertEqual(reread.resolve('not a trigstr'), 'not a trigstr')
 
+    def test_empty_entry_without_a_blank_line_does_not_swallow_the_next(self):
+        wts = WtsFile()
+        wts.read(b'STRING 1\r\n{\r\n}\r\n\r\n'
+                 b'STRING 2\r\n{\r\nTwo\r\n}\r\n\r\n'
+                 b'STRING 3\r\n{\r\n}starts with a brace\r\nsecond line\r\n}\r\n\r\n'
+                 b'STRING 4\r\n{\r\n\r\n}\r\n\r\n'
+                 b'STRING 5\r\n{\r\nno line break at the end\r\n}')
+        self.assertEqual(wts.export_data(), {
+            1: '',
+            2: 'Two',
+            3: '}starts with a brace\r\nsecond line',
+            4: '',
+            5: 'no line break at the end',
+        })
+
 
 if __name__ == '__main__':
     unittest.main()
