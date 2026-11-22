@@ -39,10 +39,23 @@ def _bytes_decode_hook(obj):
     return obj
 
 
+def _open_map(path, deep):
+    """Read a map for a command that writes something from it: a protected
+    map is refused unless --deep (wc3files.w3x.read_map), and a recovered one
+    is reported as such."""
+    from wc3files.w3x.w3x_file import read_map, protection_reason
+    archive = read_map(path, deep=deep)
+    if archive.protected:
+        print(f"note: {path} is protected ({protection_reason(archive)}); "
+              f"{sum(1 for v in archive.files.values() if v is not None)} files were "
+              f"recovered by scanning for names, and some may still be missing.",
+              file=sys.stderr)
+    return archive
+
+
 def _cmd_unpack(args):
+    w3x = _open_map(args.src, args.deep)
     os.makedirs(args.out_dir, exist_ok=True)
-    w3x = W3xFile()
-    w3x.read(args.src)
     w3x.export(args.out_dir)
     print(f"Unpacked into {os.path.join(args.out_dir, w3x.current_name)}")
 
@@ -290,8 +303,9 @@ def _cmd_gamedata_extract(args):
 
 def _cmd_slk_mode(args):
     """Whole-map Slk mode (wc3files.w3x.modes.map_to_slk)."""
-    from wc3files.w3x.modes import map_to_slk
-    report = map_to_slk(args.input, args.output)
+    from wc3files.w3x.modes import map_to_slk, archive_files
+    files = archive_files(_open_map(args.input, args.deep))
+    report = map_to_slk(args.input, args.output, files)
     for name, outcome in report.items():
         print(f'{name}: {outcome}')
     print(f'Wrote {args.output}')
@@ -300,8 +314,9 @@ def _cmd_slk_mode(args):
 
 def _cmd_obj_mode(args):
     """Whole-map Obj mode (wc3files.w3x.modes.map_to_obj)."""
-    from wc3files.w3x.modes import map_to_obj
-    report = map_to_obj(args.input, args.output)
+    from wc3files.w3x.modes import map_to_obj, archive_files
+    files = archive_files(_open_map(args.input, args.deep))
+    report = map_to_obj(args.input, args.output, files)
     if not report:
         print('no object-data tables in this map; nothing to do')
     for name, outcome in report.items():
@@ -312,14 +327,14 @@ def _cmd_obj_mode(args):
 
 def _cmd_optimize(args):
     """Run the optimizer passes the options name (wc3files.w3x.optimize)."""
-    from wc3files.w3x.modes import _read_files, _write_map, map_to_slk
+    from wc3files.w3x.modes import archive_files, _write_map, map_to_slk
     from wc3files.w3x.optimize import (remove_unused_objects, remove_we_only,
                                        squeeze_models, computed_text)
     if not (args.remove_unused_objects or args.remove_we_only or args.slk or
             args.mdx_squeeze or args.computed_text):
         raise ValueError('choose at least one of --remove-unused-objects, '
                          '--remove-we-only, --mdx-squeeze, --computed-text, --slk')
-    files = _read_files(args.input)
+    files = archive_files(_open_map(args.input, args.deep))
     if args.remove_unused_objects:
         files, report = remove_unused_objects(files)
         if report.get('skipped'):
@@ -386,7 +401,8 @@ def _cmd_lni(args):
         files = lni_to_map(args.input, args.output)
         print(f'Built {args.output} ({len(files)} files)')
         return 0
-    manifest = map_to_lni(args.input, args.output)
+    archive = _open_map(args.input, args.deep)
+    manifest = map_to_lni(args.input, args.output, files=archive.files or {})
     kinds = Counter(entry['kind'] for entry in manifest['files'])
     print(f"Wrote {args.output}: {kinds.get('lni', 0)} object file(s) as Lni, "
           f"{kinds.get('json', 0)} as JSON, {kinds.get('raw', 0)} as they are")
@@ -396,7 +412,7 @@ def _cmd_lni(args):
 def _cmd_run_map(args):
     """Run a map script in wc3files.scripts.wc3_runtime and report what failed."""
     from wc3files.scripts.wc3_runtime import MapRuntime, load_map_script
-    source, chunkname, natives = load_map_script(args.input)
+    source, chunkname, natives = load_map_script(args.input, deep=args.deep)
     runtime = MapRuntime(players=args.players, max_steps=args.max_steps or None)
     runtime.declare_natives(natives)
     report = runtime.run(source, chunkname, seconds=args.seconds)
@@ -1391,6 +1407,7 @@ def build_parser():
     p_unpack = subparsers.add_parser('unpack', help='Extract a .w3x/.w3m/.w3n archive to loose files.')
     p_unpack.add_argument('src', help='Path to the .w3x/.w3m/.w3n archive.')
     p_unpack.add_argument('out_dir', help='Directory to extract into (files land under out_dir/<map name>/).')
+    p_unpack.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
     p_unpack.set_defaults(func=_cmd_unpack)
 
     p_pack = subparsers.add_parser('pack', help='Repack loose files (as produced by unpack) into an archive.',
@@ -1848,6 +1865,7 @@ def build_parser():
                      'reads (Units\\UnitData.slk, ...), for release.'))
     p_slk.add_argument('input', help='The .w3x/.w3m map.')
     p_slk.add_argument('output', help='The map to write.')
+    p_slk.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
     p_slk.set_defaults(func=_cmd_slk_mode)
 
     p_obj = subparsers.add_parser(
@@ -1855,6 +1873,7 @@ def build_parser():
                      'files the World Editor reads.'))
     p_obj.add_argument('input', help='The .w3x/.w3m map.')
     p_obj.add_argument('output', help='The map to write.')
+    p_obj.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
     p_obj.set_defaults(func=_cmd_obj_mode)
 
     p_opt = subparsers.add_parser(
@@ -1874,6 +1893,7 @@ def build_parser():
                        help='Write the values of <A000,DataA1> references into the text.')
     p_opt.add_argument('--slk', action='store_true',
                        help='Then move object data into the tables (as `slk`).')
+    p_opt.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
     p_opt.set_defaults(func=_cmd_optimize)
 
     p_ui = subparsers.add_parser(
@@ -1892,6 +1912,7 @@ def build_parser():
                      'the rest as JSON or as they are), or such a folder back into a map.'))
     p_lni.add_argument('input', help='A .w3x/.w3m map, or an Lni folder.')
     p_lni.add_argument('output', help='The folder to write, or the map to build.')
+    p_lni.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
     p_lni.set_defaults(func=_cmd_lni)
 
     p_run_map = subparsers.add_parser(
@@ -1906,6 +1927,7 @@ def build_parser():
                            help='Also print the text the map displays.')
     p_run_map.add_argument('--max-steps', type=int, default=200_000_000,
                            help='Stop after this many interpreter steps.')
+    p_run_map.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
     p_run_map.set_defaults(func=_cmd_run_map)
 
     p_trig_text = subparsers.add_parser(

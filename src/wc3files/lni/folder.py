@@ -128,13 +128,14 @@ def _to_lni(name, data, ext):
           return None
 
 
-def map_to_lni(map_path, folder, files=None):
-     """Write `folder` from a .w3x/.w3m map (or a {name: bytes} table)."""
+def map_to_lni(map_path, folder, files=None, deep=False):
+     """Write `folder` from a .w3x/.w3m map (or a {name: bytes} table).
+
+     A protected map raises wc3files.w3x.ProtectedMapError unless `deep` is
+     True (see wc3files.w3x.read_map)."""
      if files is None:
-          from wc3files.w3x import W3xFile
-          archive = W3xFile()
-          archive.read(map_path)
-          files = archive.files or {}
+          from wc3files.w3x import read_map
+          files = read_map(map_path, deep=deep).files or {}
      os.makedirs(folder, exist_ok=True)
      entries = []
      used = set()

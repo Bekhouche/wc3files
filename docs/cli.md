@@ -25,6 +25,22 @@ game's tables and back ([Slk and Obj modes](lni.md#5-slk-and-obj-modes)).
 pack. `pack` round-trips through the archive writer, so the result is a fresh
 archive rather than a patched copy of the original.
 
+A protected map has no `(listfile)`, or one that leaves files out. `unpack`,
+`lni`, `slk`, `obj`, `optimize` and `run-map` refuse it, because the files
+the listfile does not name would be lost:
+
+```
+error: MyMap.w3x is protected: it has no (listfile). Reading it as it is would lose those files. ...
+```
+
+`--deep` reads it anyway, by scanning the map's scripts, object data and
+models for the names of its other files. The result is a recovery: the
+command says so, and some files may still be missing.
+
+```bash
+wc3files unpack Protected.w3x out/ --deep
+```
+
 ## Inspecting map sub-files
 
 ```bash

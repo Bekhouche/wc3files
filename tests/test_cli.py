@@ -173,5 +173,65 @@ class TestVersionFlag(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), f'wc3files {wc3files.__version__}')
 
 
+class TestProtectedMaps(unittest.TestCase):
+    """unpack, lni, slk, obj and optimize read a map without its (listfile)
+    as almost empty and wrote that out with status 0; run-map said it had no
+    script. They now refuse a protected map, and read it with --deep."""
+
+    SCRIPT = b'function main takes nothing returns nothing\nendfunction\n'
+
+    def setUp(self):
+        from wc3files import W3xFile
+        from wc3files.mpq.data import MpqProtectionLevel
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.map = os.path.join(self.tmp.name, 'protected.w3x')
+        W3xFile().build_from_files({'war3map.j': self.SCRIPT, 'war3map.w3i': b'\x00' * 64},
+                                   self.map, protection=MpqProtectionLevel.SAFE)
+
+    def run_quietly(self, argv):
+        import contextlib
+        import io
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = main(argv)
+        return rc, err.getvalue()
+
+    def commands(self, out):
+        return {
+            'unpack': ['unpack', self.map, os.path.join(out, 'unpacked')],
+            'lni': ['lni', self.map, os.path.join(out, 'lni')],
+            'slk': ['slk', self.map, os.path.join(out, 'slk.w3x')],
+            'obj': ['obj', self.map, os.path.join(out, 'obj.w3x')],
+            'optimize': ['optimize', self.map, os.path.join(out, 'opt.w3x'), '--remove-we-only'],
+            'run-map': ['run-map', self.map, '--seconds', '0'],
+        }
+
+    def test_refused_without_deep(self):
+        for name, argv in self.commands(self.tmp.name).items():
+            with self.subTest(command=name):
+                rc, err = self.run_quietly(argv)
+                self.assertEqual(rc, 1)
+                self.assertIn('is protected: it has no (listfile)', err)
+                self.assertIn('--deep', err)
+        self.assertEqual(sorted(os.listdir(self.tmp.name)), ['protected.w3x'])
+
+    def test_read_with_deep(self):
+        from wc3files import W3xFile
+        out = self.tmp.name
+        for name, argv in self.commands(out).items():
+            with self.subTest(command=name):
+                rc, err = self.run_quietly(argv + ['--deep'])
+                self.assertEqual(rc, 0, err)
+                if name != 'run-map':
+                    self.assertIn('note:', err)
+        with open(os.path.join(out, 'unpacked', 'protected', 'war3map.j'), 'rb') as handle:
+            self.assertEqual(handle.read(), self.SCRIPT)
+        for built in ('slk.w3x', 'obj.w3x', 'opt.w3x'):
+            archive = W3xFile()
+            archive.read(os.path.join(out, built))
+            self.assertEqual(archive.files.get('war3map.j'), self.SCRIPT, built)
+
+
 if __name__ == '__main__':
     unittest.main()

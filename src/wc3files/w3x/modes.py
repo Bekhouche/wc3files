@@ -31,10 +31,15 @@ from wc3files.table.slk_file import SlkFile
 _OBJECT_EXTS = ('w3u', 'w3t', 'w3a', 'w3q', 'w3b', 'w3d', 'w3h')
 
 
-def _read_files(src):
-     from wc3files.w3x import W3xFile
-     archive = W3xFile()
-     archive.read(src)
+def _read_files(src, deep=False):
+     """The members of map `src`. A protected map raises
+     wc3files.w3x.ProtectedMapError unless `deep` (see wc3files.w3x.read_map)."""
+     from wc3files.w3x import read_map
+     return archive_files(read_map(src, deep=deep))
+
+
+def archive_files(archive):
+     """The members of a read W3xFile, without the tables a rebuild regenerates."""
      return {name: bytes(data) for name, data in (archive.files or {}).items()
              if data is not None and name.lower() not in ('(listfile)', '(attributes)')}
 
@@ -125,9 +130,9 @@ def _number(value):
      return value
 
 
-def map_to_slk(src, dst, files=None):
+def map_to_slk(src, dst, files=None, deep=False):
      """Write `dst`, `src` in Slk mode; returns the report."""
-     files = dict(files) if files is not None else _read_files(src)
+     files = dict(files) if files is not None else _read_files(src, deep)
      report = {}
      for ext in _OBJECT_EXTS:
           name = _find(files, f'war3map.{ext}')
@@ -224,10 +229,10 @@ def _differences(original, back):
      return ''
 
 
-def map_to_obj(src, dst, files=None):
+def map_to_obj(src, dst, files=None, deep=False):
      """Write `dst`, `src` with its literal tables turned back into object
      files; returns the report."""
-     files = dict(files) if files is not None else _read_files(src)
+     files = dict(files) if files is not None else _read_files(src, deep)
      report = {}
      for ext in _OBJECT_EXTS:
           object_type = ObjectFileType(ext)
