@@ -15,7 +15,16 @@ def member_path(root, name):
     if not name:
         return None
     root = os.path.abspath(root)
-    target = os.path.abspath(os.path.join(root, name))
+    # Archive names separate folders with a backslash. os.path.join only
+    # splits on it on Windows; elsewhere `Units\x.txt` would become one file
+    # named with a backslash, so the name is split here, on every platform.
+    parts = name.split('\\')
+    # An absolute name, or a part carrying a drive ("C:"), would make
+    # os.path.join drop the folder, so neither gets as far as the join.
+    if os.path.isabs(name) or any(os.path.isabs(part) or os.path.splitdrive(part)[0]
+                                  for part in parts):
+        return None
+    target = os.path.abspath(os.path.join(root, *parts))
     try:
         inside = os.path.commonpath([root, target]) == root
     except ValueError:  # a different drive on Windows
