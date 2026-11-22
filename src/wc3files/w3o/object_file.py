@@ -1,3 +1,5 @@
+import copy
+
 from ..data import BinaryDataType
 from .data import ObjectFileType
 from wc3files.files import BinaryFile
@@ -48,11 +50,15 @@ class ObjectTable(object):
           # '0000'). Kept here, by entry, only when it is not zero, so writing
           # puts it back; entries themselves stay {field id: modification}.
           self._new_ids = {}
+          # {entry id: (modification records in file order, entry snapshot)}
+          # for entries that repeat a field; see read().
+          self._repeats = {}
 
-     def load(self, data, new_ids=None):
+     def load(self, data, new_ids=None, repeats=None):
           self._data = data
           self._data_total = len(data)
           self._new_ids = dict(new_ids or {})
+          self._repeats = dict(repeats or {})
 
      @staticmethod
      def _rawcode_bytes(code):
@@ -118,9 +124,13 @@ class ObjectTable(object):
                modifications_num = reader.read(BinaryDataType.INT)
                if not (0 <= modifications_num <= self.MAX_MODS_PER_ENTRY):
                     raise ValueError(f"implausible modification count: {modifications_num}")
+               records = []
+               seen = set()
+               repeated = False
                for mod_index in range(modifications_num):
                     MOD_ID = reader.read(BinaryDataType.BYTES).decode('latin-1')
                     MOD_TYPE = reader.read(BinaryDataType.INT)
+                    MOD_LEVEL = MOD_DATA_PTR = 0
                     if MOD_ID not in self._data[IDX]:
                          self._data[IDX][MOD_ID] = {'value': None, 'type': MOD_TYPE}
 
@@ -184,6 +194,19 @@ class ObjectTable(object):
                          self._data[IDX][MOD_ID]['end'][MOD_LEVEL] = END_TOKEN
                     else:
                          self._data[IDX][MOD_ID]['end'] = END_TOKEN
+                    records.append((MOD_ID, MOD_TYPE, MOD_LEVEL, MOD_DATA_PTR, MOD_VALUE, END_TOKEN))
+                    repeated = repeated or (MOD_ID, MOD_LEVEL) in seen
+                    seen.add((MOD_ID, MOD_LEVEL))
+
+               # An entry can set one field (at one level) twice - a real map
+               # sets uabi twice in one unit, and a level table repeats a
+               # (field, level) pair. The entry dict keeps the last value, as
+               # before, so the earlier one was lost on write. For such an
+               # entry the whole modification list is kept in file order, with
+               # a snapshot of the entry, and written back as it was while the
+               # entry is unchanged.
+               if repeated:
+                    self._repeats[IDX] = (records, copy.deepcopy(self._data[IDX]))
 
           # Entries are held in a dict keyed by object id, which cannot hold
           # two entries that share one. A real map does exactly that: its
@@ -217,7 +240,21 @@ class ObjectTable(object):
                     writer.write(BinaryDataType.INT, 1)
                     writer.write(BinaryDataType.INT, 0)
 
-               if self._has_level_data():
+               repeats = self._repeats.get(idx)
+               if repeats is not None and repeats[1] == self._data[idx]:
+                    # Unchanged since read and it repeats a field: write the
+                    # modification list exactly as read (see read()).
+                    records = repeats[0]
+                    writer.write(BinaryDataType.INT, len(records))
+                    for mod_id, mod_type, level, ptr, value, end in records:
+                         writer.write(BinaryDataType.BYTES, self._rawcode_bytes(mod_id))
+                         writer.write(BinaryDataType.INT, mod_type)
+                         if self._has_level_data():
+                              writer.write(BinaryDataType.INT, level)
+                              writer.write(BinaryDataType.INT, ptr)
+                         writer.write(BinaryDataType(mod_type), value)
+                         writer.write(BinaryDataType.BYTES, self._rawcode_bytes(end))
+               elif self._has_level_data():
                     mods, levels, ptrs, values, types, ends = [], [], [], [], [], []
 
                     # File order, not sorted order. Reading inserts mods in
@@ -333,6 +370,8 @@ class ObjectFile(object):
           # {object type: {original id: new id}} for original entries whose new
           # id is not zero; see ObjectTable._new_ids.
           self._original_new_ids = {}
+          # {object type: {'original'|'custom': ObjectTable._repeats}}
+          self._repeats = {}
 
      def import_data(self, data):
           self._data = data
@@ -457,6 +496,8 @@ class ObjectFile(object):
                               original, custom, _ = self._read_tables(
                                    reader, object_type_, version, skin, container=True)
                               self._original_new_ids[object_type_] = original._new_ids
+                              self._repeats[object_type_] = {'original': original._repeats,
+                                                             'custom': custom._repeats}
                               self._data[object_type_] = {'original': original.get(), 'custom': custom.get()}
                               self._data_total[object_type_]['original'] = len(self._data[object_type_]['original'])
                               self._data_total[object_type_]['custom'] = len(self._data[object_type_]['custom'])
@@ -466,6 +507,8 @@ class ObjectFile(object):
                     original, custom, self._skin_used = self._read_tables(
                          reader, object_type, version, skin, container=False)
                     self._original_new_ids[object_type] = original._new_ids
+                    self._repeats[object_type] = {'original': original._repeats,
+                                                  'custom': custom._repeats}
                     self._data[object_type] = {'original': original.get(), 'custom': custom.get()}
                     self._data_total[object_type]['original'] = len(self._data[object_type]['original'])
                     self._data_total[object_type]['custom'] = len(self._data[object_type]['custom'])
@@ -501,12 +544,15 @@ class ObjectFile(object):
                                    writer.write(BinaryDataType.INT, 3)
 
                                    original = ObjectTable(ObjectFileType(object_type_), 'original', skin=skin)
+                                   repeats = self._repeats.get(object_type_, {})
                                    original.load(self._data[object_type_]['original'],
-                                                 self._original_new_ids.get(object_type_))
+                                                 self._original_new_ids.get(object_type_),
+                                                 repeats.get('original'))
                                    original.write(writer)
 
                                    custom = ObjectTable(ObjectFileType(object_type_), 'custom', skin=skin)
-                                   custom.load(self._data[object_type_]['custom'])
+                                   custom.load(self._data[object_type_]['custom'],
+                                               repeats=repeats.get('custom'))
                                    custom.write(writer)
                               else:
                                    writer.write(BinaryDataType.INT, 0)
@@ -525,12 +571,15 @@ class ObjectFile(object):
                                       self._version if self._version is not None else 3)
 
                          original = ObjectTable(ObjectFileType(object_type), 'original', skin=effective_skin)
+                         repeats = self._repeats.get(object_type, {})
                          original.load(self._data[object_type]['original'],
-                                       self._original_new_ids.get(object_type))
+                                       self._original_new_ids.get(object_type),
+                                       repeats.get('original'))
                          original.write(writer)
 
                          custom = ObjectTable(ObjectFileType(object_type), 'custom', skin=effective_skin)
-                         custom.load(self._data[object_type]['custom'])
+                         custom.load(self._data[object_type]['custom'],
+                                     repeats=repeats.get('custom'))
                          custom.write(writer)
           else:
                raise ValueError("Invalid file type")
