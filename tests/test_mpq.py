@@ -732,6 +732,44 @@ class TestRebuildDropsStaleTables(unittest.TestCase):
             self.assertIsNone(members['(signature)'])
 
 
+class TestWriterSectorLayout(unittest.TestCase):
+    """The writer used FileSize // SectorSize + 1 sectors, one too many when
+    the size is an exact multiple of the sector size, and gave an empty file
+    an offset table. StormLib uses ceil(FileSize / SectorSize) and stores an
+    empty file with a block size of 0."""
+
+    def test_layout(self):
+        import struct
+        sector = 512 << 3                      # MpqWriter's default shift
+        noise = random.Random(5).randbytes(2 * sector)
+        files = {'one.txt': b'x' * sector, 'two.bin': noise, 'empty.txt': b''}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'layout.w3x')
+            MpqWriter().write(files, path)
+            archive = MpqFile()
+            archive.read(path)
+            blocks = archive.mpq_block_table.get_data()
+
+            def block(name):
+                index = archive.mpq_hash_table.get_hash_table_entry(
+                    name, block_table=blocks)['FileBlockIndex']
+                return blocks[index]
+
+            with open(path, 'rb') as handle:
+                def first_offset(name):
+                    handle.seek(block(name)['BlockOffset'])
+                    return struct.unpack('<I', handle.read(4))[0]
+                self.assertEqual(first_offset('one.txt'), 8)        # 1 sector + end
+                self.assertEqual(first_offset('two.bin'), 12)       # 2 sectors + end
+            self.assertEqual(block('two.bin')['BlockSize'], 12 + 2 * sector)
+            self.assertEqual(block('empty.txt')['BlockSize'], 0)
+            self.assertEqual(block('empty.txt')['FileSize'], 0)
+            again = W3xFile()
+            again.read(path)
+            for name, data in files.items():
+                self.assertEqual(again.files.get(name), data, name)
+
+
 class TestEmptyMembers(unittest.TestCase):
     """An existing file whose block size is 0 is an empty member, not a
     missing one. Real maps store such files (25 in 9 corpus maps), often to

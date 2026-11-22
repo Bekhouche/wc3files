@@ -121,11 +121,16 @@ class MpqWriter:
                handle.write(self.build(files))
 
      def _pack_file(self, data, sector_size):
-          # Mirrors the "sectors = FileSize // sector_size + 1" convention the readers
-          # (mpq/files.py, w3x_file.py) expect - it always includes a trailing guard
-          # sector, empty unless FileSize lands exactly on a sector boundary.
+          # ceil(FileSize / SectorSize) sectors, the last one partial, and an
+          # offset table of one entry per sector plus the end offset - what
+          # StormLib and mpq/sectors.py use. This used `FileSize // SectorSize
+          # + 1`, which adds an empty sector when the size is an exact multiple
+          # of the sector size. An empty file has no sectors and no table: its
+          # block is stored with a size of 0, as StormLib stores it.
           file_size = len(data)
-          block_count = file_size // sector_size + 1
+          if not file_size:
+               return b''
+          block_count = (file_size + sector_size - 1) // sector_size
           positions = [4 * (block_count + 1)]
           sectors = bytearray()
           remaining = file_size
