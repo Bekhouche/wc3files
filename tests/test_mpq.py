@@ -974,5 +974,33 @@ class TestOneCipher(unittest.TestCase):
         self.assertTrue(W3xFile().crypt_table is MpqCipher().crypt_table)
 
 
+class TestCipherKnownAnswers(unittest.TestCase):
+    """MD5s of the output of the word-at-a-time cipher this replaced, for keys
+    inside 32 bits. The faster loop must give the same bytes."""
+
+    DATA = bytes((i * 7 + 3) & 0xFF for i in range(4099))
+    ANSWERS = {
+        0xDEADBEEF: ('f382508940cac88f2879f8e1b8cb3e6b', '4ea96543be766a49ffa2e58ba1dbc467'),
+        0: ('c641bef32bafc05897da87edc65706b3', 'a8ba28fc2017c2596932790ea09eb499'),
+        0x80000004: ('f0080530d6dbab305730c6ec507c1aa1', '6c0c3c2757d34f97b5bf5cd8f58ad5a1'),
+    }
+
+    def test_same_output_as_before(self):
+        cipher = MpqCipher()
+        for key, (decrypted, encrypted) in self.ANSWERS.items():
+            self.assertEqual(hashlib.md5(cipher.decrypt(self.DATA, key)).hexdigest(), decrypted)
+            self.assertEqual(hashlib.md5(cipher.encrypt(self.DATA, key)).hexdigest(), encrypted)
+            self.assertEqual(cipher.decrypt(cipher.encrypt(self.DATA, key), key), self.DATA)
+
+    def test_the_key_is_a_dword(self):
+        # A sector table is decrypted with `key - 1` and sector i with
+        # `key + i`. In StormLib and the game that wraps at 32 bits; a Python
+        # int does not, and its sign or 33rd bit leaked into the next key.
+        cipher = MpqCipher()
+        self.assertEqual(cipher.decrypt(self.DATA, -1), cipher.decrypt(self.DATA, 0xFFFFFFFF))
+        self.assertEqual(cipher.decrypt(self.DATA, 0x100000005), cipher.decrypt(self.DATA, 5))
+        self.assertEqual(cipher.encrypt(self.DATA, -1), cipher.encrypt(self.DATA, 0xFFFFFFFF))
+
+
 if __name__ == '__main__':
     unittest.main()
