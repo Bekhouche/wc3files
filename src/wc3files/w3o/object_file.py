@@ -43,10 +43,16 @@ class ObjectTable(object):
      def clear(self):
           self._data = {}
           self._data_total = 0
-     
-     def load(self, data):
+          # The new id of an original-table entry is normally 00 00 00 00, but
+          # real files store other values there (Hero Strife TD: the text
+          # '0000'). Kept here, by entry, only when it is not zero, so writing
+          # puts it back; entries themselves stay {field id: modification}.
+          self._new_ids = {}
+
+     def load(self, data, new_ids=None):
           self._data = data
           self._data_total = len(data)
+          self._new_ids = dict(new_ids or {})
 
      @staticmethod
      def _rawcode_bytes(code):
@@ -102,6 +108,8 @@ class ObjectTable(object):
                     self._data[IDX] = {'ID': ORG_ID}
                else:
                     self._data[IDX] = {}
+                    if NEW_ID != '\x00\x00\x00\x00':
+                         self._new_ids[IDX] = NEW_ID
 
                if self._skin:
                     reader.read(BinaryDataType.INT)
@@ -188,7 +196,9 @@ class ObjectTable(object):
                     end_token = self._rawcode_bytes(idx)
                else:
                     writer.write(BinaryDataType.BYTES, self._rawcode_bytes(idx))
-                    writer.write(BinaryDataType.BYTES, b'\x00\x00\x00\x00')
+                    new_id = self._new_ids.get(idx)
+                    writer.write(BinaryDataType.BYTES,
+                                 self._rawcode_bytes(new_id) if new_id else b'\x00\x00\x00\x00')
                     end_token = b'\x00\x00\x00\x00'
 
                if self._skin:
@@ -308,6 +318,9 @@ class ObjectFile(object):
           # benchmark map grew by 472 bytes that way.
           self._version = None
           self._skin_used = None
+          # {object type: {original id: new id}} for original entries whose new
+          # id is not zero; see ObjectTable._new_ids.
+          self._original_new_ids = {}
 
      def import_data(self, data):
           self._data = data
@@ -431,6 +444,7 @@ class ObjectFile(object):
                               version = reader.read(BinaryDataType.INT)
                               original, custom, _ = self._read_tables(
                                    reader, object_type_, version, skin, container=True)
+                              self._original_new_ids[object_type_] = original._new_ids
                               self._data[object_type_] = {'original': original.get(), 'custom': custom.get()}
                               self._data_total[object_type_]['original'] = len(self._data[object_type_]['original'])
                               self._data_total[object_type_]['custom'] = len(self._data[object_type_]['custom'])
@@ -439,6 +453,7 @@ class ObjectFile(object):
                     self._version = version
                     original, custom, self._skin_used = self._read_tables(
                          reader, object_type, version, skin, container=False)
+                    self._original_new_ids[object_type] = original._new_ids
                     self._data[object_type] = {'original': original.get(), 'custom': custom.get()}
                     self._data_total[object_type]['original'] = len(self._data[object_type]['original'])
                     self._data_total[object_type]['custom'] = len(self._data[object_type]['custom'])
@@ -474,7 +489,8 @@ class ObjectFile(object):
                                    writer.write(BinaryDataType.INT, 3)
 
                                    original = ObjectTable(ObjectFileType(object_type_), 'original', skin=skin)
-                                   original.load(self._data[object_type_]['original'])
+                                   original.load(self._data[object_type_]['original'],
+                                                 self._original_new_ids.get(object_type_))
                                    original.write(writer)
 
                                    custom = ObjectTable(ObjectFileType(object_type_), 'custom', skin=skin)
@@ -497,7 +513,8 @@ class ObjectFile(object):
                                       self._version if self._version is not None else 3)
 
                          original = ObjectTable(ObjectFileType(object_type), 'original', skin=effective_skin)
-                         original.load(self._data[object_type]['original'])
+                         original.load(self._data[object_type]['original'],
+                                       self._original_new_ids.get(object_type))
                          original.write(writer)
 
                          custom = ObjectTable(ObjectFileType(object_type), 'custom', skin=effective_skin)
