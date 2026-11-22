@@ -13,6 +13,7 @@ from .block_table import MpqBlockTable
 from .files import MpqFiles
 from .writer import MpqWriter
 from wc3files.files.binary_file import fspath
+from wc3files.mpq.export import export_files
 
 class MpqFile:
      """Class to read and handle MPQ archives, supporting encryption and decryption of data."""
@@ -84,18 +85,12 @@ class MpqFile:
                self.files = self.mpq_files.get_data()
      
      def export(self, path):
+          """Write every member under <path>/<map name>/. A member whose name would
+          land outside that folder is skipped with a warning; the skipped names
+          are returned."""
           path = fspath(path)
-          if not os.path.exists(os.path.join(path, self.current_name)):
-               os.mkdir(os.path.join(path, self.current_name))
+          return export_files(self.files, os.path.join(path, self.current_name))
 
-          for file in self.files.keys():
-               if len(file.split('\\')) > 1:
-                    if not os.path.exists(os.path.basename(os.path.join(path, self.current_name, file))):
-                         os.makedirs(os.path.dirname(os.path.join(path, self.current_name, file)), exist_ok=True)
-               
-               f = open(os.path.join(path, self.current_name, file), 'wb')
-               f.write(self.files[file] or b'')
-               f.close()
 
      def build(self, files, dst_path, sector_size_shift=3,
                protection=MpqProtectionLevel.NONE, attributes=False):

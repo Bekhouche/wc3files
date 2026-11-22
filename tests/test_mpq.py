@@ -551,5 +551,60 @@ class TestMpqHeaderFieldEnums(unittest.TestCase):
             'ARCHIVE_SIZE_64', 'BET_TABLE_POS_64', 'HET_TABLE_POS_64'])
 
 
+class TestExportStaysInsideTheFolder(unittest.TestCase):
+    """Member names come from the archive, which may be untrusted: a name with
+    `..` parts or an absolute path must not be written outside the folder."""
+
+    def _archive(self, tmp):
+        self.outside = os.path.join(tmp, 'absolute.txt')
+        files = {
+            'war3map.j': b'KEEP',
+            '..\\..\\evil.txt': b'EVIL',
+            '../../evil2.txt': b'EVIL',
+            self.outside: b'EVIL',
+        }
+        path = os.path.join(tmp, 'evil.w3x')
+        MpqWriter().write(files, path)
+        return path
+
+    def _written(self, tmp):
+        return sorted(os.path.relpath(os.path.join(root, name), tmp)
+                      for root, _, names in os.walk(tmp) for name in names)
+
+    def _check(self, tmp, out, skipped):
+        written = self._written(tmp)
+        self.assertNotIn('evil.txt', written)
+        self.assertNotIn('evil2.txt', written)
+        self.assertFalse(os.path.exists(self.outside))
+        with open(os.path.join(out, 'evil', 'war3map.j'), 'rb') as handle:
+            self.assertEqual(handle.read(), b'KEEP')
+        if skipped is not None:
+            self.assertEqual(sorted(skipped), sorted(['../../evil2.txt', self.outside]
+                                                     + (['..\\..\\evil.txt'] if os.sep == '\\' else [])))
+
+    def test_mpq_file_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = MpqFile()
+            archive.read(self._archive(tmp))
+            archive.read_files()
+            out = os.path.join(tmp, 'a', 'b')
+            self._check(tmp, out, archive.export(out))
+
+    def test_w3x_file_export(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = W3xFile()
+            archive.read(self._archive(tmp))
+            out = os.path.join(tmp, 'a', 'b')
+            self._check(tmp, out, archive.export(out))
+
+    def test_cli_unpack(self):
+        from wc3files.cli.main import main
+        with tempfile.TemporaryDirectory() as tmp:
+            source = self._archive(tmp)
+            out = os.path.join(tmp, 'a', 'b')
+            self.assertEqual(main(['unpack', source, out]), 0)
+            self._check(tmp, out, None)
+
+
 if __name__ == '__main__':
     unittest.main()
