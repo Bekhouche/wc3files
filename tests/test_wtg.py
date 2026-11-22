@@ -68,6 +68,53 @@ class TestTriggerData(unittest.TestCase):
         with self.assertRaises(KeyError):
             trigger_data.arg_count(EVENT, 'ThisIsNotARealTriggerFunction')
 
+    def test_a_native_or_comparison_missing_from_the_file_still_has_a_count(self):
+        # Extended editors expose natives as GUI functions with the native's
+        # own parameters, and every OperatorCompare* condition takes 3.
+        from wc3files.wtg.trigger_data import ACTION, CALL, CONDITION
+        trigger_data = TriggerData.default()
+        for function_type, name in ((CALL, 'GetHandleId'), (ACTION, 'BlzLoadTOCFile'),
+                                    (CONDITION, 'OperatorCompareAttackType')):
+            self.assertNotIn(name, trigger_data._arg_counts[
+                {CALL: 'TriggerCalls', ACTION: 'TriggerActions',
+                 CONDITION: 'TriggerConditions'}[function_type]])
+        self.assertEqual(trigger_data.arg_count(CALL, 'GetHandleId'), 1)
+        self.assertEqual(trigger_data.arg_count(ACTION, 'BlzLoadTOCFile'), 1)
+        self.assertEqual(trigger_data.arg_count(ACTION, 'BlzFrameSetSize'), 3)
+        self.assertEqual(trigger_data.arg_count(CONDITION, 'OperatorCompareAttackType'), 3)
+
+    def test_triggers_using_them_round_trip(self):
+        # Azeroth Roleplay v2.11.2.0609.w3x and Enfos_DR_Beta_V5_850.w3x
+        # failed to read on exactly these functions.
+        from wc3files.wtg.trigger_data import ACTION, CALL, CONDITION
+
+        def param(kind, value, function=None):
+            return {'type': kind, 'value': value, 'function': function, 'array_indexer': None}
+
+        def function(kind, name, parameters):
+            return {'type': kind, 'branch': None, 'name': name, 'enabled': True,
+                    'parameters': parameters, 'children': []}
+
+        handle_id = function(CALL, 'GetHandleId', [param(1, 'udg_Frame')])
+        functions = [
+            function(CONDITION, 'OperatorCompareAttackType',
+                     [param(1, 'udg_Attack'), param(0, 'OperatorEqualENE'), param(0, 'ATTACK_TYPE_HERO')]),
+            function(ACTION, 'BlzFrameSetSize',
+                     [param(2, 'GetHandleId', handle_id), param(3, '0.10'), param(3, '0.20')]),
+        ]
+        triggers = MapTriggersFile()
+        triggers.read(_helpers.sample_path('sample.wtg'))
+        triggers.get_triggers()[0]['functions'] = functions
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'war3map.wtg')
+            triggers.write(path)
+            again = MapTriggersFile()
+            again.read(path)
+            self.assertEqual(again.get_triggers()[0]['functions'], functions)
+            rewritten = os.path.join(tmp, 'again.wtg')
+            again.write(rewritten)
+            self.assertEqual(_helpers.read_bytes(rewritten), _helpers.read_bytes(path))
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -16,6 +16,18 @@ _SECTION_BY_FUNCTION_TYPE = {
 _DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gamedata', 'TriggerData.txt')
 
 
+
+def _fallback_arg_count(section, name):
+     """The argument count of a GUI function TriggerData.txt does not declare,
+     when it can still be known (see TriggerData.arg_count), or None."""
+     if section == 'TriggerConditions' and name.startswith('OperatorCompare'):
+          return 3
+     from wc3files.scripts.checker import NativeSignatures
+     declaration = NativeSignatures.default().lookup(name)
+     if declaration is not None:
+          return len(declaration.params)
+     return None
+
 class TriggerData(object):
      """
      Parses a WC3 TriggerData.txt just enough to recover, for every GUI trigger
@@ -155,26 +167,36 @@ class TriggerData(object):
           try:
                return self._arg_counts[section][name]
           except KeyError:
-               # How many arguments a GUI function takes is only knowable from
-               # a TriggerData.txt, so an unknown one cannot be skipped - the
-               # parameters that follow it would be read as something else and
-               # the rest of the trigger would come out wrong. Refusing is
-               # right; a bare KeyError saying nothing useful was not.
-               #
-               # This is usually not a stale bundled file. Maps built with an
-               # extended editor (WEX and the like) expose natives that stock
-               # Warcraft III does not: BlzLoadTOCFile, GetHandleId and
-               # BlzFrameSetText are all absent from the game's own
-               # UI/TriggerData.txt, checked directly against an installed
-               # copy. Such a map needs the TriggerData.txt its editor used.
-               raise KeyError(
-                    f"Unknown {section[7:].lower()} function: {name!r}. The "
-                    f"bundled TriggerData.txt does not declare it, and nor "
-                    f"does stock Warcraft III's - a map using an extended "
-                    f"editor's functions needs that editor's TriggerData.txt, "
-                    f"passed to read()/TriggerData, because the argument count "
-                    f"cannot be guessed."
-               )
+               pass
+          # How many arguments a GUI function takes is only knowable from a
+          # TriggerData.txt, so an unknown one cannot be skipped - the
+          # parameters that follow it would be read as something else and the
+          # rest of the trigger would come out wrong.
+          #
+          # This is usually not a stale bundled file. Maps built with an
+          # extended editor (WEX and the like) expose natives that stock
+          # Warcraft III does not: BlzLoadTOCFile, GetHandleId and
+          # BlzFrameSetText are all absent from the game's own
+          # UI/TriggerData.txt, checked directly against an installed copy.
+          # Such an editor exposes a native as a GUI function with exactly the
+          # native's parameters, so a function common.j or blizzard.j declares
+          # gives the count after all. A comparison follows the
+          # OperatorCompare* pattern, and every one of those in the bundled
+          # file takes 3 (value, operator, value). Whether the counts were
+          # right shows when the trigger file is written back: three corpus
+          # maps that failed here now come back byte-for-byte.
+          count = _fallback_arg_count(section, name)
+          if count is not None:
+               return count
+          raise KeyError(
+               f"Unknown {section[7:].lower()} function: {name!r}. The "
+               f"bundled TriggerData.txt does not declare it, nor does "
+               f"stock Warcraft III's, and it is not a native or BJ function "
+               f"of common.j/blizzard.j - a map using an extended "
+               f"editor's functions needs that editor's TriggerData.txt, "
+               f"passed to read()/TriggerData, because the argument count "
+               f"cannot be guessed."
+          )
 
      @classmethod
      def default(cls):
