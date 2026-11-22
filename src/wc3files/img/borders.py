@@ -4,9 +4,10 @@ as ready-made defaults for `make-icon`/`make-icon-set`'s `--border`-family flags
 so a caller isn't required to supply their own border image just to get a
 real, in-game-style result.
 
-**Provenance**: copied from a real, locally-available third-party
-icon-authoring tool ("Warcraft Image Lab"), with explicit authorization from
-its owner to copy and use these specific asset files in this package. No
+**Provenance**: copied from Warcraft Image Lab by LaZz, an icon-authoring
+tool (https://www.hiveworkshop.com/threads/warcraft-image-lab.333142/), with
+the author's explicit authorization to copy and use these specific asset files in
+this package. No
 separate open-source license file was found alongside them, so - like every
 other bundled real-asset directory in this package (see `w3o/gamedata/`,
 `scripts/gamedata/`'s own provenance notes) - they're included on that
