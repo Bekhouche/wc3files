@@ -21,14 +21,20 @@ from wc3files.mpq.export import export_files
 class W3xReadMode(Enum):
      """How far `W3xFile.read()` goes into an archive.
 
-     SIMPLE   - look up `(listfile)` and stop. Missing listfile → `protected`,
-                no member extract, no name scan.
-     LISTFILE - extract every file the listfile names. Missing listfile →
-                `protected` and stop. Default: a map without a listfile is
-                protected, not a prompt to recover it.
-     DEEP     - when there is no usable listfile, probe the bundled name list
-                and walk references until nothing new turns up. Opt-in; this
-                is the minutes-long recovery path, not the ordinary read.
+     SIMPLE   - look up `(listfile)` and stop. Missing or incomplete listfile
+                → `protected`, no member extract, no name scan.
+     LISTFILE - extract every file the listfile names. Missing or incomplete
+                listfile → `protected`, and nothing more is looked for.
+                Default: a map without a full listfile is protected, not a
+                prompt to recover it.
+     DEEP     - as LISTFILE, then, when the listfile is missing or
+                incomplete, probe the bundled name list and walk references
+                until nothing new turns up. Opt-in; this is the minutes-long
+                recovery path, not the ordinary read.
+
+     A listfile is incomplete when the hash table points to files it does
+     not name (`W3xFile.unlisted_blocks`): a decoy that names only itself,
+     or a list that leaves files out.
      """
      SIMPLE = 'simple'
      LISTFILE = 'listfile'
@@ -58,7 +64,10 @@ class W3xFile(object):
           self._temp = {}
           self.current_path = ''
           self.current_name = ''
+          # True when (listfile) is missing or does not name every file of
+          # the archive; unlisted_blocks says how many it leaves out.
           self.protected = False
+          self.unlisted_blocks = 0
 
      def export(self, path):
           """Write every member under <path>/<map name>/. A member whose name would
@@ -116,8 +125,9 @@ class W3xFile(object):
           """Read a `.w3x`/`.w3m`/`.w3n`. See `W3xReadMode` for `mode`.
 
           Default is LISTFILE: use the archive's own `(listfile)`, and if it
-          is missing mark `self.protected` and stop. Pass `mode=DEEP` only
-          when you actually want to recover a protected map.
+          is missing or does not name every file, mark `self.protected`
+          (`self.unlisted_blocks` says how many it leaves out). Pass
+          `mode=DEEP` only when you actually want to recover a protected map.
           """
           file_path = fspath(file_path)
           if not isinstance(mode, W3xReadMode):
@@ -146,19 +156,41 @@ class W3xFile(object):
                          if name:
                               names.append(name)
 
-               if not names:
-                    self.protected = True
-                    if mode is W3xReadMode.DEEP:
-                         self.read_without_listfile(reader)
-                    return
-
-               self.protected = False
+               # A listfile is only the real one if it names every file the
+               # hash table points to. Protectors also leave a decoy that names
+               # nothing but itself (54 corpus maps), or a list that leaves the
+               # script and other files out; read as the whole map, those came
+               # back as an empty or partial map with protected False.
+               self.unlisted_blocks = self._count_unlisted_blocks(names)
+               self.protected = not names or self.unlisted_blocks > 0
                if mode is W3xReadMode.SIMPLE:
                     return
                for name in names:
                     data = self.read_file(reader, name)
                     if data is not None:
                          self.files[name] = data
+               if self.protected and mode is W3xReadMode.DEEP:
+                    self.read_without_listfile(reader)
+
+     # Named by the archive format itself, never listed in (listfile).
+     _SPECIAL_MEMBERS = ('(listfile)', '(attributes)', '(signature)')
+
+     def _count_unlisted_blocks(self, names):
+          """How many files the hash table points to that `names` does not
+          name. Only blocks a valid hash entry refers to count: a block no
+          entry points to is not a file anyone can open."""
+          blocks = self._data['BLOCK_TABLE']
+          exists = MPQFileDataType.EXISTS.value
+          referenced = {entry['FileBlockIndex'] for entry in self._data['HASH_TABLE']
+                        if entry['FileBlockIndex'] < len(blocks)
+                        and blocks[entry['FileBlockIndex']]['Flags'] & exists
+                        and blocks[entry['FileBlockIndex']]['BlockSize'] > 0}
+          named = set()
+          for name in list(names) + list(self._SPECIAL_MEMBERS):
+               entry = self.get_hash_table_entry(name)
+               if entry is not None:
+                    named.add(entry['FileBlockIndex'])
+          return len(referenced - named)
 
      def read_without_listfile(self, reader):
           # No usable (listfile): probe known default names, then deep-scan - any

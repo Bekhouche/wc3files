@@ -22,6 +22,7 @@ import _helpers  # noqa: F401  (sets up sys.path + quiet logging)
 
 from wc3files import W3xFile, W3xReadMode
 from wc3files.mpq.data import MpqProtectionLevel
+from wc3files.mpq.writer import MpqWriter
 from wc3files.mdl.model_file import ModelFile
 from wc3files.mdl.mdx_io import empty_model
 
@@ -147,6 +148,65 @@ class TestW3xReadMode(unittest.TestCase):
         self.assertTrue(w3x.protected)
         self.assertFalse(w3x.files.get('(listfile)'))
         self.assertIsNone(w3x.files.get('war3map.j'))
+
+
+class _ListfileWriter(MpqWriter):
+    """Writes the (listfile) it is given, instead of generating one."""
+    GENERATED = ()
+
+
+class TestIncompleteListfile(unittest.TestCase):
+    """Some protectors replace (listfile) with a decoy that names only itself.
+    Any non-empty list used to count as the real one: the map read as empty,
+    with protected False, and DEEP never ran. 54 corpus maps do this."""
+
+    MEMBERS = {
+        'war3map.w3i': b'\x00' * 64,
+        'war3map.j': b'function main takes nothing returns nothing\nendfunction\n',
+    }
+
+    def build(self, listfile):
+        path = os.path.join(self.tmpdir.name, 'map.w3x')
+        files = dict(self.MEMBERS, **{'(listfile)': listfile})
+        _ListfileWriter(protection=MpqProtectionLevel.SAFE).write(files, path)
+        return path
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+    def test_a_decoy_listfile_is_protected(self):
+        path = self.build(b'(listfile)\r\n \r\n \r\n \r\n')
+        w3x = W3xFile()
+        w3x.read(path)
+        self.assertTrue(w3x.protected)
+        self.assertEqual(w3x.unlisted_blocks, 2)
+
+    def test_deep_recovers_what_a_decoy_hides(self):
+        path = self.build(b'(listfile)\r\n \r\n \r\n \r\n')
+        w3x = W3xFile()
+        w3x.read(path, mode=W3xReadMode.DEEP)
+        self.assertEqual(w3x.files.get('war3map.j'), self.MEMBERS['war3map.j'])
+        self.assertEqual(w3x.files.get('war3map.w3i'), self.MEMBERS['war3map.w3i'])
+
+    def test_a_partial_listfile_keeps_what_it_names(self):
+        path = self.build(b'(listfile)\r\nwar3map.w3i\r\n')
+        w3x = W3xFile()
+        w3x.read(path)
+        self.assertTrue(w3x.protected)
+        self.assertEqual(w3x.unlisted_blocks, 1)
+        self.assertEqual(w3x.files.get('war3map.w3i'), self.MEMBERS['war3map.w3i'])
+        self.assertIsNone(w3x.files.get('war3map.j'))
+        deep = W3xFile()
+        deep.read(path, mode=W3xReadMode.DEEP)
+        self.assertEqual(deep.files.get('war3map.j'), self.MEMBERS['war3map.j'])
+
+    def test_a_complete_listfile_is_not_protected(self):
+        path = self.build(b'(listfile)\r\nwar3map.w3i\r\nwar3map.j\r\n')
+        w3x = W3xFile()
+        w3x.read(path)
+        self.assertFalse(w3x.protected)
+        self.assertEqual(w3x.unlisted_blocks, 0)
 
 
 if __name__ == '__main__':
