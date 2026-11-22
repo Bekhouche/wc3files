@@ -54,16 +54,21 @@ wc3files build w3i info.json war3map.w3i      # and back again
 
 `dump` reads one sub-file and prints it as JSON; `build` turns that JSON back
 into the binary file. Together they are the quickest way to change one field
-by hand. Both take a format name:
+by hand. The format name comes first, and can be left out when the file name
+says it (`dump war3map.w3i`, `build info.json war3map.w3i`):
 
 ```
-cfg  doo  doodads  imp  mmp  obj  shd  slk  w3c  w3e
-w3f  w3g  w3i  w3r  w3s  wct  wes  wpm  wtg  wts
+cfg  doo  doodads  imp  mmp  obj  shd  slk  units  w3c
+w3e  w3f  w3g  w3i  w3r  w3s  wct  wes  wpm  wtg  wts
 ```
 
-`dump doo` is `war3mapUnits.doo` (units); `dump doodads` is `war3map.doo`.
-They share an extension and a magic number but not a layout, which is why
-they are separate names here.
+`units` and `doo` are `war3mapUnits.doo` (units and items); `doodads` is
+`war3map.doo`. They share an extension and a magic number but not a layout.
+`doo` keeps its old meaning, so existing commands still work; by its name,
+`dump war3mapUnits.doo` and `dump war3map.doo` pick the right one.
+
+A shadow map (`shd`) has no header. Its size is read from a `war3map.wpm` or
+`war3map.w3e` next to it, or given with `--width` and `--height`.
 
 ## Object data
 

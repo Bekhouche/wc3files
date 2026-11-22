@@ -173,6 +173,83 @@ class TestVersionFlag(unittest.TestCase):
         self.assertEqual(out.getvalue().strip(), f'wc3files {wc3files.__version__}')
 
 
+class TestDumpFormatFromTheName(unittest.TestCase):
+    """`dump doo` reads war3mapUnits.doo and `dump doodads` war3map.doo, the
+    other way round from the file names, and a wrong pick failed with errors
+    that looked like a broken file. `dump shd` needed --width and --height
+    even next to the map's pathing or terrain file."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def copy(self, sample, name):
+        import shutil
+        path = os.path.join(self.tmp.name, name)
+        shutil.copyfile(_helpers.sample_path(sample), path)
+        return path
+
+    def dump(self, *argv):
+        import contextlib
+        import io
+        out = os.path.join(self.tmp.name, 'out.json')
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            rc = main(['dump', *argv, out])
+        data = json.load(open(out, encoding='utf-8')) if rc == 0 else None
+        return rc, data, err.getvalue()
+
+    def test_the_format_comes_from_the_name(self):
+        rc, data, err = self.dump(self.copy('sample.doo', 'war3mapUnits.doo'))
+        self.assertEqual(rc, 0, err)
+        self.assertIn('units', data)
+        rc, data, err = self.dump(self.copy('sample_doodads_v8_11.doo', 'war3map.doo'))
+        self.assertEqual(rc, 0, err)
+        self.assertIn('doodads', data)
+        rc, data, err = self.dump(self.copy('sample.w3i', 'war3map.w3i'))
+        self.assertEqual(rc, 0, err)
+
+    def test_units_is_a_plain_name_for_the_units_file(self):
+        rc, data, err = self.dump('units', self.copy('sample.doo', 'whatever.doo'))
+        self.assertEqual(rc, 0, err)
+        self.assertIn('units', data)
+
+    def test_an_unclear_name_asks_for_the_format(self):
+        rc, data, err = self.dump(self.copy('sample.doo', 'placement.doo'))
+        self.assertEqual(rc, 1)
+        self.assertIn('give the format first', err)
+
+    def test_build_takes_the_format_from_the_output_name(self):
+        source = self.copy('sample.doo', 'war3mapUnits.doo')
+        rc, _, err = self.dump(source)
+        self.assertEqual(rc, 0, err)
+        rebuilt = os.path.join(self.tmp.name, 'rebuilt', 'war3mapUnits.doo')
+        os.makedirs(os.path.dirname(rebuilt))
+        self.assertEqual(main(['build', os.path.join(self.tmp.name, 'out.json'), rebuilt]), 0)
+        self.assertEqual(_helpers.read_bytes(rebuilt), _helpers.read_bytes(source))
+
+    def test_shd_size_from_the_pathing_map(self):
+        from wc3files.wpm.pathing_file import PathingFile
+        shd = self.copy('sample.shd', 'war3map.shd')
+        pathing = PathingFile()
+        pathing._data = {'version': 0, 'width': 3, 'height': 3, 'cells': bytes(9)}
+        pathing.write(os.path.join(self.tmp.name, 'war3map.wpm'))
+        rc, data, err = self.dump(shd)
+        self.assertEqual(rc, 0, err)
+
+    def test_shd_size_from_the_terrain(self):
+        from wc3files.w3e.terrain_file import TerrainFile
+        terrain = TerrainFile()
+        terrain.read(_helpers.sample_path('sample.w3e'))
+        size = terrain.get_data()
+        shd = os.path.join(self.tmp.name, 'war3map.shd')
+        with open(shd, 'wb') as handle:
+            handle.write(bytes(16 * (size['width'] - 1) * (size['height'] - 1)))
+        self.copy('sample.w3e', 'war3map.w3e')
+        rc, data, err = self.dump(shd)
+        self.assertEqual(rc, 0, err)
+
+
 class TestCommandsTakeAMap(unittest.TestCase):
     """`jass --check` and `trigger-text` needed the member unpacked first:
     "Invalid script file type: w3m"."""

@@ -10,6 +10,7 @@ shape the CLI can drive generically.
 """
 import base64
 import copy
+import os
 
 from wc3files.w3i import W3iFile
 from wc3files.doo import MapUnitsFile, MapDoodadsFile
@@ -150,11 +151,32 @@ def _shd_read(instance, path, options):
     width = (options or {}).get('width')
     height = (options or {}).get('height')
     if not width or not height:
+        width, height = _shd_size_from_siblings(path)
+    if not width or not height:
         raise ValueError(
             "a war3map.shd carries no header, so its size cannot be read from "
-            "the file itself - pass --width and --height (the terrain's "
-            "war3map.w3e width/height, which `dump w3e` reports)")
+            "the file itself, and there is no war3map.wpm or war3map.w3e next "
+            "to it - pass --width and --height (the pathing map's size, which "
+            "`dump wpm` reports)")
     instance.read(path, width, height)
+
+
+def _shd_size_from_siblings(path):
+    """The shadow map's size from the map files next to it: the pathing map
+    has the same grid, and the terrain one 4x4 block per tile (its width and
+    height count tile corners, one more than tiles)."""
+    folder = os.path.dirname(os.path.abspath(path))
+    names = {name.lower(): name for name in os.listdir(folder)}
+    if 'war3map.wpm' in names:
+        pathing = PathingFile()
+        pathing.read(os.path.join(folder, names['war3map.wpm']))
+        return pathing.get_data()['width'], pathing.get_data()['height']
+    if 'war3map.w3e' in names:
+        terrain = TerrainFile()
+        terrain.read(os.path.join(folder, names['war3map.w3e']))
+        data = terrain.get_data()
+        return 4 * (data['width'] - 1), 4 * (data['height'] - 1)
+    return None, None
 
 
 def _w3r_get_data(instance):
@@ -279,3 +301,37 @@ FORMATS = {
     'w3r': Format(RegionFile, get_data=_w3r_get_data, set_data=_w3r_set_data),
     'mmp': Format(PreviewIconsFile, get_data=_mmp_get_data, set_data=_mmp_set_data),
 }
+# `doo` is war3mapUnits.doo and `doodads` war3map.doo, the other way round
+# from the file names. Both keep their meaning, so existing commands do not
+# change silently; `units` names the units file plainly.
+FORMATS['units'] = FORMATS['doo']
+
+# The file each choice reads, for the help.
+FORMAT_FILES = {
+    'w3i': 'war3map.w3i', 'doo': 'war3mapUnits.doo', 'units': 'war3mapUnits.doo',
+    'doodads': 'war3map.doo', 'wtg': 'war3map.wtg', 'wct': 'war3map.wct',
+    'imp': 'war3map.imp', 'w3f': 'war3campaign.w3f', 'wts': 'war3map.wts',
+    'cfg': '*.cfg', 'wes': 'WorldEditStrings.txt and the like', 'slk': '*.slk',
+    'obj': 'war3map.w3u/w3t/w3a/w3b/w3d/w3h/w3q/w3o', 'w3g': '*.w3g replay',
+    'w3e': 'war3map.w3e', 'w3c': 'war3map.w3c', 'w3s': 'war3map.w3s',
+    'wpm': 'war3map.wpm', 'shd': 'war3map.shd', 'w3r': 'war3map.w3r', 'mmp': 'war3map.mmp',
+}
+
+_EXTENSIONS = {
+    'w3i': 'w3i', 'wtg': 'wtg', 'wct': 'wct', 'imp': 'imp', 'w3f': 'w3f', 'wts': 'wts',
+    'cfg': 'cfg', 'slk': 'slk', 'w3g': 'w3g', 'w3e': 'w3e', 'w3c': 'w3c', 'w3s': 'w3s',
+    'wpm': 'wpm', 'shd': 'shd', 'w3r': 'w3r', 'mmp': 'mmp',
+    'w3u': 'obj', 'w3t': 'obj', 'w3a': 'obj', 'w3b': 'obj', 'w3d': 'obj', 'w3h': 'obj',
+    'w3q': 'obj', 'w3o': 'obj',
+}
+
+
+def format_for_name(path):
+    """The format a file's name gives, or None when it does not say: a .doo
+    other than war3map.doo and war3mapUnits.doo could be either one."""
+    name = os.path.basename(path).lower()
+    if name == 'war3mapunits.doo':
+        return 'units'
+    if name == 'war3map.doo':
+        return 'doodads'
+    return _EXTENSIONS.get(name.rsplit('.', 1)[-1]) if '.' in name else None
