@@ -11,6 +11,7 @@ division and bitwise operators). No reference implementation to port from -
 
 from .lua_lexer import tokenize
 from . import ir
+from .nesting import MAX_LEVELS, room_for
 
 
 class LuaParseError(Exception):
@@ -27,10 +28,6 @@ class LuaParseError(Exception):
 # '..' and '^' (handled separately below, both right-associative per the Lua
 # manual - '^' also binds tighter than unary operators, e.g. `-2^2` is
 # `-(2^2)`).
-_COMPARE_OPS = {'<', '>', '<=', '>=', '~=', '=='}
-_SHIFT_OPS = {'<<', '>>'}
-_ADD_OPS = {'+', '-'}
-_MUL_OPS = {'*', '/', '//', '%'}
 _UNARY_OPS = {'not', '-', '#', '~'}
 
 _BLOCK_END_KEYWORDS = {'end', 'else', 'elseif', 'until'}
@@ -88,7 +85,8 @@ def parse(source, version='5.3'):
      stream = _TokenStream(tokenize(source, version))
      stream.lua51 = version == '5.1'
 
-     body = _parse_block(stream, until={'end', 'else', 'elseif', 'until'})
+     with room_for():
+          body = _parse_block(stream, until={'end', 'else', 'elseif', 'until'})
      if stream.peek().kind != 'EOF':
           raise LuaParseError('expected end of file', stream.peek())
      return ir.Chunk(body)
@@ -129,21 +127,22 @@ def _at(node, token):
      return node
 
 
-# Lua 5.1 stops nesting at 200 levels (LUAI_MAXCCALLS); a script nested
-# deeper fails to load there, so 5.1 mode reports it the same way.
-_MAX_LEVELS = 200
+# Lua stops nesting at 200 levels (LUAI_MAXCCALLS, in 5.1 and 5.3); a script
+# nested deeper fails to load there, so it is reported here the same way,
+# with that version's message. Before, 5.3 mode had no limit and failed with
+# a RecursionError at about 80 nested parentheses.
+_MAX_LEVELS = MAX_LEVELS
 
 
 def _enter(stream):
-     if getattr(stream, 'lua51', False):
-          stream.levels = getattr(stream, 'levels', 0) + 1
-          if stream.levels > _MAX_LEVELS:
-               raise LuaParseError('chunk has too many syntax levels', stream.peek())
+     stream.levels = getattr(stream, 'levels', 0) + 1
+     if stream.levels > _MAX_LEVELS:
+          what = 'syntax' if getattr(stream, 'lua51', False) else 'C'
+          raise LuaParseError(f'chunk has too many {what} levels', stream.peek())
 
 
 def _leave(stream):
-     if getattr(stream, 'lua51', False):
-          stream.levels -= 1
+     stream.levels -= 1
 
 
 def _parse_statement(stream):
@@ -376,115 +375,56 @@ def _parse_expr_list(stream):
 def _parse_expr(stream):
      _enter(stream)
      try:
-          return _parse_or(stream)
+          return _parse_binary(stream, 1)
      finally:
           _leave(stream)
 
 
-def _parse_or(stream):
-     left = _parse_and(stream)
-     while stream.check_keyword('or'):
-          token = stream.advance()
-          right = _parse_and(stream)
-          left = _at(ir.BinaryExpr('or', left, right), token)
-     return left
+# Binary operators by Lua 5.3's precedence, lowest first (reference manual,
+# 3.4.8). `..` is right associative (and `^`, parsed with the unary operators
+# below); every other binary operator is left associative.
+_BINARY_PRECEDENCE = {}
+for _level, _ops in enumerate((
+          ('or',), ('and',), ('<', '>', '<=', '>=', '~=', '=='), ('|',), ('~',), ('&',),
+          ('<<', '>>'), ('..',), ('+', '-'), ('*', '/', '//', '%')), start=1):
+     for _op in _ops:
+          _BINARY_PRECEDENCE[_op] = _level
+_CONCAT_LEVEL = _BINARY_PRECEDENCE['..']
 
 
-def _parse_and(stream):
-     left = _parse_compare(stream)
-     while stream.check_keyword('and'):
-          token = stream.advance()
-          right = _parse_compare(stream)
-          left = _at(ir.BinaryExpr('and', left, right), token)
-     return left
+def _binary_op(token):
+     if token.kind == 'KEYWORD' and token.value in ('and', 'or'):
+          return token.value
+     if token.kind == 'OP' and token.value in _BINARY_PRECEDENCE:
+          return token.value
+     return None
 
 
-def _parse_compare(stream):
-     left = _parse_bor(stream)
-     while True:
-          token = stream.peek()
-          if not (token.kind == 'OP' and token.value in _COMPARE_OPS):
-               break
-          stream.advance()
-          right = _parse_bor(stream)
-          left = _at(ir.BinaryExpr(token.value, left, right), token)
-     return left
-
-
-def _parse_bor(stream):
-     left = _parse_bxor(stream)
-     while stream.check_op('|'):
-          token = stream.advance()
-          right = _parse_bxor(stream)
-          left = _at(ir.BinaryExpr('|', left, right), token)
-     return left
-
-
-def _parse_bxor(stream):
-     left = _parse_band(stream)
-     while stream.check_op('~'):
-          token = stream.advance()
-          right = _parse_band(stream)
-          left = _at(ir.BinaryExpr('~', left, right), token)
-     return left
-
-
-def _parse_band(stream):
-     left = _parse_shift(stream)
-     while stream.check_op('&'):
-          token = stream.advance()
-          right = _parse_shift(stream)
-          left = _at(ir.BinaryExpr('&', left, right), token)
-     return left
-
-
-def _parse_shift(stream):
-     left = _parse_concat(stream)
-     while True:
-          token = stream.peek()
-          if not (token.kind == 'OP' and token.value in _SHIFT_OPS):
-               break
-          stream.advance()
-          right = _parse_concat(stream)
-          left = _at(ir.BinaryExpr(token.value, left, right), token)
-     return left
-
-
-def _parse_concat(stream):
-     left = _parse_add(stream)
-     if stream.check_op('..'):
-          token = stream.advance()
-          _enter(stream)
-          try:
-               right = _parse_concat(stream)
-          finally:
-               _leave(stream)
-          return _at(ir.BinaryExpr('..', left, right), token)
-     return left
-
-
-def _parse_add(stream):
-     left = _parse_mul(stream)
-     while True:
-          token = stream.peek()
-          if not (token.kind == 'OP' and token.value in _ADD_OPS):
-               break
-          stream.advance()
-          right = _parse_mul(stream)
-          left = _at(ir.BinaryExpr(token.value, left, right), token)
-     return left
-
-
-def _parse_mul(stream):
+def _parse_binary(stream, minimum):
+     """Precedence climbing: every binary operator binding at least as tightly
+     as `minimum`. One function for all levels, instead of one per level, so
+     each pair of parentheses costs a few Python frames rather than a dozen.
+     A run of `..` (right associative) is collected in a loop and folded from
+     the right, so a long concatenation costs no depth at all."""
      left = _parse_unary(stream)
      while True:
           token = stream.peek()
-          if not (token.kind == 'OP' and token.value in _MUL_OPS):
-               break
+          op = _binary_op(token)
+          if op is None or _BINARY_PRECEDENCE[op] < minimum:
+               return left
+          level = _BINARY_PRECEDENCE[op]
+          if level == _CONCAT_LEVEL:
+               operands, tokens = [left], []
+               while _binary_op(stream.peek()) == '..':
+                    tokens.append(stream.advance())
+                    operands.append(_parse_binary(stream, level + 1))
+               left = operands.pop()
+               while operands:
+                    left = _at(ir.BinaryExpr('..', operands.pop(), left), tokens.pop())
+               continue
           stream.advance()
-          right = _parse_unary(stream)
-          left = _at(ir.BinaryExpr(token.value, left, right), token)
-     return left
+          right = _parse_binary(stream, level + 1)
+          left = _at(ir.BinaryExpr(op, left, right), token)
 
 
 def _parse_unary(stream):
