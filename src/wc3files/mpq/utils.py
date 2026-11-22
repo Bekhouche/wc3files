@@ -5,24 +5,6 @@ from io import BytesIO
 from ..data import BinaryDataType
 from .data import *
 
-def _read_header(reader, offset=None):
-     if offset:
-          reader.seek(offset)
-
-     data = reader.read(BinaryDataType.BYTES, num=32)
-     header = dict(zip([field.value for field in MPQFileHeaderFields], struct.unpack('<4s2I2H4I', data)))
-
-     if header['FormatVersion'] == 1:
-          data = reader.read(BinaryDataType.BYTES, num=12)
-          extended_header = dict(zip([field.value for field in MPQFileHeaderExtendedFieldsFormatV2], struct.unpack('q2h', data)))
-          header.update(extended_header)
-     elif header['FormatVersion'] == 2:
-          'Format 3 (WoW - Cataclysm beta or newer)'
-     elif header['FormatVersion'] == 3:
-          'Format 4 (WoW - Cataclysm beta or newer)'
-     return header
-
-
 def _read_header_user_data(reader):
      data = reader.read(BinaryDataType.BYTES, num=16)
      header = dict(zip([field.value for field in MPQUserDataFields], struct.unpack('<4s3I', data)))

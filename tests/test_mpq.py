@@ -75,6 +75,48 @@ class TestMpqRoundTrip(unittest.TestCase):
         self.assertIn('war3map.w3i', names)
 
 
+class TestMpqTamperedFormatVersion(unittest.TestCase):
+    """The game reads every map as format 0 whatever the header's format
+    version says, and map protectors set it to junk (41 of 1,025 benchmark
+    maps, e.g. 37103). For 2 and 3 the reader used to print() to stdout
+    (issue #12). Patched copies of the real sample.w3x must read silently and
+    give the same files as the original."""
+
+    def read_all(self, path):
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            w3x = W3xFile()
+            w3x.read(path)
+            mpq = MpqFile()
+            mpq.read(path)
+            mpq.read_files()
+            mpq.reader.close()
+        return w3x.files, mpq.files, out.getvalue()
+
+    def test_any_format_version_reads_as_format_0(self):
+        import struct
+        original = _helpers.read_bytes(_helpers.sample_path('sample.w3x'))
+        self.assertEqual(original[:4], b'MPQ')
+        self.assertEqual(struct.unpack_from('<H', original, 12)[0], 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'sample.w3x')
+            with open(path, 'wb') as f:
+                f.write(original)
+            expected_w3x, expected_mpq, _ = self.read_all(path)
+            self.assertTrue(expected_w3x)
+            for version in (2, 3, 37103):
+                patched = bytearray(original)
+                struct.pack_into('<H', patched, 12, version)
+                with open(path, 'wb') as f:
+                    f.write(patched)
+                files_w3x, files_mpq, stdout = self.read_all(path)
+                self.assertEqual(stdout, '', f'format version {version}')
+                self.assertEqual(files_w3x, expected_w3x, f'format version {version}')
+                self.assertEqual(files_mpq, expected_mpq, f'format version {version}')
+
+
 class TestMpqAttributes(unittest.TestCase):
     """(attributes) generation - see mpq/attributes.py. Previously unimplemented
     anywhere in this package (TODO.md)."""
