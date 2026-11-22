@@ -495,6 +495,49 @@ class TestVersion3LayoutWithoutModifications(unittest.TestCase):
         self.assertEqual(list(obj._data['w3q']['custom']), ['R000'])
 
 
+class TestDuplicateObjectIds(unittest.TestCase):
+    """A table can hold two entries with the same id:
+    War_in_the_Plaguelands_Mp_1.26c.w3x war3map.w3d declares 277 entries over
+    276 ids, and the game loads it. The file is read, the last entry is the
+    one shown, and both write back in place."""
+
+    def _data(self):
+        import struct
+        def entry(original, new, value):
+            return (original + new + struct.pack('<I', 1)
+                    + b'Dfil' + struct.pack('<III', 0, 0, 0) + struct.pack('<i', value) + bytes(4))
+        entries = [entry(b'LTlt', b'D000', 1), entry(b'ATtr', b'D001', 2), entry(b'LTlt', b'D000', 3)]
+        return (struct.pack('<II', 2, 0) + struct.pack('<I', len(entries)) + b''.join(entries))
+
+    def test_the_table_is_read_and_shows_the_last_entry(self):
+        obj = ObjectFile()
+        obj.read(self._data(), 'w3d')
+        custom = obj._data['w3d']['custom']
+        self.assertEqual(list(custom), ['D000', 'D001'])
+        self.assertEqual(custom['D000']['Dfil']['value'], {0: 3})
+
+    def test_both_entries_write_back_in_place(self):
+        data = self._data()
+        obj = ObjectFile()
+        obj.read(data, 'w3d')
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'war3map.w3d')
+            obj.write(out)
+            with open(out, 'rb') as handle:
+                self.assertEqual(handle.read(), data)
+
+    def test_removing_the_id_removes_both_copies(self):
+        obj = ObjectFile()
+        obj.read(self._data(), 'w3d')
+        obj.filter('w3d', remove=['D000'])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'war3map.w3d')
+            obj.write(out)
+            again = ObjectFile()
+            again.read(out)
+        self.assertEqual(list(again._data['w3d']['custom']), ['D001'])
+
+
 class TestRepeatedFields(unittest.TestCase):
     """An object can set one field twice. ONE PIECE WORLD ULTIMATE 0.9.w3m
     sets uabi twice in unit O002, with usca in between, and its w3a repeats
