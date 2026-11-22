@@ -8,9 +8,9 @@ def convert_bytes_to(bytes, data_type):
      if data_type == BinaryDataType.INT:
           return int.from_bytes(bytes, 'little')
      elif data_type == BinaryDataType.REAL:
-          return struct.unpack('f', bytes)[0]
+          return struct.unpack('<f', bytes)[0]
      elif data_type == BinaryDataType.UNREAL:
-          return float(format(struct.unpack('f', bytes)[0], '.7f'))
+          return float(format(struct.unpack('<f', bytes)[0], '.7f'))
      elif data_type == BinaryDataType.STRING:
           return bytes.decode('utf-8')
      elif data_type == BinaryDataType.BYTES:
