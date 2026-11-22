@@ -227,7 +227,9 @@ class MpqFiles:
 
         if block_entry['Flags'] & MPQFileDataType.EXISTS.value:
             if block_entry['BlockSize'] == 0:
-                return None
+                # An existing empty file: a real member (often an empty file
+                # that blanks a game asset), not a missing one.
+                return (b'', hash_entry)
 
             offset = block_entry['BlockOffset'] + self.data_archive_header['ARCHIVE_OFFSET']
 

@@ -677,6 +677,54 @@ class TestEncryptedMembersInFolders(unittest.TestCase):
                     self.assertEqual(mpq.files.get(name), expected)
 
 
+class TestEmptyMembers(unittest.TestCase):
+    """An existing file whose block size is 0 is an empty member, not a
+    missing one. Real maps store such files (25 in 9 corpus maps), often to
+    blank a game asset."""
+
+    def _zero_block_size(self, path, name):
+        """Set the block size of `name` to 0 in the archive's (encrypted)
+        block table, the way real archives store an empty file."""
+        import struct
+        from wc3files.mpq.data import MPQHashType, MPQKeyType
+        archive = MpqFile()
+        archive.read(path)
+        blocks = archive.mpq_block_table.get_data()
+        index = archive.mpq_hash_table.get_hash_table_entry(name, block_table=blocks)['FileBlockIndex']
+        header = archive.mpq_header.get_data()
+        cipher = MpqCipher()
+        key = cipher.hash(MPQKeyType.MPQ_BLOCK_TABLE.value, MPQHashType.MPQ_HASH_FILE_KEY.value)
+        with open(path, 'r+b') as handle:
+            handle.seek(header['BlockTableOffset'])
+            table = bytearray(cipher.decrypt(handle.read(16 * len(blocks)), key))
+            struct.pack_into('<I', table, 16 * index + 4, 0)  # BlockSize
+            handle.seek(header['BlockTableOffset'])
+            handle.write(cipher.encrypt(bytes(table), key))
+
+    def test_both_readers_keep_an_empty_member(self):
+        files = {'war3map.j': b'J', 'war3mapImported\\blank.blp': b''}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'empty.w3x')
+            MpqWriter().write(files, path)
+            self._zero_block_size(path, 'war3mapImported\\blank.blp')
+
+            w3x = W3xFile()
+            w3x.read(path)
+            mpq = MpqFile()
+            mpq.read(path)
+            mpq.read_files()
+            for found in (w3x.files, mpq.files):
+                self.assertEqual(found.get('war3mapImported\\blank.blp'), b'')
+                self.assertEqual(found.get('war3map.j'), b'J')
+
+            # and a repack keeps it
+            out = os.path.join(tmp, 'repacked.w3x')
+            w3x.build_from_files(w3x.files, out)
+            again = W3xFile()
+            again.read(out)
+            self.assertEqual(again.files.get('war3mapImported\\blank.blp'), b'')
+
+
 class TestDeepReadSkipsAnUnreadableBlock(unittest.TestCase):
     """A guessed name can point at a block that is not that file. In DEEP
     mode that block is skipped and the other files are still recovered; a
