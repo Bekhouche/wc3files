@@ -367,6 +367,21 @@ class W3iFile(object):
           reader.seek(pos)
           return marker == b'\xff'
 
+     @staticmethod
+     def _note_stop(reader, data, section):
+          # Where the optional sections stopped, and the bytes that end the
+          # file there (usually a lone 0xFF, or nothing). Writing every table
+          # out in full instead grew SurvivalChaos4.31.w3x's 652-byte w3i to
+          # 667 bytes, its 0xFF replaced by 16 zero bytes. Only a file that
+          # stops early gets these two keys.
+          if 'stops_before' in data:
+               return
+          pos = reader.tell()
+          rest = reader.read(BinaryDataType.BYTES, num=reader.size() - pos)
+          reader.seek(pos)
+          data['stops_before'] = section
+          data['trailing_bytes'] = rest.hex()
+
      # ---- read -------------------------------------------------------------------
 
      def _read(self, reader, hud_skin=True):
@@ -531,6 +546,7 @@ class W3iFile(object):
      def _read_upgrades(self, reader, data):
           data['upgrades'] = []
           if self._is_finish(reader):
+               self._note_stop(reader, data, 'upgrades')
                return
           for _ in range(self._read_i32(reader)):
                data['upgrades'].append({
@@ -543,6 +559,7 @@ class W3iFile(object):
      def _read_techtree(self, reader, data):
           data['techtree'] = []
           if self._is_finish(reader):
+               self._note_stop(reader, data, 'techtree')
                return
           for _ in range(self._read_i32(reader)):
                data['techtree'].append({
@@ -553,6 +570,7 @@ class W3iFile(object):
      def _read_random_unit_tables(self, reader, data):
           data['random_unit_tables'] = []
           if self._is_finish(reader):
+               self._note_stop(reader, data, 'random_unit_tables')
                return
           for _ in range(self._read_i32(reader)):
                group_id = self._read_i32(reader)
@@ -574,6 +592,7 @@ class W3iFile(object):
      def _read_random_item_tables(self, reader, data):
           data['random_item_tables'] = []
           if self._is_finish(reader):
+               self._note_stop(reader, data, 'random_item_tables')
                return
           for _ in range(self._read_i32(reader)):
                table_id = self._read_i32(reader)
@@ -603,22 +622,31 @@ class W3iFile(object):
                self._write_head(writer, data, version)
                self._write_players(writer, data, version)
                self._write_forces(writer, data)
-               self._write_upgrades(writer, data)
-               self._write_techtree(writer, data)
-               self._write_random_unit_tables(writer, data)
-               self._write_random_item_tables(writer, data)
+               self._write_optional(writer, data, ('upgrades', 'techtree',
+                                                   'random_unit_tables', 'random_item_tables'))
           elif version == 18:
                self._write_head(writer, data, version)
                self._write_players(writer, data, version)
                self._write_forces(writer, data)
-               self._write_upgrades(writer, data)
-               self._write_techtree(writer, data)
-               self._write_random_unit_tables(writer, data)
+               self._write_optional(writer, data, ('upgrades', 'techtree', 'random_unit_tables'))
           else:
                raise ValueError(
                     f"Unsupported war3map.w3i version: {version} "
                     "(only 18, 25-33 and 39 are implemented)"
                )
+
+     def _write_optional(self, writer, data, sections):
+          # The trailing tables, up to where the file that was read stopped
+          # (see _note_stop), then the bytes that ended it.
+          writers = {'upgrades': self._write_upgrades, 'techtree': self._write_techtree,
+                     'random_unit_tables': self._write_random_unit_tables,
+                     'random_item_tables': self._write_random_item_tables}
+          stop = data.get('stops_before')
+          for section in sections:
+               if section == stop:
+                    writer.write(BinaryDataType.BYTES, bytes.fromhex(data.get('trailing_bytes', '')))
+                    return
+               writers[section](writer, data)
 
      def _write_head(self, writer, data, version):
           self._write_i32(writer, data['map_version'])
