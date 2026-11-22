@@ -310,7 +310,6 @@ def computed_text(files):
      trigstrings = set()
 
      def substitute_text(text):
-          nonlocal replaced, failed
 
           def one(m):
                nonlocal replaced, failed

@@ -12,7 +12,6 @@ from wc3files.w3o import ObjectFile, SlkFile, BaseObjectData, BaseObjectStrings,
 from wc3files.w3o.object_metadata import ObjectMetaData
 from wc3files.w3o.object_override import literal_table_paths
 from wc3files.data import ObjectFileType, BinaryDataType
-from wc3files.w3o import ObjectFile
 from wc3files.img import (BlpFile, DdsFile, TgaFile, BmpFile, TiffFile, read_png, write_png,
                            resize_box, composite_over, make_disabled_variant, border_path)
 from .formats import FORMATS

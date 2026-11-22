@@ -1163,7 +1163,6 @@ def compile_units(compiler, runtime):
     fc = FunctionCompiler(compiler, runtime)
     runtime.function_compiler = fc
     placed = []
-    main_seen = False
     for unit in compiler.units:
         if unit.kind == 'begin':
             placed.append(Placed('comment', comment=f'{unit.info} '
@@ -1177,7 +1176,6 @@ def compile_units(compiler, runtime):
             body = decl.body
             if info.out == 'main' and 'main' in compiler.injects:
                 body = compiler.injects['main'][0].body
-                main_seen = True
             elif info.out == 'config' and 'config' in compiler.injects:
                 body = compiler.injects['config'][0].body
             ctx = Ctx(unit.scope, func=info)
