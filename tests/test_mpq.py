@@ -284,26 +284,28 @@ class TestMpqProtection(unittest.TestCase):
         self.assertEqual(matches[:-1], [99] * expected_decoys)  # decoys first, all invalid
         self.assertEqual(matches[-1], 0)  # the real block index, last in probe order
 
-    def test_experimental_and_aggressive_also_defeat_this_packages_own_reader(self):
-        # Documented, known limitation (see protection.py): this package's own
-        # MpqHashTable.get_hash_table_entry() resolves by plain name-match, the
-        # same "naive" behavior the decoy technique is designed to defeat - it
-        # doesn't cross-reference block-table validity to skip a decoy the way
-        # Storm.dll is believed to. Real files therefore become unresolvable via
-        # wc3files' own reader too at these tiers - tracked here as intentional,
-        # not silently left unexamined.
-        self._build(MpqProtectionLevel.EXPERIMENTAL)
-
-        mpq = MpqFile()
-        mpq.read(self.archive_path)
-        mpq.read_files()
-        self.assertNotEqual(mpq.files.get('war3map.j'), self.FILES['war3map.j'])
+    def test_both_readers_see_through_every_protection_level(self):
+        # Lookups probe from the home slot and skip a match whose block does
+        # not exist, as the game does, so the decoys ahead of each real entry
+        # (EXPERIMENTAL, AGGRESSIVE) no longer hide the file. Before, the
+        # reader compared the name with every entry and took the decoy.
+        for level in MpqProtectionLevel:
+            with self.subTest(level=level.value):
+                self._build(level)
+                mpq = MpqFile()
+                mpq.read(self.archive_path)
+                mpq.read_files()
+                w3x = W3xFile()
+                w3x.read(self.archive_path, mode='deep')
+                for name, data in self.FILES.items():
+                    self.assertEqual(mpq.files.get(name), data, name)
+                    self.assertEqual(w3x.files.get(name), data, name)
 
     def test_protection_and_attributes_compose_without_crashing(self):
         self._build(MpqProtectionLevel.AGGRESSIVE, attributes=True)
         self.assertTrue(os.path.exists(self.archive_path))
-        # Structural sanity only (see the test above - AGGRESSIVE defeats this
-        # package's own reader by design), so just confirm the archive parses.
+        # Structural sanity only: the archive parses with (attributes) on top
+        # of the decoys. Reading the files back is covered above.
         mpq = MpqFile()
         mpq.read(self.archive_path)
 
@@ -673,6 +675,54 @@ class TestEncryptedMembersInFolders(unittest.TestCase):
                 with self.subTest(name=name):
                     self.assertEqual(w3x.files.get(name), expected)
                     self.assertEqual(mpq.files.get(name), expected)
+
+
+class TestHashLookupProbes(unittest.TestCase):
+    """find_hash_entry walks the table from the name's home slot, as the MPQ
+    format, Storm and StormLib do."""
+    FREE, DELETED = 0xFFFFFFFF, 0xFFFFFFFE
+
+    def _entry(self, a, b, block, language=0):
+        return {'FilePathHashA': a, 'FilePathHashB': b, 'Language': language,
+                'Platform': 0, 'FileBlockIndex': block}
+
+    def _table(self, *entries):
+        table = [self._entry(self.FREE, self.FREE, self.FREE) for _ in range(8)]
+        for slot, entry in entries:
+            table[slot] = entry
+        return table
+
+    def _find(self, table, home, blocks=None, language=0):
+        # The plain walk and the indexed lookup must agree.
+        from wc3files.mpq.hash_table import build_hash_index, find_hash_entry
+        walked = find_hash_entry(table, home, 1, 2, language, 0, blocks)
+        indexed = find_hash_entry(table, home, 1, 2, language, 0, blocks, build_hash_index(table))
+        self.assertIs(indexed, walked)
+        return walked
+
+    def test_a_free_entry_ends_the_walk(self):
+        # The match sits past a free slot, so the game never reaches it.
+        table = self._table((3, self._entry(9, 9, 0)), (5, self._entry(1, 2, 0)))
+        self.assertIsNone(self._find(table, 3))
+
+    def test_a_deleted_entry_does_not_end_the_walk(self):
+        table = self._table((3, self._entry(9, 9, self.DELETED)), (4, self._entry(1, 2, 7)))
+        self.assertEqual(self._find(table, 3)['FileBlockIndex'], 7)
+
+    def test_the_walk_wraps_around_the_end_of_the_table(self):
+        table = self._table((7, self._entry(9, 9, 0)), (0, self._entry(1, 2, 5)))
+        self.assertEqual(self._find(table, 7)['FileBlockIndex'], 5)
+
+    def test_a_match_on_a_block_that_does_not_exist_is_skipped(self):
+        blocks = {0: {'Flags': 0}, 1: {'Flags': 0x80000000}}
+        table = self._table((2, self._entry(1, 2, 0)), (3, self._entry(1, 2, 99)),
+                            (4, self._entry(1, 2, 1)))
+        self.assertEqual(self._find(table, 2, blocks)['FileBlockIndex'], 1)
+
+    def test_an_exact_language_beats_the_neutral_entry(self):
+        table = self._table((2, self._entry(1, 2, 3)), (3, self._entry(1, 2, 4, language=0x409)))
+        self.assertEqual(self._find(table, 2, language=0x409)['FileBlockIndex'], 4)
+        self.assertEqual(self._find(table, 2)['FileBlockIndex'], 3)
 
 
 class TestNonAsciiNames(unittest.TestCase):

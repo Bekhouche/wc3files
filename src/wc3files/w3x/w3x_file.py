@@ -15,6 +15,7 @@ from wc3files.mpq.sectors import read_block
 from wc3files.mpq import compression as _compression
 from wc3files.files.binary_file import fspath
 from wc3files.mpq.cipher import hash_name, plain_name
+from wc3files.mpq.hash_table import build_hash_index, find_hash_entry
 from wc3files.mpq.export import export_files
 
 
@@ -54,6 +55,7 @@ class W3xFile(object):
      def clear(self):
           self.files = {}
           self._data = {'INFO': {}, 'HEADER': {}, 'HASH_TABLE': [], 'BLOCK_TABLE': []}
+          self._hash_index = None
           self._temp = {}
           self.current_path = ''
           self.current_name = ''
@@ -331,6 +333,7 @@ class W3xFile(object):
           for i in range(self._data['HEADER']['HashTableEntries']):
                entry = dict(zip([field.value for field in MPQHashTableEntry], struct.unpack('<2IHHI', data[i*16:i*16+16])))
                self._data['HASH_TABLE'].append(entry)
+          self._hash_index = build_hash_index(self._data['HASH_TABLE'])
 
      def read_block_table(self, reader):
           self._data['BLOCK_TABLE'] = []
@@ -430,17 +433,14 @@ class W3xFile(object):
           return hash_name(self.crypt_table, lpszString, hash_type.value)
      
      def get_hash_table_entry(self, filename, language=0, platform=0):
-          hash_a = self.hash(filename, MPQHashType.MPQ_HASH_NAME_A)
-          hash_b = self.hash(filename, MPQHashType.MPQ_HASH_NAME_B)
-          best = None
-          for entry in self._data['HASH_TABLE']:
-               if (entry['FilePathHashA'] == hash_a and entry['FilePathHashB'] == hash_b):
-                    if language == entry['Language'] and platform == entry['Platform']:
-                         return entry
-                    if (entry['Language'] == 0 or language == entry['Language']) and \
-                         (entry['Platform'] == 0 or platform == entry['Platform']):
-                         best = entry
-          return best
+          # Probes from the name's home slot and skips entries whose block does
+          # not exist, as the game does: see wc3files.mpq.hash_table.find_hash_entry.
+          return find_hash_entry(
+               self._data['HASH_TABLE'],
+               self.hash(filename, MPQHashType.MPQ_HASH_TABLE_OFFSET),
+               self.hash(filename, MPQHashType.MPQ_HASH_NAME_A),
+               self.hash(filename, MPQHashType.MPQ_HASH_NAME_B),
+               language, platform, self._data['BLOCK_TABLE'], getattr(self, '_hash_index', None))
      
      @staticmethod
      def decompress(data, size=None):

@@ -205,7 +205,7 @@ class MpqFiles:
         return extract_references(name, raw_bytes)
 
     def check_file(self, filename):
-        hash_entry = self.mpq_hash_table.get_hash_table_entry(filename)
+        hash_entry = self.mpq_hash_table.get_hash_table_entry(filename, block_table=self.data_block_table)
         if hash_entry is None:
             return None
         else:
@@ -213,7 +213,7 @@ class MpqFiles:
 
     def read_file(self, reader, filename):
         
-        hash_entry = self.mpq_hash_table.get_hash_table_entry(filename)
+        hash_entry = self.mpq_hash_table.get_hash_table_entry(filename, block_table=self.data_block_table)
         if hash_entry is None:
             return None
         

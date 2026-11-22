@@ -67,13 +67,11 @@ Four levels, each a strict superset of the one before:
   outcome a "protection" feature must never risk. Disclosed as a known,
   real, but deliberately unimplemented technique - see TODO.md.
 
-A separate, real limitation remains regardless of in-game confirmation: this
-package's own reader (`MpqHashTable.get_hash_table_entry`) resolves by plain
-name-match and doesn't cross-reference block-table validity, so it's fooled
-by EXPERIMENTAL/AGGRESSIVE's own decoys just like the third-party tools this
-is meant to defeat - a real file becomes unresolvable via `MpqFile`/`W3xFile`
-too at those tiers. That's unaffected by the in-game confirmation above (a
-different reader entirely) - see the tests for exactly what this means.
+This package's own readers look names up the way the game does
+(`hash_table.find_hash_entry`): they walk the probe chain from the name's
+home slot and skip a match whose block does not exist. So `MpqFile` and
+`W3xFile` read every level back, decoys included. Tools that compare a name
+with every entry, as this package itself used to, take the decoy and fail.
 """
 
 import random
