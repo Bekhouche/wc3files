@@ -371,7 +371,9 @@ class W3xFile(object):
 
           if block_entry['Flags'] & MPQFileDataType.EXISTS.value:
                if block_entry['BlockSize'] == 0:
-                    return None
+                    # An existing empty file: a real member (often an empty file
+                    # that blanks a game asset), not a missing one.
+                    return b''
 
                offset = block_entry['BlockOffset'] + self._data['HEADER']['ArchiveOffset']
 
