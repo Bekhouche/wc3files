@@ -467,5 +467,47 @@ class TestMpqDeepFileDiscoveryFindsModelEmbeddedTextures(unittest.TestCase):
         self.assertEqual(refs, {self.CUSTOM_TEXTURE_PATH})
 
 
+class TestMpqHeaderFieldEnums(unittest.TestCase):
+    """mpq/data.py defined MPQFileHeaderExtendedFieldsFormatV4 twice, and the
+    second copy (V2's members) replaced the real one (issue #4). The field
+    lists are zipped with struct.unpack() results, so their order and length
+    have to follow the header layout: StormLib's TMPQHeader."""
+
+    def test_no_class_is_defined_twice(self):
+        import ast
+        import collections
+        import importlib
+        data = importlib.import_module('wc3files.mpq.data')
+        with open(data.__file__, encoding='utf-8') as f:
+            tree = ast.parse(f.read())
+        names = collections.Counter(node.name for node in tree.body
+                                    if isinstance(node, ast.ClassDef))
+        self.assertEqual([name for name, n in names.items() if n > 1], [])
+
+    def test_v4_fields_follow_the_header_layout(self):
+        import struct
+        from wc3files.mpq.data import MPQFileHeaderExtendedFieldsFormatV4 as V4
+        self.assertEqual([field.value for field in V4], [
+            'HASH_TABLE_SIZE_64', 'BLOCK_TABLE_SIZE_64', 'HI_BLOCK_TABLE_SIZE_64',
+            'HET_TABLE_SIZE_64', 'BET_TABLE_SIZE_64', 'RAW_CHUNK_SIZE',
+            'MD5_BLOCK_TABLE', 'MD5_HASH_TABLE', 'MD5_HI_BLOCK_TABLE',
+            'MD5_BET_TABLE', 'MD5_HET_TABLE', 'MD5_MPQ_HEADER'])
+        # Five 64-bit sizes, one DWORD and six MD5 digests: the 140 bytes a
+        # version-4 header (208 bytes) adds after a version-3 one (68 bytes).
+        layout = '<5QI' + '16s' * 6
+        self.assertEqual(len(struct.unpack(layout, bytes(struct.calcsize(layout)))),
+                         len(V4))
+        self.assertEqual(struct.calcsize(layout), 208 - 68)
+
+    def test_v2_and_v3_fields_are_unchanged(self):
+        from wc3files.mpq.data import (MPQFileHeaderExtendedFieldsFormatV2 as V2,
+                                       MPQFileHeaderExtendedFieldsFormatV3 as V3)
+        self.assertEqual([field.value for field in V2], [
+            'EXTENDED_BLOCK_TABLE_OFFSET', 'HASH_TABLE_OFFSET_HIGH',
+            'BLOCK_TABLE_OFFSET_HIGH'])
+        self.assertEqual([field.value for field in V3], [
+            'ARCHIVE_SIZE_64', 'BET_TABLE_POS_64', 'HET_TABLE_POS_64'])
+
+
 if __name__ == '__main__':
     unittest.main()
