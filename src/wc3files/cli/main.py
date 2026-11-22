@@ -18,7 +18,7 @@ from wc3files.w3o.object_override import literal_table_paths
 from wc3files.data import ObjectFileType, BinaryDataType
 from wc3files.img import (BlpFile, DdsFile, TgaFile, BmpFile, TiffFile, read_png, write_png,
                            resize_box, composite_over, make_disabled_variant, border_path)
-from .formats import FORMATS
+from .formats import FORMATS, FORMAT_FILES, format_for_name
 
 _IMG_EXTENSIONS = ('.blp', '.dds', '.tga', '.png', '.bmp', '.tiff', '.tif')
 
@@ -1409,20 +1409,45 @@ def _cmd_set_object_icon(args):
     print(f"Set {args.object_id}.{args.field} = {args.icon_path!r} in {args.object_file}")
 
 
+def _format_and_paths(command, values, name_from):
+    """Split `[format] path [path]`: the format is optional when the file
+    named by `values[name_from]` (once the format is taken off) says it."""
+    values = list(values)
+    if values and values[0] in FORMATS:
+        fmt = values.pop(0)
+    else:
+        named = values[name_from] if len(values) > name_from else None
+        fmt = format_for_name(named) if named else None
+        if fmt is None:
+            raise ValueError(
+                f'{command}: give the format first ({", ".join(sorted(FORMATS))}); '
+                f'it cannot be told from the name {named!r}')
+    return fmt, values
+
+
 def _cmd_dump(args):
-    fmt = FORMATS[args.format]
-    data = fmt.dump(args.input, options={'width': getattr(args, 'width', None),
-                                         'height': getattr(args, 'height', None)})
-    _write_json(data, args.output)
-    if args.output != '-':
-        print(f"Wrote {args.output}")
+    fmt, paths = _format_and_paths('dump', args.paths, 0)
+    if not 1 <= len(paths) <= 2:
+        raise ValueError('dump: give [format] input [output]')
+    source, output = paths[0], (paths[1] if len(paths) > 1 else '-')
+    data = FORMATS[fmt].dump(source, options={'width': getattr(args, 'width', None),
+                                              'height': getattr(args, 'height', None)})
+    _write_json(data, output)
+    if output != '-':
+        print(f"Wrote {output}")
 
 
 def _cmd_build(args):
-    fmt = FORMATS[args.format]
-    data = _read_json(args.input)
-    fmt.build(data, args.output, validate=args.validate)
-    print(f"Wrote {args.output}")
+    fmt, paths = _format_and_paths('build', args.paths, 1)
+    if len(paths) != 2:
+        raise ValueError('build: give [format] input.json output')
+    data = _read_json(paths[0])
+    FORMATS[fmt].build(data, paths[1], validate=args.validate)
+    print(f"Wrote {paths[1]}")
+
+
+def _format_help():
+    return '; '.join(f'{name}: {FORMAT_FILES.get(name, name)}' for name in sorted(FORMATS))
 
 
 def build_parser():
@@ -1642,21 +1667,29 @@ def build_parser():
                              "'ReplaceableTextures\\\\CommandButtons\\\\BTNMyAbility.blp'.")
     p_set_icon.set_defaults(func=_cmd_set_object_icon)
 
-    p_dump = subparsers.add_parser('dump', help='Read a single map sub-file and dump it as JSON.')
-    p_dump.add_argument('format', choices=sorted(FORMATS.keys()), help='File format to read.')
-    p_dump.add_argument('input', help='Path to the binary/text file to read.')
-    p_dump.add_argument('output', nargs='?', default='-', help="Path to write JSON to (default: stdout, '-').")
+    p_dump = subparsers.add_parser(
+        'dump', help='Read a single map sub-file and dump it as JSON.',
+        description=('wc3files dump [format] input [output]. The format can be left out '
+                     'when the file name says it (war3mapUnits.doo, war3map.doo, '
+                     'war3map.w3i, ...). Formats: ' + _format_help() + '.'))
+    p_dump.add_argument('paths', nargs='+', metavar='[format] input [output]',
+                        help=("The format (optional), the file to read, and where to "
+                              "write the JSON (default: stdout, '-')."))
     p_dump.add_argument('--width', type=int, default=None,
                         help=('Grid width, for formats that carry no header of their '
-                              'own (shd). Take it from the terrain: `dump w3e`.'))
+                              'own (shd). By default it is read from a war3map.wpm or '
+                              'war3map.w3e next to the file.'))
     p_dump.add_argument('--height', type=int, default=None,
                         help='Grid height, as --width.')
     p_dump.set_defaults(func=_cmd_dump)
 
-    p_build = subparsers.add_parser('build', help='Build a map sub-file back from a dump() JSON file.')
-    p_build.add_argument('format', choices=sorted(FORMATS.keys()), help='File format to write.')
-    p_build.add_argument('input', help="Path to a JSON file from `dump` (or '-' for stdin).")
-    p_build.add_argument('output', help='Path to write the resulting file to.')
+    p_build = subparsers.add_parser(
+        'build', help='Build a map sub-file back from a dump() JSON file.',
+        description=('wc3files build [format] input.json output. The format can be left '
+                     'out when the output name says it. Formats: ' + _format_help() + '.'))
+    p_build.add_argument('paths', nargs='+', metavar='[format] input output',
+                         help=("The format (optional), a JSON file from `dump` (or '-' for "
+                               "stdin), and the file to write."))
     p_build.add_argument('--validate', action='store_true', help=(
         "obj format only (silently ignored for every other format): check every field "
         "against the bundled Blizzard metadata schema before writing, and raise instead of "
