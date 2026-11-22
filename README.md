@@ -132,6 +132,47 @@ print(f"Version: {replay.header.version}")
 print(f"Players: {len(replay.player_records)}")
 ```
 
+## Credits
+
+wc3files stands on the work of the Warcraft III modding community. The projects below are either bundled with it, ported into it, or were followed or checked against while writing it. Where a module took something from one of them, its docstring says what.
+
+### Bundled data
+
+- **Blizzard Entertainment**: `common.j`, `blizzard.j`, `common.ai`, and the SLK and TXT game tables under `w3o/gamedata/` are copies of the game's own files, used so that maps can be read without an installed game. Warcraft III and its data belong to Blizzard Entertainment.
+- **[War3Net](https://github.com/Drake53/War3Net)** by Drake53 (MIT): the bundled `TriggerData.txt`, itself derived from Blizzard's `UI/TriggerData.txt`.
+- **Warcraft Image Lab**: the 13 icon borders in `img/gamedata/borders/`, copied with its owner's permission.
+- **blue & nagger**: the replay action and order names, generated from their `w3g_actions.txt` v1.01 (2006, w3g.deepnode.de).
+
+### Ported code
+
+- **[StormLib](https://github.com/ladislav-zezula/StormLib)** by Ladislav Zezula (MIT): the Huffman and IMA ADPCM decoders in `mpq/compression.py` are ports of its `huff.cpp` and `adpcm.cpp`. Its source comments were also the reference for the hash table probing and for what protected maps do to an archive.
+
+### Designs followed
+
+These were reimplemented from their documentation and behaviour. wc3files contains none of their code.
+
+- **[w3x2lni](https://github.com/sumneko/w3x2lni)**: the Lni, Slk and Obj map modes, the optimizer passes, computed text, MDX squeezing, and the JASS dead-code removal and renaming.
+- **JassHelper** by Vexorian (zlib): the vJass and Zinc languages, and the names of the generated code.
+- **YDWE**: the ui folder format for GUI trigger definitions.
+- **Grim Extension Pack** by PitzerMike: the `//! external` tools (ObjectMerger, FileImporter, FileExporter, ConstantMerger).
+
+### Format references
+
+The parsers were cross-checked against these, field by field, and every disagreement was settled against real map files:
+
+- [War3Net](https://github.com/Drake53/War3Net) (War3Net.Build and War3Net.Build.Core)
+- [HiveWE](https://github.com/stijnherfst/HiveWE), its code and its wiki
+- [mdx-m3-viewer](https://github.com/flowtsohg/mdx-m3-viewer)
+- [WC3MapSpecification](https://github.com/ChiefOfGxBxL/WC3MapSpecification) by ChiefOfGxBxL
+- The format threads and tools of [Hive Workshop](https://www.hiveworkshop.com)
+
+### Checks
+
+- **pjass**: the reference JASS syntax checker, used to validate the compiled vJass and the obfuscator output.
+- **The Lua test suites** ([lua.org/tests](https://www.lua.org/tests/)): the Lua interpreter was run against the 5.1 and 5.3.4 suites. They are not checked in.
+
+If your work should be on this list and is not, please open an issue.
+
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the LICENSE file for details. The bundled data above keeps its own terms.
