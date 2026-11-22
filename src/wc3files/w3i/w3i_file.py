@@ -360,10 +360,10 @@ class W3iFile(object):
           # A lone 0xFF byte (or simply running out of data) marks "no more optional
           # sections" - some maps stop right after the force table instead of writing
           # empty upgrade/tech/random-table sections. Peek without consuming.
+          if reader.remaining() == 0:
+               return True
           pos = reader.tell()
           marker = reader.read(BinaryDataType.BYTES, num=1)
-          if not marker:
-               return True
           reader.seek(pos)
           return marker == b'\xff'
 
