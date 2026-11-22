@@ -2,7 +2,13 @@ import re
 
 class WtsFile(object):
      # A "// Units: ..." comment line commonly sits between "STRING n" and its opening "{".
-     ENTRY_PATTERN = re.compile(r'STRING\s+(\d+)\s*(?://[^\n]*\r?\n\s*)*\{\r?\n(.*?)\r?\n\}', re.DOTALL)
+     # The text and its line break are optional, and tried last (`??`), so an
+     # empty string written as "{" then "}" on the next line reads as empty
+     # instead of running on into the next entry. The closing "}" must end its
+     # line, so a text line that starts with "}" does not close the entry early.
+     ENTRY_PATTERN = re.compile(
+          r'STRING\s+(\d+)\s*(?://[^\n]*\r?\n\s*)*\{\r?\n(?:(.*?)\r?\n)??\}(?=\r?\n|$)',
+          re.DOTALL)
      PLACEHOLDER_PATTERN = re.compile(r'^TRIGSTR_(\d+)$', re.IGNORECASE)
 
      def __init__(self):
