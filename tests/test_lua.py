@@ -438,5 +438,64 @@ class TestLuaRealWorldSweep(unittest.TestCase):
             raise unittest.SkipTest('every local fixture was empty')
 
 
+def _grouping(expr):
+    """An expression written with every operation in parentheses, so two
+    trees compare equal exactly when they group their operands the same."""
+    if isinstance(expr, ir.BinaryExpr):
+        return f'({_grouping(expr.left)} {expr.op} {_grouping(expr.right)})'
+    if isinstance(expr, ir.UnaryExpr):
+        return f'({expr.op} {_grouping(expr.operand)})'
+    if isinstance(expr, ir.LuaCallExpr):
+        truncated = '!' if getattr(expr, 'paren', False) else ''
+        return f'{_grouping(expr.func)}({", ".join(_grouping(a) for a in expr.args)}){truncated}'
+    if isinstance(expr, ir.LuaMethodCallExpr):
+        return f'{_grouping(expr.obj)}:{expr.method}({", ".join(_grouping(a) for a in expr.args)})'
+    if isinstance(expr, ir.IndexExpr):
+        return f'{_grouping(expr.obj)}[{_grouping(expr.index)}]'
+    if isinstance(expr, ir.VarExpr):
+        return expr.name
+    if isinstance(expr, ir.Literal):
+        return repr(expr.value)
+    return type(expr).__name__
+
+
+class TestLuaPrinterParentheses(unittest.TestCase):
+    """The printer wrapped every binary operation in parentheses. A long
+    concatenation then came back as ~60 nested pairs, which the parser could
+    not read again (war3map.lua of Hallenkoenig 4.28.32, two corpus copies).
+    Parentheses now appear only where precedence or associativity needs
+    them, and the printed text must group exactly as the source did."""
+
+    CASES = [
+        'x = a .. b .. c .. d', 'x = (a .. b) .. c', 'x = a + b + c', 'x = a + (b + c)',
+        'x = a - (b - c)', 'x = a / (b * c)', 'x = 2 ^ 3 ^ 2', 'x = (2 ^ 3) ^ 2',
+        'x = -x ^ 2', 'x = (-x) ^ 2', 'x = 2 ^ -3', 'x = - - x', 'x = not a == b',
+        'x = not (a == b)', 'x = a or b and c', 'x = (a or b) and c', 'x = a < b == c',
+        'x = #t + 1', 'x = (a + b)(c)', 'x = (a .. b):upper()', 'x = (f())',
+        'x = a // b * c', 'x = a & b | c ~ d', 'x = a | (b & c)', 'x = (a | b) & c',
+        'x = 1 << 2 + 3', 'x = (1 << 2) + 3', 'x = a .. b + c', 'x = (a .. b) + c',
+        'x = ~a & b', 'x = ("s"):rep(3)', 'x = (t)[1]',
+    ]
+
+    def value(self, source):
+        return parse(source).body[0].values[0]
+
+    def test_grouping_is_kept(self):
+        for source in self.CASES:
+            with self.subTest(source=source):
+                printed = print_chunk(parse(source))
+                self.assertEqual(_grouping(self.value(printed)), _grouping(self.value(source)))
+                self.assertEqual(print_chunk(parse(printed)), printed)
+
+    def test_no_needless_parentheses(self):
+        self.assertEqual(print_chunk(parse('x = a .. b .. c')).strip(), 'x = a .. b .. c;')
+        self.assertEqual(print_chunk(parse('x = a + b * c')).strip(), 'x = a + b * c;')
+
+    def test_a_long_chain_reads_back(self):
+        source = 'x = ' + ' .. '.join(f'"p{i}"' for i in range(300))
+        printed = print_chunk(parse(source))
+        self.assertEqual(_grouping(self.value(printed)), _grouping(self.value(source)))
+
+
 if __name__ == '__main__':
     unittest.main()
