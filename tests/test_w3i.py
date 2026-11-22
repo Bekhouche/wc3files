@@ -48,5 +48,41 @@ class TestW3iRoundTrip(unittest.TestCase):
                 bad.write(out)
 
 
+class TestFileThatStopsEarly(unittest.TestCase):
+    """Some maps stop after the force table, with a lone 0xFF or nothing,
+    instead of writing empty upgrade/tech/random tables: SurvivalChaos4.31.w3x
+    has a 652-byte w3i ending that way. It must write back as it was."""
+
+    def _cut_after_forces(self):
+        from wc3files.files.binary_file import BinaryFile
+        original = _helpers.read_bytes(_helpers.sample_path('sample.w3i'))
+        info, data = W3iFile(), {}
+        with BinaryFile(original) as reader:
+            data['file_version'] = info._read_i32(reader)
+            info._read_head(reader, data, data['file_version'])
+            info._read_players(reader, data, data['file_version'])
+            info._read_forces(reader, data)
+            return original[:reader.tell()]
+
+    def test_it_writes_back_as_it_was(self):
+        head = self._cut_after_forces()
+        for ending in (b'\xff', b''):
+            with self.subTest(ending=ending), tempfile.TemporaryDirectory() as tmp:
+                source = os.path.join(tmp, 'short.w3i')
+                with open(source, 'wb') as handle:
+                    handle.write(head + ending)
+                info = W3iFile()
+                info.read(source)
+                self.assertEqual(info.get_data()['upgrades'], [])
+                out = os.path.join(tmp, 'rebuilt.w3i')
+                info.write(out)
+                self.assertEqual(_helpers.read_bytes(out), head + ending)
+
+    def test_a_complete_file_has_no_extra_keys(self):
+        info = W3iFile()
+        info.read(_helpers.sample_path('sample.w3i'))
+        self.assertNotIn('stops_before', info.get_data())
+
+
 if __name__ == '__main__':
     unittest.main()
