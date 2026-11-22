@@ -1,5 +1,4 @@
 import struct
-from io import BytesIO
 
 def name_bytes(name):
      """The bytes an archive member name is hashed from.
@@ -63,6 +62,8 @@ def _build_crypt_table():
 # every reader and writer (W3xFile, MpqFiles, MpqWriter, ...), instead of
 # once per object.
 CRYPT_TABLE = _build_crypt_table()
+# The row block encryption uses (0x400..0x4FF), as a list for fast indexing.
+_KEY_ROW = [CRYPT_TABLE[0x400 + i] for i in range(0x100)]
 
 
 class MpqCipher:
@@ -78,43 +79,46 @@ class MpqCipher:
      def initialize_crypt_table(self):
           self.crypt_table = CRYPT_TABLE
 
+     # Both directions work on the whole buffer at once: one unpack into a
+     # tuple of ints, a tight loop on locals, one pack. Unpacking, packing and
+     # writing one word at a time ran at about 4 MB/s, and was a fifth of the
+     # time of reading a large map.
+     #
+     # The key is a DWORD in StormLib and the game, so it is masked to 32
+     # bits first: `key - 1` for a sector table whose file key is 0 is
+     # 0xFFFFFFFF, and `key + i` for sector i wraps around. Without the mask,
+     # the sign or the 33rd bit of a Python int was shifted into the next key.
+
      def encrypt(self, buffer, key):
-          buffer = bytearray(buffer)
-          buffer_length = len(buffer)
+          count = len(buffer) // 4
+          words = struct.unpack_from('<%dI' % count, buffer)
+          table = _KEY_ROW
+          key &= 0xFFFFFFFF
           seed = 0xEEEEEEEE
-          for i in range(0, buffer_length - buffer_length % 4, 4):
-               seed = (seed + self.crypt_table[0x400 + (key & 0xFF)]) & 0xFFFFFFFF
-               value = struct.unpack_from('<I', buffer, i)[0]
-               ch = (value ^ (key + seed)) & 0xFFFFFFFF
-               key = (((~key << 0x15) + 0x11111111) | (key >> 0x0B)) & 0xFFFFFFFF
-               seed = (value + seed + (seed << 5) + 3) & 0xFFFFFFFF
-
-               struct.pack_into('<I', buffer, i, ch)
-
-          return bytes(buffer)
+          out = [0] * count
+          for i, value in enumerate(words):
+               seed = (seed + table[key & 0xFF]) & 0xFFFFFFFF
+               out[i] = value ^ ((key + seed) & 0xFFFFFFFF)
+               key = (((key ^ 0xFFFFFFFF) << 0x15) + 0x11111111 | key >> 0x0B) & 0xFFFFFFFF
+               seed = (value + seed * 33 + 3) & 0xFFFFFFFF
+          return struct.pack('<%dI' % count, *out) + bytes(buffer[count * 4:])
 
      def decrypt(self, buffer, key):
-          seed1 = key
+          count = len(buffer) // 4
+          words = struct.unpack_from('<%dI' % count, buffer)
+          table = _KEY_ROW
+          seed1 = key & 0xFFFFFFFF
           seed2 = 0xEEEEEEEE
-          result = BytesIO()
-
-          for i in range(len(buffer) // 4):
-               seed2 += self.crypt_table[0x400 + (seed1 & 0xFF)]
-               seed2 &= 0xFFFFFFFF
-               value = struct.unpack("<I", buffer[i*4:i*4+4])[0]
-               value = (value ^ (seed1 + seed2)) & 0xFFFFFFFF
-
-               seed1 = ((~seed1 << 0x15) + 0x11111111) | (seed1 >> 0x0B)
-               seed1 &= 0xFFFFFFFF
-               seed2 = value + seed2 + (seed2 << 5) + 3 & 0xFFFFFFFF
-
-               result.write(struct.pack("<I", value))
-
-          rem = len(buffer) % 4
-          if rem:
-               result.write(buffer[-rem:])
-
-          return result.getvalue()
+          out = [0] * count
+          for i, value in enumerate(words):
+               seed2 = (seed2 + table[seed1 & 0xFF]) & 0xFFFFFFFF
+               value ^= (seed1 + seed2) & 0xFFFFFFFF
+               out[i] = value
+               # ~x on a 32-bit value is x ^ 0xFFFFFFFF once masked, and
+               # s + (s << 5) is s * 33: the same arithmetic, fewer steps.
+               seed1 = (((seed1 ^ 0xFFFFFFFF) << 0x15) + 0x11111111 | seed1 >> 0x0B) & 0xFFFFFFFF
+               seed2 = (value + seed2 * 33 + 3) & 0xFFFFFFFF
+          return struct.pack('<%dI' % count, *out) + bytes(buffer[count * 4:])
      
      def hash(self, lpszString, hash_type):
           return hash_name(self.crypt_table, lpszString, hash_type)
