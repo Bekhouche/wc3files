@@ -3,6 +3,7 @@ import re
 import struct
 import ctypes
 from enum import Enum
+from loguru import logger
 from tqdm import tqdm
 from io import BytesIO
 from wc3files.data import *
@@ -175,13 +176,13 @@ class W3xFile(object):
           # ran a fixed two manifest passes instead of iterating to a fixed point, and
           # never scanned models structurally at all).
           for file in tqdm(self.default_files):
-               file_data = self.read_file(reader, file)
+               file_data = self._read_candidate(reader, file)
                if file_data:
                     self.files[file] = file_data
 
           for file in self.OBJECT_FILES:
                if file not in self.files:
-                    file_data = self.read_file(reader, file)
+                    file_data = self._read_candidate(reader, file)
                     if file_data:
                          self.files[file] = file_data
 
@@ -201,12 +202,23 @@ class W3xFile(object):
                found_new = False
                for candidate in candidates:
                     if candidate not in self.files:
-                         file_data = self.read_file(reader, candidate)
+                         file_data = self._read_candidate(reader, candidate)
                          if file_data:
                               self.files[candidate] = file_data
                               found_new = True
                if not found_new:
                     break
+
+     def _read_candidate(self, reader, name):
+          """read_file() for a name that is only a guess. A candidate can match
+          a decoy entry, or collide with an unrelated one, and point at a block
+          that is not that file at all; one such block used to end the whole
+          recovery. It is skipped instead, and the scan goes on."""
+          try:
+               return self.read_file(reader, name)
+          except Exception as exc:
+               logger.debug('skipped candidate {!r}: {}', name, exc)
+               return None
 
      def find_script_referenced_files(self, reader):
           # Scan war3map.j/war3map.lua for quoted paths to other map assets (.mdx, .blp, .ai, ...).

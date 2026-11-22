@@ -171,7 +171,12 @@ class MpqFiles:
                 new_candidates = set()
                 for file in tqdm(pending):
                     scanned.add(file)
-                    file_data = self.read_file(reader, file)
+                    # A guessed name can point at a block that is not that
+                    # file (a decoy, or a hash collision); skip it.
+                    try:
+                        file_data = self.read_file(reader, file)
+                    except Exception:
+                        file_data = None
                     if file_data:
                         new_candidates |= self._extract_references(file, file_data[0])
 
