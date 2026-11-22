@@ -677,6 +677,61 @@ class TestEncryptedMembersInFolders(unittest.TestCase):
                     self.assertEqual(mpq.files.get(name), expected)
 
 
+class TestRebuildDropsStaleTables(unittest.TestCase):
+    """(attributes) and (signature) describe the block table of the archive
+    they came from. Carried into a rebuilt archive they are wrong, and a real
+    client crashed on such a map, so every way of rebuilding leaves them out.
+    Two corpus maps (Wild-Hunt 1.2.0 [Protected]) list (attributes) in their
+    listfile, so a plain read() hands it to build_from_files()."""
+
+    def _source(self, tmp):
+        # An archive whose listfile names a stale (attributes), as those maps
+        # have. The writer now refuses to copy one, so let it through here.
+        from unittest import mock
+        path = os.path.join(tmp, 'source.w3x')
+        files = {'war3map.j': b'J', '(attributes)': b'STALE ATTRIBUTES', '(signature)': b'SIG'}
+        with mock.patch.object(MpqWriter, 'GENERATED', ('(listfile)',), create=True):
+            MpqWriter().write(files, path)
+        return path
+
+    def _members(self, path):
+        archive = MpqFile()
+        archive.read(path)
+        archive.read_files()
+        blocks = archive.mpq_block_table.get_data()
+        return {name: archive.mpq_hash_table.get_hash_table_entry(name, block_table=blocks)
+                for name in ('(attributes)', '(signature)', 'war3map.j')}, archive
+
+    def test_build_from_files_after_read_leaves_them_out(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            w3x = W3xFile()
+            w3x.read(self._source(tmp))
+            self.assertEqual(w3x.files.get('(attributes)'), b'STALE ATTRIBUTES')  # the setup
+
+            out = os.path.join(tmp, 'rebuilt.w3x')
+            w3x.build_from_files(w3x.files, out)
+            members, _ = self._members(out)
+            self.assertIsNone(members['(attributes)'])
+            self.assertIsNone(members['(signature)'])
+            self.assertIsNotNone(members['war3map.j'])
+
+            MpqFile().build(w3x.files, out)
+            members, _ = self._members(out)
+            self.assertIsNone(members['(attributes)'])
+            self.assertIsNone(members['(signature)'])
+
+    def test_attributes_true_writes_a_fresh_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            w3x = W3xFile()
+            w3x.read(self._source(tmp))
+            out = os.path.join(tmp, 'rebuilt.w3x')
+            w3x.build_from_files(w3x.files, out, attributes=True)
+            members, archive = self._members(out)
+            self.assertIsNotNone(members['(attributes)'])
+            self.assertNotEqual(archive.files.get('(attributes)'), b'STALE ATTRIBUTES')
+            self.assertIsNone(members['(signature)'])
+
+
 class TestEmptyMembers(unittest.TestCase):
     """An existing file whose block size is 0 is an empty member, not a
     missing one. Real maps store such files (25 in 9 corpus maps), often to
