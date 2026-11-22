@@ -2,6 +2,18 @@ import struct
 from io import BytesIO
 from .data import *
 
+def plain_name(filename):
+     """The part of an archive member name after its last folder separator,
+     which is what an encrypted file's key is hashed from.
+
+     Archive names use a backslash on every platform; a forward slash is
+     treated the same, as Windows' os.path.basename (which this used to be)
+     did. os.path.basename only splits on a backslash on Windows, so on Linux
+     and macOS the whole name was hashed and every encrypted file inside a
+     folder decrypted to garbage."""
+     return filename.replace('/', '\\').rsplit('\\', 1)[-1]
+
+
 class MpqCipher:
      """
      Class for Cipher

@@ -2,7 +2,7 @@ import os
 import re
 from tqdm import tqdm
 from .data import *
-from .cipher import MpqCipher
+from .cipher import MpqCipher, plain_name
 from .sectors import read_block
 from .header import MpqHeader
 from .hash_table import MpqHashTable
@@ -226,7 +226,7 @@ class MpqFiles:
             offset = block_entry['BlockOffset'] + self.data_archive_header['ARCHIVE_OFFSET']
 
             if block_entry['Flags'] & MPQFileDataType.ENCRYPTED.value:
-                key = self.mpq_cipher.hash(os.path.basename(filename), MPQHashType.MPQ_HASH_FILE_KEY.value)
+                key = self.mpq_cipher.hash(plain_name(filename), MPQHashType.MPQ_HASH_FILE_KEY.value)
                 if block_entry['Flags'] & MPQFileDataType.FIX_KEY.value:
                         key = (key + block_entry['BlockOffset']) ^ block_entry['FileSize']
 

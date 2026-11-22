@@ -606,6 +606,75 @@ class TestExportStaysInsideTheFolder(unittest.TestCase):
             self._check(tmp, out, None)
 
 
+def _archive_with_encrypted_members(members):
+    """A classic MPQ whose `members` ({name: bytes}) are each stored as one
+    encrypted, uncompressed single-unit block, plus a plain (listfile).
+
+    MpqWriter does not encrypt, and real maps encrypt files inside folders
+    (scripts\\war3map.j), so this builds the blocks by hand with the same
+    cipher, keyed on the name after its last backslash as the format says."""
+    import struct
+    from wc3files.mpq.data import (MPQBlockTableEntry, MPQFileDataType, MPQHashType,
+                                   MPQKeyType, MpqMagicType, MpqUnpack)
+    cipher = MpqCipher()
+    writer = MpqWriter()
+    names = list(members) + ['(listfile)']
+    contents = dict(members)
+    contents['(listfile)'] = ''.join(name + '\r\n' for name in members).encode()
+    exists, single = MPQFileDataType.EXISTS.value, MPQFileDataType.SINGLE_UNIT.value
+    data, blocks = bytearray(), []
+    for name in names:
+        raw = contents[name]
+        flags = exists | single
+        if name != '(listfile)':
+            key = cipher.hash(name.rsplit('\\', 1)[-1], MPQHashType.MPQ_HASH_FILE_KEY.value)
+            raw = cipher.encrypt(raw, key)
+            flags |= MPQFileDataType.ENCRYPTED.value
+        blocks.append({MPQBlockTableEntry.BLOCK_OFFSET.value: 32 + len(data),
+                       MPQBlockTableEntry.BLOCK_SIZE.value: len(raw),
+                       MPQBlockTableEntry.FILE_SIZE.value: len(raw),
+                       MPQBlockTableEntry.FLAGS.value: flags})
+        data += raw
+    hash_table = protection.build_hash_table([(name, i) for i, name in enumerate(names)], cipher)
+    packed_hash = writer._pack_table(hash_table, MPQHashTableEntry, MpqUnpack.HASH_TABLE.value,
+                                     MPQKeyType.MPQ_HASH_TABLE)
+    packed_block = writer._pack_table(blocks, MPQBlockTableEntry, MpqUnpack.BLOCK_ENTRY.value,
+                                      MPQKeyType.MPQ_BLOCK_TABLE)
+    hash_offset = 32 + len(data)
+    block_offset = hash_offset + len(packed_hash)
+    header = struct.pack(MpqUnpack.HEADER.value, MpqMagicType.MPQ_ARCHIVE_V1.value, 32,
+                         block_offset + len(packed_block), 0, 3, hash_offset, block_offset,
+                         len(hash_table), len(blocks))
+    return header + bytes(data) + packed_hash + packed_block
+
+
+class TestEncryptedMembersInFolders(unittest.TestCase):
+    """The file key is the hash of the name after its last backslash, on
+    every platform. os.path.basename only splits on a backslash on Windows,
+    so on Linux and macOS these members decrypted to garbage."""
+    MEMBERS = {
+        'war3map.w3i': b'ROOT' * 64,
+        'scripts\\war3map.j': b'function main takes nothing returns nothing\r\n'.ljust(256, b' '),
+        'war3mapImported\\deep\\icon.blp': bytes(range(256)) * 4,
+    }
+
+    def test_both_readers_decrypt_members_in_folders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'encrypted.w3x')
+            with open(path, 'wb') as handle:
+                handle.write(_archive_with_encrypted_members(self.MEMBERS))
+
+            w3x = W3xFile()
+            w3x.read(path)
+            mpq = MpqFile()
+            mpq.read(path)
+            mpq.read_files()
+            for name, expected in self.MEMBERS.items():
+                with self.subTest(name=name):
+                    self.assertEqual(w3x.files.get(name), expected)
+                    self.assertEqual(mpq.files.get(name), expected)
+
+
 class TestExportCreatesFolders(unittest.TestCase):
     """Archive names separate folders with a backslash, on every platform."""
 
