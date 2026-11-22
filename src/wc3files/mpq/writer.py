@@ -30,6 +30,13 @@ class MpqWriter:
      HEADER_SIZE = 32
      LISTFILE = '(listfile)'
      ATTRIBUTES = '(attributes)'
+     SIGNATURE = '(signature)'
+     # Describe the block table of the archive they came from, not of the one
+     # being written, so a copy passed in is always stale. W3xFile.build()
+     # already left them out; build_from_files() and MpqFile.build() did not,
+     # and a stale (attributes) is what made a real client crash on a
+     # repacked map (see W3xFile._STALE_ON_REPACK).
+     GENERATED = (LISTFILE, ATTRIBUTES, SIGNATURE)
 
      def __init__(self, sector_size_shift=3, protection=MpqProtectionLevel.NONE,
                   attributes=False, rng=None):
@@ -41,8 +48,11 @@ class MpqWriter:
 
      def build(self, files):
           """files: dict[str, bytes]. Returns the archive bytes. A '(listfile)' entry is
-          generated from the other keys, unless the protection level omits it entirely."""
-          files = {name: (data or b'') for name, data in files.items() if name != self.LISTFILE}
+          generated from the other keys, unless the protection level omits it entirely.
+          A '(listfile)', '(attributes)' or '(signature)' passed in is left out (see
+          GENERATED); `attributes=True` writes a fresh '(attributes)' instead."""
+          files = {name: (data or b'') for name, data in files.items()
+                   if name.lower() not in self.GENERATED}
           if protection_module.should_include_listfile(self.protection_level):
                # Blizzard's own tools terminate every entry with \r\n (including the last), not just separate them.
                # surrogateescape: a name read from an archive whose listfile was not
