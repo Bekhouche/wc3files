@@ -44,26 +44,39 @@ def plain_name(filename):
      return filename.replace('/', '\\').rsplit('\\', 1)[-1]
 
 
+def _build_crypt_table():
+     table = {}
+     seed = 0x00100001
+     for index1 in range(0x100):
+          for index2 in range(index1, index1 + 0x500, 0x100):
+               seed = (seed * 125 + 3) % 0x2AAAAB
+               temp1 = (seed & 0xFFFF) << 0x10
+
+               seed = (seed * 125 + 3) % 0x2AAAAB
+               temp2 = (seed & 0xFFFF)
+
+               table[index2] = (temp1 | temp2)
+     return table
+
+
+# The table never changes, so it is built once per process and shared by
+# every reader and writer (W3xFile, MpqFiles, MpqWriter, ...), instead of
+# once per object.
+CRYPT_TABLE = _build_crypt_table()
+
+
 class MpqCipher:
-     """
-     Class for Cipher
+     """The MPQ cipher: the crypt table, name hashing, and the block
+     encryption of the hash table, the block table and encrypted files.
+
+     This is the only copy in the package. W3xFile kept a second one, whose
+     encrypt() had never worked (see TestOneCipher).
      """
      def __init__(self):
           self.initialize_crypt_table()
-     
+
      def initialize_crypt_table(self):
-          self.crypt_table = {}
-          seed = 0x00100001
-
-          for index1 in range(0x100):
-               for index2 in range(index1, index1 + 0x500, 0x100):
-                    seed = (seed * 125 + 3) % 0x2AAAAB
-                    temp1 = (seed & 0xFFFF) << 0x10
-
-                    seed = (seed * 125 + 3) % 0x2AAAAB
-                    temp2 = (seed & 0xFFFF)
-
-                    self.crypt_table[index2] = (temp1 | temp2)
+          self.crypt_table = CRYPT_TABLE
 
      def encrypt(self, buffer, key):
           buffer = bytearray(buffer)
