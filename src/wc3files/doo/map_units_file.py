@@ -3,6 +3,7 @@ from ..data import BinaryDataType
 from .data import DooFileType, RandomUnitDataMode
 from wc3files.files import BinaryFile
 from wc3files.files.binary_file import fspath
+from .skins import file_skins, writer_skins, record_skin
 
 
 class MapUnitsFile(object):
@@ -21,7 +22,8 @@ class MapUnitsFile(object):
          https://us.forums.blizzard.com/en/warcraft3/t/war3mapunitsdoo-changed-format-version-not-changed/29081).
          Presence is instead detected per-unit by peeking whether the byte right after Scale
          looks printable (>= 0x20) - a real rawcode's first character always is, while the
-         Flags byte that would otherwise be there never is.
+         Flags byte that would otherwise be there never is. On write, the file's `skins`
+         decides it for every unit at once (see doo/skins.py).
        - MapItemTableId only exists when format==8 and subversion==11.
        - Hero stat overrides (Strength/Agility/Intelligence) only exist when
          (format==8 and subversion==11) or subversion==10.
@@ -115,7 +117,8 @@ class MapUnitsFile(object):
 
           units = [self._read_unit(reader, version, subversion) for _ in range(count)]
 
-          return {'version': version, 'subversion': subversion, 'units': units}
+          return {'version': version, 'subversion': subversion,
+                  'skins': file_skins(units), 'units': units}
 
      def _read_unit(self, reader, version, subversion):
           unit = {
@@ -227,10 +230,11 @@ class MapUnitsFile(object):
           self._write_i32(writer, version)
           self._write_i32(writer, subversion)
           self._write_i32(writer, len(units))
+          skins = writer_skins(data.get('skins'), units)
           for unit in units:
-               self._write_unit(writer, unit, version, subversion)
+               self._write_unit(writer, unit, version, subversion, skins)
 
-     def _write_unit(self, writer, unit, version, subversion):
+     def _write_unit(self, writer, unit, version, subversion, skins=None):
           self._write_code(writer, unit['id'])
           self._write_i32(writer, unit.get('variation', 0))
           for value in unit.get('position', (0.0, 0.0, 0.0)):
@@ -241,18 +245,10 @@ class MapUnitsFile(object):
 
           skin = unit.get('skin', unit['id'])
           flags = unit.get('flags', 2)
-          # Skin presence is detected on read by peeking the byte right after Scale: if we
-          # skip writing it, that peeked byte becomes Flags, so Flags itself must not look
-          # printable or a reader would wrongly assume a skin field is present.
-          # Prefer the presence flag captured on read (has_skin) over comparing skin to id:
-          # a real Reforged-saved unit can have skin == id and still have this field present
-          # in the source file - falls back to the old value-comparison heuristic only for
-          # data that was never read from a real file (e.g. built from scratch).
-          if 'has_skin' in unit:
-               write_skin = unit['has_skin']
-          else:
-               write_skin = skin != unit['id'] or flags >= self.PEEK_PRINTABLE_THRESHOLD
-          if write_skin:
+          # Every record of a file has a skin, or none does (see doo/skins.py).
+          # A real Reforged-saved unit can have skin == id and still carry the
+          # field, so presence comes from the file, not from comparing the two.
+          if record_skin(unit, skins):
                self._write_code(writer, skin)
 
           if version >= 13:
