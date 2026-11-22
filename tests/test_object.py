@@ -495,6 +495,37 @@ class TestVersion3LayoutWithoutModifications(unittest.TestCase):
         self.assertEqual(list(obj._data['w3q']['custom']), ['R000'])
 
 
+class TestPerLevelValueTypes(unittest.TestCase):
+    """The levels of one field can use different value types: a real map
+    (Hero_Push_Eternal_Dominion_1.1.w3x) stores ability field acdn as unreal
+    on levels 2-7 and as int on level 8. Each level keeps its own type."""
+
+    def _data(self):
+        import struct
+        mods = [(b'acdn', 2, 1, struct.pack('<f', 7.0)),
+                (b'acdn', 0, 2, struct.pack('<i', 6)),
+                (b'aran', 2, 1, struct.pack('<f', 500.0))]
+        body = b''.join(mod + struct.pack('<III', kind, level, 0) + value + bytes(4)
+                        for mod, kind, level, value in mods)
+        return (struct.pack('<II', 2, 1) + b'AHbz' + bytes(4)
+                + struct.pack('<I', len(mods)) + body + struct.pack('<I', 0))
+
+    def test_levels_keep_their_own_type_and_write_back_exactly(self):
+        data = self._data()
+        obj = ObjectFile()
+        obj.read(data, 'w3a')
+        acdn = obj._data['w3a']['original']['AHbz']['acdn']
+        self.assertEqual(acdn['value'], {1: 7.0, 2: 6})
+        self.assertEqual(acdn['types'], {1: 2, 2: 0})
+        # a field whose levels agree keeps its usual shape
+        self.assertNotIn('types', obj._data['w3a']['original']['AHbz']['aran'])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'war3map.w3a')
+            obj.write(out)
+            with open(out, 'rb') as handle:
+                self.assertEqual(handle.read(), data)
+
+
 class TestOriginalEntryNewId(unittest.TestCase):
     """An original-table entry's new id is usually 00 00 00 00, but real
     files store other values: Hero Strife TD's war3map.w3u starts with
