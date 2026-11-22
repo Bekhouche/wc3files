@@ -24,8 +24,10 @@ targets - MPQ is documented well enough to implement natively.
   (`MpqWriter(protection=...)`, an `MpqProtectionLevel`) adds opt-in
   MPQ-container "protection" - `(listfile)` removal + decoy hash-table
   padding (SAFE, safe by construction), duplicate/decoy hash entries per file
-  (EXPERIMENTAL/AGGRESSIVE - also known to defeat this package's own reader
-  by design, see TODO.md). All four tiers confirmed to load and play in a
+  (EXPERIMENTAL/AGGRESSIVE). Both readers look names up as the game does
+  (`mpq/hash_table.py` `find_hash_entry`: probe from the home slot, stop at a
+  free entry, skip a match whose block does not exist), so they read every
+  tier back. All four tiers confirmed to load and play in a
   real Warcraft III Reforged client (2026-08-29, via a sibling project's
   release pipeline). The "BOBA protector" block-table-relocation trick is
   deliberately not implemented (too underspecified to safely reproduce).
