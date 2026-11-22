@@ -837,14 +837,16 @@ def _safe(fn, x):
           return 0.0
 
 
-def load_map_script(path):
+def load_map_script(path, deep=False):
      """(Lua source, chunk name, natives the script declares) for a
-     war3map.lua, a war3map.j (translated to Lua) or a map archive."""
+     war3map.lua, a war3map.j (translated to Lua) or a map archive.
+
+     A protected map raises wc3files.w3x.ProtectedMapError unless `deep`:
+     before, it was reported as having no script."""
      lower = path.lower()
      if lower.endswith(('.w3x', '.w3m')):
-          from wc3files.w3x import W3xFile
-          archive = W3xFile()
-          archive.read(path)
+          from wc3files.w3x import read_map
+          archive = read_map(path, deep=deep)
           files = {name.lower(): data for name, data in (archive.files or {}).items()}
           for name in ('war3map.lua', 'scripts\\war3map.lua'):
                if files.get(name) is not None:

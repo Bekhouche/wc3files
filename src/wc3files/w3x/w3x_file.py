@@ -485,3 +485,36 @@ class W3xFile(object):
                     files += [file.strip() for file in file.readlines()]
           files = list(set(files))
           return files
+
+class ProtectedMapError(ValueError):
+     """A map whose (listfile) is missing or leaves files out, read without
+     asking for recovery. Writing anything from it would silently lose the
+     files the listfile does not name."""
+
+
+def read_map(path, deep=False):
+     """Read a map for a command that writes something from it.
+
+     A protected map raises ProtectedMapError, unless `deep` is True: then
+     it is read in DEEP mode, and `protected` stays True on the result, so
+     the caller can say its member list is a recovery. Reading such a map
+     in the default mode and writing it back gave an almost empty map (one
+     protected map of 47 files came back as 120 bytes) with exit status 0.
+     """
+     archive = W3xFile()
+     archive.read(path, mode=W3xReadMode.DEEP if deep else W3xReadMode.LISTFILE)
+     if archive.protected and not deep:
+          raise ProtectedMapError(
+               f'{fspath(path)} is protected: {protection_reason(archive)}. '
+               f'Reading it as it is would lose those files. Pass --deep '
+               f'(deep=True) to recover them by scanning for names; the '
+               f'result is a recovery, not the map\'s own file list.')
+     return archive
+
+
+def protection_reason(archive):
+     """Why `archive` counts as protected, in a few words."""
+     if not archive.files.get('(listfile)'):
+          return 'it has no (listfile)'
+     return (f'its (listfile) leaves {archive.unlisted_blocks} '
+             f'file{"s" if archive.unlisted_blocks != 1 else ""} out')
