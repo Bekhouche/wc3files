@@ -8,6 +8,7 @@ import sys
 from loguru import logger
 
 from wc3files import __version__
+from wc3files.files.binary_file import TruncatedDataError
 from wc3files.w3x import W3xFile
 from wc3files.w3o import ObjectFile, SlkFile, BaseObjectData, BaseObjectStrings, CombinedBaseData
 from wc3files.w3o.object_metadata import ObjectMetaData
@@ -1955,10 +1956,7 @@ def main(argv=None):
     except NotImplementedError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    except (ValueError, FileNotFoundError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    except struct.error as exc:
+    except (TruncatedDataError, struct.error) as exc:
         # A parser running off the end of its input. The usual cause is a
         # file that was extracted badly - several locally-extracted maps hold
         # war3map.wtg files padded or cut to a whole 4096-byte sector - not a
@@ -1970,6 +1968,9 @@ def main(argv=None):
               "extracted it - a size that is an exact multiple of 4096 is a "
               "good sign of that. Try re-extracting it with `unpack`.",
               file=sys.stderr)
+        return 1
+    except (ValueError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
     except Exception as exc:
         # A script that will not parse is an ordinary outcome, not a crash:

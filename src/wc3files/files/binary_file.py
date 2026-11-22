@@ -10,6 +10,13 @@ def fspath(value):
     return os.fspath(value) if isinstance(value, os.PathLike) else value
 
 
+class TruncatedDataError(EOFError, ValueError):
+    """The data ends before a value that was asked for is complete.
+
+    A ValueError as well, so a parser that catches ValueError to try another
+    layout still gets the chance to."""
+
+
 class BinaryFile:
     def __init__(self, file_or_data, mode='read'):
         """
@@ -93,9 +100,9 @@ class BinaryFile:
             raise ValueError("File is not open in read mode.")
 
         if data_type == BinaryDataType.INT:
-            return int.from_bytes(self.file.read(num), byteorder, signed=signed)
+            return int.from_bytes(self._read_exactly(num), byteorder, signed=signed)
         elif data_type == BinaryDataType.REAL:
-            return struct.unpack('<f', self.file.read(num))[0]
+            return struct.unpack('<f', self._read_exactly(num))[0]
         elif data_type == BinaryDataType.UNREAL:
             # Returned exactly as stored. Rounding to seven decimals here
             # looked harmless but changed the value: a real object field
@@ -103,7 +110,7 @@ class BinaryFile:
             # different four bytes, so the file could never be written back
             # unchanged. 19 of the 23 object files that still failed to
             # round-trip differed only in float bytes like this one.
-            return struct.unpack('<f', self.file.read(num))[0]
+            return struct.unpack('<f', self._read_exactly(num))[0]
         elif data_type == BinaryDataType.STRING:
             # Read in chunks and scan for the null terminator instead of one
             # byte-at-a-time file.read(1) call per character (was the single
@@ -111,10 +118,13 @@ class BinaryFile:
             # strings - millions of Python-level read() calls per file).
             chunk_size = 64
             parts = []
+            start = self.tell()
             while True:
                 chunk = self.file.read(chunk_size)
                 if not chunk:
-                    break
+                    raise TruncatedDataError(
+                        f"the data ends inside a string that starts at offset {start}: "
+                        f"no terminating zero byte")
                 idx = chunk.find(b'\x00')
                 if idx == -1:
                     parts.append(chunk)
@@ -134,9 +144,26 @@ class BinaryFile:
             # UTF-8 decodes exactly as before.
             return b''.join(parts).decode('utf-8', errors='surrogateescape')
         elif data_type == BinaryDataType.BYTES:
-            return self.file.read(num)
+            return self._read_exactly(num)
         else:
             return None
+
+    def remaining(self):
+        """How many bytes are left after the current position."""
+        return self.size() - self.tell()
+
+    def _read_exactly(self, num):
+        # Every read used to return whatever was left: an INT past the end
+        # came back as 0, BYTES came back short, and a truncated file read
+        # "successfully" in six formats. A parser that really can stop early
+        # checks remaining() first instead.
+        start = self.tell()
+        data = self.file.read(num)
+        if len(data) != num:
+            raise TruncatedDataError(
+                f"the data ends at offset {start + len(data)}: {num} bytes were "
+                f"needed at offset {start}, {len(data)} are left")
+        return data
 
     def read_batch(self, data):
         new_data = {}
