@@ -495,6 +495,67 @@ class TestVersion3LayoutWithoutModifications(unittest.TestCase):
         self.assertEqual(list(obj._data['w3q']['custom']), ['R000'])
 
 
+class TestRepeatedFields(unittest.TestCase):
+    """An object can set one field twice. ONE PIECE WORLD ULTIMATE 0.9.w3m
+    sets uabi twice in unit O002, with usca in between, and its w3a repeats
+    a (field, level) pair 25 times. Both must write back exactly."""
+
+    @staticmethod
+    def _string(mod, text, end=bytes(4)):
+        import struct
+        return mod + struct.pack('<I', 3) + text + b'\x00' + end
+
+    def _w3u(self):
+        import struct
+        mods = [self._string(b'uabi', b'AInv,NM01'),
+                b'usca' + struct.pack('<If', 1, 0.85) + bytes(4),
+                self._string(b'uabi', b'AInv,NM01,X013', end=b'O002')]
+        return (struct.pack('<II', 2, 0) + struct.pack('<I', 1) + b'Oshd' + b'O002'
+                + struct.pack('<I', len(mods)) + b''.join(mods))
+
+    def _w3a(self):
+        import struct
+        def level_mod(mod, level, value):
+            return mod + struct.pack('<IIIf', 2, level, 1, value) + bytes(4)
+        mods = [level_mod(b'spb1', 1, 1.0), level_mod(b'spb1', 2, 2.0),
+                level_mod(b'spb1', 1, 3.0)]
+        return (struct.pack('<II', 2, 0) + struct.pack('<I', 1) + b'Aspb' + b'A009'
+                + struct.pack('<I', len(mods)) + b''.join(mods))
+
+    def _round_trip(self, data, ext, edit=None):
+        obj = ObjectFile()
+        obj.read(data, ext)
+        if edit:
+            edit(obj)
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'war3map.' + ext)
+            obj.write(out)
+            with open(out, 'rb') as handle:
+                return obj, handle.read()
+
+    def test_a_repeated_field_writes_back_exactly(self):
+        for data, ext in ((self._w3u(), 'w3u'), (self._w3a(), 'w3a')):
+            with self.subTest(ext=ext):
+                _, written = self._round_trip(data, ext)
+                self.assertEqual(written, data)
+
+    def test_the_entry_shows_the_last_value(self):
+        obj, _ = self._round_trip(self._w3u(), 'w3u')
+        self.assertEqual(obj._data['w3u']['custom']['O002']['uabi']['value'], 'AInv,NM01,X013')
+        obj, _ = self._round_trip(self._w3a(), 'w3a')
+        self.assertEqual(obj._data['w3a']['custom']['A009']['spb1']['value'], {1: 3.0, 2: 2.0})
+
+    def test_an_edited_entry_is_written_from_its_fields(self):
+        def edit(obj):
+            obj._data['w3u']['custom']['O002']['uabi']['value'] = 'AInv'
+        obj, written = self._round_trip(self._w3u(), 'w3u', edit)
+        again = ObjectFile()
+        again.read(written, 'w3u')
+        entry = again._data['w3u']['custom']['O002']
+        self.assertEqual(entry['uabi']['value'], 'AInv')
+        self.assertAlmostEqual(entry['usca']['value'], 0.85, places=5)
+
+
 class TestPerLevelValueTypes(unittest.TestCase):
     """The levels of one field can use different value types: a real map
     (Hero_Push_Eternal_Dominion_1.1.w3x) stores ability field acdn as unreal
