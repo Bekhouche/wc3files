@@ -369,10 +369,10 @@ class ObjectFile(object):
 
           with BinaryFile(file_path, 'read') as reader:
                if ObjectFileType(object_type) == ObjectFileType.File:
-                    version_ = reader.read(BinaryDataType.INT)
+                    reader.read(BinaryDataType.INT)  # container version, not used
                     for object_type_ in self._data.keys():
                          if reader.read(BinaryDataType.INT):
-                              version_ = reader.read(BinaryDataType.INT)
+                              reader.read(BinaryDataType.INT)  # table version, not used
                               start_pos = reader.tell()
                               use_skin = skin if skin != 'auto' else False
                               try:

@@ -658,7 +658,6 @@ class Runtime(object):
         self.extra_globals.append(ir.GlobalVar('trigger', trigger, is_array=True))
 
         # One trigger per implementation, shared by every type that uses it.
-        adapters = []
         made = {}
         family = [owner] + list(owner.descendants())
         for struct in family:

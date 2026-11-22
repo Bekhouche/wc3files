@@ -134,7 +134,7 @@ class ZincTranslator(object):
                 requires.append(('optional ' if optional else '') + req.value)
                 if not self.accept(','):
                     break
-        brace = self.expect('{')
+        self.expect('{')
         # Is there an onInit at library level? It is the initializer.
         body_start = self.pos
         has_init = self._library_has_oninit()
@@ -322,7 +322,7 @@ class ZincTranslator(object):
             self, 'in_method', False)
         self.hoisted = hoisted
         self.in_method = in_method
-        brace = self.expect('{')
+        self.expect('{')
         self.statements(indent + 1)
         end = self.expect('}')
         self.hoisted = previous_hoisted

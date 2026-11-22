@@ -52,7 +52,6 @@ class BmpFile:
             pixel_start += n_colors * 4
         pixel_start = off_bits if off_bits else pixel_start
 
-        bpp = bit_count // 8 if bit_count != 8 else 1
         row_size = ((bit_count * width + 31) // 32) * 4
         npix = width * height
         rgba = bytearray(npix * 4)

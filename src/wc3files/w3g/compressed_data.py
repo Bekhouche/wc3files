@@ -205,8 +205,7 @@ class ReforgedPlayerMetadata:
         raw_data.extend(clan_bytes)
         offset += clan_length + 1  # Skip the null terminator
 
-        # Read extra length (if needed in the future).
-        _extra_length = b2i(data[offset])
+        # One more byte, kept in raw_data but not interpreted.
         raw_data.extend(data[offset:offset+1])
         offset += 1
 

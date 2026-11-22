@@ -85,7 +85,6 @@ class TiffFile:
             raise TiffError('planar (non-chunky) TIFF layout is not supported')
         strip_offsets = ifd.get(273)
         strip_byte_counts = ifd.get(279)
-        rows_per_strip = tag(278, height)
         if strip_offsets is None or strip_byte_counts is None:
             raise TiffError('tiled TIFF files are not supported (no StripOffsets tag)')
 
@@ -137,7 +136,6 @@ class TiffFile:
             (284, 3, 1, 1),      # PlanarConfiguration = chunky
             (338, 3, 1, 2),      # ExtraSamples = unassociated alpha
         ]
-        strip_offsets_index = len(entries)
         entries.append((273, 4, 1, None))  # StripOffsets - patched in below
 
         header_size = 8

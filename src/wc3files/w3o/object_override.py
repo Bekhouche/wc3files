@@ -565,7 +565,7 @@ def rebuild_object_table(object_type, tables, remainder=None, metadata=None, bas
                     level_indexed and _strip_level_suffix(column, reverse_index)[0] is not None)
                 if column in base_row and not recognized:
                     continue
-                # A genuinely blank SLK cell (pandas NaN, or a plain missing key reread as
+                # A genuinely blank SLK cell (a float NaN, or a plain missing key reread as
                 # None - both real, observed shapes for an always-empty column in a real
                 # map's own bundled table - as opposed to the '-'/'_' string markers handled
                 # below) means "this table doesn't specify a value here" - not "override
@@ -649,10 +649,10 @@ def rebuild_object_table(object_type, tables, remainder=None, metadata=None, bas
                         continue
                 elif mod_type == BinaryDataType.INT.value and isinstance(value, float):
                     # A whole-number-valued float (e.g. 250.0) reaching here as a genuine
-                    # Python float, not a string, is the same pandas dtype-inference
-                    # artifact as the string case above wears a different hat: a sparse or
-                    # NaN-mixed SLK column gets float64 dtype even for otherwise-integer
-                    # data. Safe to truncate - there's no fractional part by construction
+                    # Python float, not a string, is the same case as the string one
+                    # above: an otherwise-integer SLK column can hold its numbers as
+                    # floats (the tables were once read through pandas, which did this
+                    # to every sparse or NaN-mixed column). Safe to truncate - there's no fractional part by construction
                     # (a real fractional value would have already forced mod_type to
                     # REAL/UNREAL above, before this branch is ever reached).
                     value = int(value)
