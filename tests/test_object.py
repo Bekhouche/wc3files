@@ -495,5 +495,36 @@ class TestVersion3LayoutWithoutModifications(unittest.TestCase):
         self.assertEqual(list(obj._data['w3q']['custom']), ['R000'])
 
 
+class TestOriginalEntryNewId(unittest.TestCase):
+    """An original-table entry's new id is usually 00 00 00 00, but real
+    files store other values: Hero Strife TD's war3map.w3u starts with
+    'uzg1' '0000'. Writing must put the stored value back."""
+
+    def _data(self):
+        import struct
+        return (struct.pack('<II', 2, 2)
+                + b'uzg1' + b'0000' + struct.pack('<I', 0)
+                + b'hfoo' + bytes(4) + struct.pack('<I', 0)
+                + struct.pack('<I', 0))
+
+    def test_the_stored_new_id_is_written_back(self):
+        data = self._data()
+        obj = ObjectFile()
+        obj.read(data, 'w3u')
+        self.assertEqual(list(obj._data['w3u']['original']), ['uzg1', 'hfoo'])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'war3map.w3u')
+            obj.write(out)
+            with open(out, 'rb') as handle:
+                self.assertEqual(handle.read(), data)
+
+    def test_entries_stay_plain_modification_tables(self):
+        # The new id is kept beside the entry, not in it, so code that walks
+        # an entry's fields sees no extra key.
+        obj = ObjectFile()
+        obj.read(self._data(), 'w3u')
+        self.assertEqual(obj._data['w3u']['original']['uzg1'], {})
+
+
 if __name__ == '__main__':
     unittest.main()
