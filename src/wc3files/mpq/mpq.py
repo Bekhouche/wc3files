@@ -12,6 +12,7 @@ from .hash_table import MpqHashTable
 from .block_table import MpqBlockTable
 from .files import MpqFiles
 from .writer import MpqWriter
+from wc3files.files.binary_file import fspath
 
 class MpqFile:
      """Class to read and handle MPQ archives, supporting encryption and decryption of data."""
@@ -37,6 +38,7 @@ class MpqFile:
 
      def read(self, file_path):
           """Read and process an MPQ archive given its file path."""
+          file_path = fspath(file_path)
           self.current_path = file_path
           self.current_name = os.path.basename(file_path).replace('.' + file_path.split('.')[-1], '')
           file_type = file_path.split('.')[-1].lower()
@@ -82,6 +84,7 @@ class MpqFile:
                self.files = self.mpq_files.get_data()
      
      def export(self, path):
+          path = fspath(path)
           if not os.path.exists(os.path.join(path, self.current_name)):
                os.mkdir(os.path.join(path, self.current_name))
 

@@ -5,6 +5,7 @@ from .data import ReplayFileType
 from wc3files.files import BinaryFile
 from .header import ReplayHeader
 from .compressed_data import ReplayCompressedData
+from wc3files.files.binary_file import fspath
 
 DEFAULT_BLOCK_SIZE = 8192
 
@@ -18,6 +19,7 @@ class ReplayFile(object):
           self.compressed_data = ReplayCompressedData()
 
      def read(self, file_path):
+          file_path = fspath(file_path)
           file_type = file_path.split('.')[-1].lower()
           if file_type not in [item.value for item in ReplayFileType]:
                raise ValueError("Invalid replay file type")
@@ -67,6 +69,7 @@ class ReplayFile(object):
           package's own read() parses it back identically. Not knowing what they are, they
           are written as zero.
           """
+          file_path = fspath(file_path)
           if getattr(self, 'unfinished', False):
                # No complete header exists to rebuild from, so an unfinished
                # replay is written back only as it was read.

@@ -1,6 +1,7 @@
 import struct
 from .data import CameraFileType, BASE_FIELDS, LOCAL_FIELDS, V3_FIELDS
 from wc3files.files import BinaryFile
+from wc3files.files.binary_file import fspath
 
 
 class CameraFile(object):
@@ -45,6 +46,7 @@ class CameraFile(object):
           self._data = {}
 
      def read(self, file_path):
+          file_path = fspath(file_path)
           if isinstance(file_path, str):
                file_type = file_path.split('.')[-1].lower()
                if file_type not in [item.value for item in CameraFileType]:
@@ -59,6 +61,7 @@ class CameraFile(object):
           self._data = self._read(blob)
 
      def write(self, file_path):
+          file_path = fspath(file_path)
           with BinaryFile(file_path, 'write') as writer:
                writer.file.write(self._write(self._data))
 
