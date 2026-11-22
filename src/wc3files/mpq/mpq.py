@@ -72,13 +72,14 @@ class MpqFile:
                raise ValueError(f'{file_type} is not supported as an archive file format!')
           
 
-     def read_files(self):
-          ### MPQ FILES ###
+     def read_files(self, progress=None):
+          """Read the members. `progress` reports the name scan of an archive
+          without a full listfile (see wc3files.mpq.progress)."""
           with BinaryFile(self.current_path, 'read') as reader:
                self.mpq_files.set_archive_header(self.mpq_header)
                self.mpq_files.set_hash_table(self.mpq_hash_table)
                self.mpq_files.set_block_table(self.mpq_block_table)
-               self.mpq_files.read(reader)
+               self.mpq_files.read(reader, progress=progress)
                self.files = self.mpq_files.get_data()
      
      def export(self, path):

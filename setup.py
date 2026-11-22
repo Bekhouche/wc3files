@@ -35,8 +35,12 @@ setup(
         # imported without them. This list was empty, which made an
         # installed copy fail on `import wc3files` with ModuleNotFoundError.
         'loguru',
-        'tqdm',
     ],
+    extras_require={
+        # Progress bars for the minutes-long scan of a protected map
+        # (wc3files.mpq.progress). Without it the scan runs silently.
+        'progress': ['tqdm'],
+    },
     entry_points={
         'console_scripts': ['wc3files=wc3files.cli.main:main'],
     },

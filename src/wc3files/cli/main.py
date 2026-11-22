@@ -44,7 +44,9 @@ def _open_map(path, deep):
     map is refused unless --deep (wc3files.w3x.read_map), and a recovered one
     is reported as such."""
     from wc3files.w3x.w3x_file import read_map, protection_reason
-    archive = read_map(path, deep=deep)
+    # A deep read takes minutes, so the command shows its progress (if tqdm
+    # is installed); the library itself prints nothing.
+    archive = read_map(path, deep=deep, progress=deep)
     if archive.protected:
         print(f"note: {path} is protected ({protection_reason(archive)}); "
               f"{sum(1 for v in archive.files.values() if v is not None)} files were "

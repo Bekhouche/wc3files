@@ -3,7 +3,6 @@ import re
 import struct
 from enum import Enum
 from loguru import logger
-from tqdm import tqdm
 from wc3files.data import *
 from wc3files.files import BinaryFile
 from wc3files.w3o.object_file import ObjectFile
@@ -16,6 +15,7 @@ from wc3files.files.binary_file import fspath
 from wc3files.mpq.cipher import MpqCipher, hash_name, plain_name
 from wc3files.mpq.hash_table import build_hash_index, find_hash_entry
 from wc3files.mpq.export import export_files
+from wc3files.mpq.progress import track
 
 
 class W3xReadMode(Enum):
@@ -121,19 +121,24 @@ class W3xFile(object):
           MpqWriter(sector_size_shift=sector_size_shift, protection=protection,
                     attributes=attributes).write(files, dst_path)
 
-     def read(self, file_path, mode=W3xReadMode.LISTFILE):
+     def read(self, file_path, mode=W3xReadMode.LISTFILE, progress=None):
           """Read a `.w3x`/`.w3m`/`.w3n`. See `W3xReadMode` for `mode`.
 
           Default is LISTFILE: use the archive's own `(listfile)`, and if it
           is missing or does not name every file, mark `self.protected`
           (`self.unlisted_blocks` says how many it leaves out). Pass
           `mode=DEEP` only when you actually want to recover a protected map.
+
+          `progress` reports the deep scan: None (default) prints nothing,
+          True shows a tqdm bar if tqdm is installed, and a callable gets
+          `(done, total, label)` (see wc3files.mpq.progress).
           """
           file_path = fspath(file_path)
           if not isinstance(mode, W3xReadMode):
                mode = W3xReadMode(mode)
           self.clear()
           self.current_path = file_path
+          self._progress = progress
           self.current_name = os.path.basename(file_path).replace('.' + file_path.split('.')[-1], '')
 
           file_type = file_path.split('.')[-1].lower()
@@ -205,7 +210,8 @@ class W3xFile(object):
           # and keeping two copies is exactly how this one silently fell behind (it
           # ran a fixed two manifest passes instead of iterating to a fixed point, and
           # never scanned models structurally at all).
-          for file in tqdm(self.default_files):
+          progress = getattr(self, '_progress', None)
+          for file in track(self.default_files, progress, 'probing names'):
                file_data = self._read_candidate(reader, file)
                if file_data:
                     self.files[file] = file_data
@@ -225,7 +231,7 @@ class W3xFile(object):
                     break
 
                candidates = set()
-               for file in tqdm(pending):
+               for file in track(pending, progress, 'scanning for names'):
                     scanned.add(file)
                     candidates |= extract_references(file, self.files[file])
 
@@ -492,7 +498,7 @@ class ProtectedMapError(ValueError):
      files the listfile does not name."""
 
 
-def read_map(path, deep=False):
+def read_map(path, deep=False, progress=None):
      """Read a map for a command that writes something from it.
 
      A protected map raises ProtectedMapError, unless `deep` is True: then
@@ -502,7 +508,8 @@ def read_map(path, deep=False):
      protected map of 47 files came back as 120 bytes) with exit status 0.
      """
      archive = W3xFile()
-     archive.read(path, mode=W3xReadMode.DEEP if deep else W3xReadMode.LISTFILE)
+     archive.read(path, mode=W3xReadMode.DEEP if deep else W3xReadMode.LISTFILE,
+                  progress=progress)
      if archive.protected and not deep:
           raise ProtectedMapError(
                f'{fspath(path)} is protected: {protection_reason(archive)}. '
