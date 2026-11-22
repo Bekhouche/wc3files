@@ -111,6 +111,19 @@ class TestJassChecker(unittest.TestCase):
         ), natives=self.natives)
         self.assertTrue(any('incompatible type string' in f['message'] for f in findings))
 
+    def test_findings_carry_the_statement_line(self):
+        findings = check_program(parse(
+            'function T takes nothing returns nothing\n'
+            '    local unit u = null\n'
+            '    if GetUnitX(u, u) > 0 then\n'
+            '        call KillUnit(1)\n'
+            '    elseif Missing() then\n'
+            '    endif\n'
+            'endfunction'
+        ), natives=self.natives)
+        lines = {f['message'].split("'")[1]: f['line'] for f in findings}
+        self.assertEqual(lines, {'GetUnitX': 3, 'KillUnit': 4, 'Missing': 5})
+
     def test_does_not_flag_integer_to_real_widening(self):
         findings = check_program(parse(
             'function T takes nothing returns nothing\n'

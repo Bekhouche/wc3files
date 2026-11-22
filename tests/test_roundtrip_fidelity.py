@@ -180,7 +180,7 @@ class TestCfgFidelity(unittest.TestCase):
 
 
 class TestW3iVersion39(unittest.TestCase):
-    """Version 39 is undocumented; 125 of the game's 186 v39 maps read."""
+    """Version 39 is undocumented; all 191 of the game's v39 maps read."""
 
     def test_a_version_39_file_reads_and_rewrites_exactly(self):
         path = sample_path('sample_v39.w3i')
@@ -206,16 +206,34 @@ class TestW3iVersion39(unittest.TestCase):
         self.assertIn('sound', data['environment'])
         self.assertIn('light', data['environment'])
 
-    def test_every_v39_player_carries_hud_skin(self):
-        # Not having this field was what made some v39 maps read and others
-        # not: records looked as though they sometimes carried an extra int,
-        # and nothing in the head predicted which. They all carry it.
+    def test_hud_skin_only_from_editor_6140(self):
+        # The editor-7000 fixture has hud_skin in every player, the
+        # editor-6127 one in none.
         info = W3iFile()
+        info.read(sample_path('sample_v39_unsupported.w3i'))
+        data = info.get_data()
+        self.assertGreaterEqual(data['editor_version'], 6140)
+        self.assertNotIn('players_hud_skin', data)
+        self.assertTrue(all('hud_skin' in p for p in data['players']))
         info.read(sample_path('sample_v39.w3i'))
-        players = info.get_data()['players']
-        self.assertTrue(players)
-        for player in players:
-            self.assertIn('hud_skin', player)
+        data = info.get_data()
+        self.assertLess(data['editor_version'], 6140)
+        self.assertIs(data['players_hud_skin'], False)
+        self.assertFalse(any('hud_skin' in p for p in data['players']))
+
+    def test_an_exact_but_misaligned_parse_is_not_kept(self):
+        # Read with hud_skin, the 6127 file still re-serializes to the same
+        # bytes: the name's first four bytes ("TRIG") land in the
+        # start-position flag. The reader must not keep that parse.
+        from wc3files.files import BinaryFile
+        info = W3iFile()
+        with BinaryFile(sample_path('sample_v39.w3i'), 'read') as reader:
+            wrong = info._read(reader, hud_skin=True)
+        self.assertFalse(W3iFile._plausible_players(wrong))
+        info.read(sample_path('sample_v39.w3i'))
+        for player in info.get_data()['players']:
+            self.assertIn(player['fixed_start_position'], (0, 1, 2))
+            self.assertFalse(any(0xDC80 <= ord(c) <= 0xDCFF for c in player['name']))
 
     def test_the_file_the_old_layout_could_not_read_now_reads(self):
         # This fixture was kept because the previous, partly-derived layout

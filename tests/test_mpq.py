@@ -75,6 +75,48 @@ class TestMpqRoundTrip(unittest.TestCase):
         self.assertIn('war3map.w3i', names)
 
 
+class TestMpqTamperedFormatVersion(unittest.TestCase):
+    """The game reads every map as format 0 whatever the header's format
+    version says, and map protectors set it to junk (41 of 1,025 benchmark
+    maps, e.g. 37103). For 2 and 3 the reader used to print() to stdout
+    (issue #12). Patched copies of the real sample.w3x must read silently and
+    give the same files as the original."""
+
+    def read_all(self, path):
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            w3x = W3xFile()
+            w3x.read(path)
+            mpq = MpqFile()
+            mpq.read(path)
+            mpq.read_files()
+            mpq.reader.close()
+        return w3x.files, mpq.files, out.getvalue()
+
+    def test_any_format_version_reads_as_format_0(self):
+        import struct
+        original = _helpers.read_bytes(_helpers.sample_path('sample.w3x'))
+        self.assertEqual(original[:4], b'MPQ')
+        self.assertEqual(struct.unpack_from('<H', original, 12)[0], 0)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'sample.w3x')
+            with open(path, 'wb') as f:
+                f.write(original)
+            expected_w3x, expected_mpq, _ = self.read_all(path)
+            self.assertTrue(expected_w3x)
+            for version in (2, 3, 37103):
+                patched = bytearray(original)
+                struct.pack_into('<H', patched, 12, version)
+                with open(path, 'wb') as f:
+                    f.write(patched)
+                files_w3x, files_mpq, stdout = self.read_all(path)
+                self.assertEqual(stdout, '', f'format version {version}')
+                self.assertEqual(files_w3x, expected_w3x, f'format version {version}')
+                self.assertEqual(files_mpq, expected_mpq, f'format version {version}')
+
+
 class TestMpqAttributes(unittest.TestCase):
     """(attributes) generation - see mpq/attributes.py. Previously unimplemented
     anywhere in this package (TODO.md)."""
@@ -465,6 +507,48 @@ class TestMpqDeepFileDiscoveryFindsModelEmbeddedTextures(unittest.TestCase):
         from wc3files.mpq.files import MpqFiles
         refs = MpqFiles._extract_references('MyModel.mdx', self.mdx_bytes)
         self.assertEqual(refs, {self.CUSTOM_TEXTURE_PATH})
+
+
+class TestMpqHeaderFieldEnums(unittest.TestCase):
+    """mpq/data.py defined MPQFileHeaderExtendedFieldsFormatV4 twice, and the
+    second copy (V2's members) replaced the real one (issue #4). The field
+    lists are zipped with struct.unpack() results, so their order and length
+    have to follow the header layout: StormLib's TMPQHeader."""
+
+    def test_no_class_is_defined_twice(self):
+        import ast
+        import collections
+        import importlib
+        data = importlib.import_module('wc3files.mpq.data')
+        with open(data.__file__, encoding='utf-8') as f:
+            tree = ast.parse(f.read())
+        names = collections.Counter(node.name for node in tree.body
+                                    if isinstance(node, ast.ClassDef))
+        self.assertEqual([name for name, n in names.items() if n > 1], [])
+
+    def test_v4_fields_follow_the_header_layout(self):
+        import struct
+        from wc3files.mpq.data import MPQFileHeaderExtendedFieldsFormatV4 as V4
+        self.assertEqual([field.value for field in V4], [
+            'HASH_TABLE_SIZE_64', 'BLOCK_TABLE_SIZE_64', 'HI_BLOCK_TABLE_SIZE_64',
+            'HET_TABLE_SIZE_64', 'BET_TABLE_SIZE_64', 'RAW_CHUNK_SIZE',
+            'MD5_BLOCK_TABLE', 'MD5_HASH_TABLE', 'MD5_HI_BLOCK_TABLE',
+            'MD5_BET_TABLE', 'MD5_HET_TABLE', 'MD5_MPQ_HEADER'])
+        # Five 64-bit sizes, one DWORD and six MD5 digests: the 140 bytes a
+        # version-4 header (208 bytes) adds after a version-3 one (68 bytes).
+        layout = '<5QI' + '16s' * 6
+        self.assertEqual(len(struct.unpack(layout, bytes(struct.calcsize(layout)))),
+                         len(V4))
+        self.assertEqual(struct.calcsize(layout), 208 - 68)
+
+    def test_v2_and_v3_fields_are_unchanged(self):
+        from wc3files.mpq.data import (MPQFileHeaderExtendedFieldsFormatV2 as V2,
+                                       MPQFileHeaderExtendedFieldsFormatV3 as V3)
+        self.assertEqual([field.value for field in V2], [
+            'EXTENDED_BLOCK_TABLE_OFFSET', 'HASH_TABLE_OFFSET_HIGH',
+            'BLOCK_TABLE_OFFSET_HIGH'])
+        self.assertEqual([field.value for field in V3], [
+            'ARCHIVE_SIZE_64', 'BET_TABLE_POS_64', 'HET_TABLE_POS_64'])
 
 
 if __name__ == '__main__':

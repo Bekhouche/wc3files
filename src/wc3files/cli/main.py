@@ -12,7 +12,6 @@ from wc3files.w3o import ObjectFile, SlkFile, BaseObjectData, BaseObjectStrings,
 from wc3files.w3o.object_metadata import ObjectMetaData
 from wc3files.w3o.object_override import literal_table_paths
 from wc3files.data import ObjectFileType, BinaryDataType
-from wc3files.w3o import ObjectFile
 from wc3files.img import (BlpFile, DdsFile, TgaFile, BmpFile, TiffFile, read_png, write_png,
                            resize_box, composite_over, make_disabled_variant, border_path)
 from .formats import FORMATS
@@ -213,6 +212,15 @@ def _cmd_jass(args):
     program = script.get_data()
     is_lua = script.get_file_type().value == 'lua'
 
+    if args.check:
+        return _report_script_check(args.input, script.validate())
+    if args.to_lua:
+        if is_lua:
+            raise ValueError('--to-lua takes a JASS script')
+        from wc3files.scripts.jass_to_lua import jass_to_lua
+        _write_or_print(jass_to_lua(program), args.output)
+        return
+
     if is_lua:
         if args.strip:
             raise ValueError('--strip works on JASS only; Lua has no reachability '
@@ -249,6 +257,376 @@ def _cmd_jass(args):
         with open(args.output, 'w', encoding='utf-8', newline='\n') as handle:
             handle.write(text)
         print(f'Wrote {args.output}')
+    else:
+        sys.stdout.write(text)
+
+
+def _report_script_check(path, findings):
+    """Print `path:line: severity: message` for each finding; 1 on an issue."""
+    for finding in findings:
+        line = finding.get('line')
+        where = f'{path}:{line}' if line else path
+        print(f"{where}: {finding['severity']}: {finding['message']}")
+    issues = sum(1 for f in findings if f['severity'] == 'issue')
+    notes = len(findings) - issues
+    print(f'{issues} issue(s), {notes} note(s)', file=sys.stderr)
+    return 1 if issues else 0
+
+
+def _cmd_gamedata_extract(args):
+    """Extract a game-data profile from an install."""
+    from wc3files import gamedata
+    profile = gamedata.extract(args.install, args.output, locale=args.locale, name=args.name)
+    print(f"{profile['source']}: {len(profile['files'])} table(s) written to {args.output}")
+    if profile['missing']:
+        print(f"not in this version ({len(profile['missing'])}, the bundled copy is used): "
+              + ', '.join(os.path.basename(m) for m in profile['missing']))
+    for relative, why in profile['refused'].items():
+        print(f'refused {relative}: {why}', file=sys.stderr)
+    return 1 if profile['refused'] else 0
+
+
+def _cmd_slk_mode(args):
+    """Whole-map Slk mode (wc3files.w3x.modes.map_to_slk)."""
+    from wc3files.w3x.modes import map_to_slk
+    report = map_to_slk(args.input, args.output)
+    for name, outcome in report.items():
+        print(f'{name}: {outcome}')
+    print(f'Wrote {args.output}')
+    return 0
+
+
+def _cmd_obj_mode(args):
+    """Whole-map Obj mode (wc3files.w3x.modes.map_to_obj)."""
+    from wc3files.w3x.modes import map_to_obj
+    report = map_to_obj(args.input, args.output)
+    if not report:
+        print('no object-data tables in this map; nothing to do')
+    for name, outcome in report.items():
+        print(f'{name}: {outcome}')
+    print(f'Wrote {args.output}')
+    return 0
+
+
+def _cmd_optimize(args):
+    """Run the optimizer passes the options name (wc3files.w3x.optimize)."""
+    from wc3files.w3x.modes import _read_files, _write_map, map_to_slk
+    from wc3files.w3x.optimize import (remove_unused_objects, remove_we_only,
+                                       squeeze_models, computed_text)
+    if not (args.remove_unused_objects or args.remove_we_only or args.slk or
+            args.mdx_squeeze or args.computed_text):
+        raise ValueError('choose at least one of --remove-unused-objects, '
+                         '--remove-we-only, --mdx-squeeze, --computed-text, --slk')
+    files = _read_files(args.input)
+    if args.remove_unused_objects:
+        files, report = remove_unused_objects(files)
+        if report.get('skipped'):
+            print(f"unused objects: skipped ({report['skipped']})")
+        else:
+            count = sum(len(v) for v in report['removed'].values())
+            print(f"unused objects: removed {count}, kept {report['kept']}")
+    if args.computed_text:
+        files, report = computed_text(files)
+        print(f"computed text: {report['replaced']} reference(s) written in, "
+              f"{report['left']} left as they were")
+    if args.mdx_squeeze:
+        files, report = squeeze_models(files)
+        print(f"models: {len(report['squeezed'])} squeezed")
+    if args.remove_we_only:
+        files, report = remove_we_only(files)
+        print('editor-only files: removed ' + (', '.join(report['removed']) or 'none'))
+    if args.slk:
+        for name, outcome in map_to_slk(None, args.output, files).items():
+            print(f'{name}: {outcome}')
+    else:
+        _write_map(files, args.output)
+    print(f'Wrote {args.output}')
+    return 0
+
+
+def _cmd_trigger_ui(args):
+    """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
+    from wc3files.wtg import ydwe_ui
+    *sources, target = args.inputs
+    if not sources:
+        raise ValueError('give the input(s) and then the output')
+    if all(os.path.isdir(src) for src in sources):
+        merged = ydwe_ui.merge(*(ydwe_ui.read_ui(src, args.lang) for src in sources))
+        data, strings = ydwe_ui.write_trigger_data(merged)
+        os.makedirs(target, exist_ok=True)
+        for name, text in (('TriggerData.txt', data), ('TriggerStrings.txt', strings)):
+            with open(os.path.join(target, name), 'w', encoding='utf-8', newline='\r\n') as h:
+                h.write(text)
+        count = sum(len(v) for v in merged.functions.values())
+        print(f'Wrote TriggerData.txt and TriggerStrings.txt to {target} ({count} functions)')
+        return 0
+    if len(sources) > 2 or not all(os.path.isfile(src) for src in sources):
+        raise ValueError('give TriggerData.txt [TriggerStrings.txt] or ui folders, '
+                         'then the output')
+    texts = []
+    for src in sources:
+        with open(src, encoding='utf-8-sig', errors='replace') as h:
+            texts.append(h.read())
+    ui = ydwe_ui.read_trigger_data(texts[0], texts[1] if len(texts) > 1 else '')
+    ydwe_ui.write_ui(ui, target)
+    count = sum(len(v) for v in ui.functions.values())
+    print(f'Wrote the ui folder {target} ({count} functions)')
+    return 0
+
+
+def _cmd_lni(args):
+    """Map -> Lni folder, or Lni folder -> map (by what the input is)."""
+    from collections import Counter
+    from wc3files.lni import map_to_lni, lni_to_map, MANIFEST
+    if os.path.isdir(args.input):
+        if not os.path.isfile(os.path.join(args.input, MANIFEST)):
+            raise ValueError(f'{args.input} is not an Lni folder (no {MANIFEST})')
+        files = lni_to_map(args.input, args.output)
+        print(f'Built {args.output} ({len(files)} files)')
+        return 0
+    manifest = map_to_lni(args.input, args.output)
+    kinds = Counter(entry['kind'] for entry in manifest['files'])
+    print(f"Wrote {args.output}: {kinds.get('lni', 0)} object file(s) as Lni, "
+          f"{kinds.get('json', 0)} as JSON, {kinds.get('raw', 0)} as they are")
+    return 0
+
+
+def _cmd_run_map(args):
+    """Run a map script in wc3files.scripts.wc3_runtime and report what failed."""
+    from wc3files.scripts.wc3_runtime import MapRuntime, load_map_script
+    source, chunkname, natives = load_map_script(args.input)
+    runtime = MapRuntime(players=args.players, max_steps=args.max_steps or None)
+    runtime.declare_natives(natives)
+    report = runtime.run(source, chunkname, seconds=args.seconds)
+    if args.messages:
+        for text in report.messages:
+            print(text)
+    for error in report.errors:
+        print(f'error: {error}')
+    for warning in report.warnings:
+        print(f'warning: {warning}')
+    print(f'{len(report.errors)} error(s), {len(report.warnings)} warning(s), '
+          f'{report.callbacks} callback(s), {report.game_time:.2f} s of game time',
+          file=sys.stderr)
+    return 1 if report.errors else 0
+
+
+def _cmd_vjass(args):
+    """Compile vJass/Zinc to JASS - a script, several, or a whole map.
+
+    A map (.w3x/.w3m, or a folder map) has its war3map.j compiled and is
+    written back with the result, as the World Editor does when saving with
+    JassHelper on. Anything else is read as source; several inputs compile as
+    one script, in the order given.
+    """
+    from wc3files.vjass import VJassCompiler, CompileOptions, VJassError
+    from wc3files.vjass.preprocessor import Preprocessor, _read_text
+    from wc3files.vjass.zinc import translate_zinc
+
+    overrides = dict(debug=args.debug, optimize=args.optimize,
+                     strict=args.strict,
+                     auto_method_evaluate=not args.force_method_evaluate,
+                     implicit_this=not args.no_implicit_this)
+    if args.max_array_size:
+        overrides['max_array_size'] = args.max_array_size
+    if args.common:
+        overrides['common_j'] = args.common
+    if args.blizzard:
+        overrides['blizzard_j'] = args.blizzard
+    if args.conf:
+        options = CompileOptions.from_conf(args.conf, **overrides)
+    else:
+        options = CompileOptions(**overrides)
+    options.lookup_folders.extend(args.lookup or [])
+    for define in args.define or []:
+        name, _, value = define.partition('=')
+        options.constant_overrides[name] = value.lower() not in ('0', 'false',
+                                                                  'no')
+    compiler = VJassCompiler(options)
+
+    inputs = args.input
+    first = inputs[0]
+    is_map = len(inputs) == 1 and (
+        first.lower().endswith(('.w3x', '.w3m')) or
+        (os.path.isdir(first) and os.path.isfile(os.path.join(first,
+                                                               'war3map.j'))))
+
+    if args.preprocess:
+        # Show what the parser sees: imports, macros, debug lines and Zinc
+        # (translated to vJass) all applied.
+        if len(inputs) != 1 or is_map:
+            raise ValueError('--preprocess takes one source file')
+        pre = Preprocessor(options).run(_read_text(first), os.path.abspath(first))
+        lines = []
+        for kind, segment in pre.segments:
+            if kind == 'zinc':
+                segment = translate_zinc(segment, options)
+            lines.extend(line.text for line in segment)
+        text = '\n'.join(lines) + '\n'
+        _write_or_print(text, args.output)
+        return
+
+    mode = args.externals
+    try:
+        if is_map:
+            result = compiler.compile_map(first, args.output,
+                                          externals=(mode == 'run'),
+                                          workspace=args.workspace)
+            target = args.output or first
+        elif len(inputs) == 1:
+            result = compiler.compile_file(first)
+            target = None
+        else:
+            result = compiler.compile_files(inputs)
+            target = None
+    except VJassError as exc:
+        raise ValueError(f'vJass: {exc}') from None
+
+    shown = 0
+    for warning in result.warnings:
+        if args.quiet:
+            break
+        if shown == args.max_warnings:
+            print(f'... and {len(result.warnings) - shown} more warnings',
+                  file=sys.stderr)
+            break
+        print(warning, file=sys.stderr)
+        shown += 1
+    if mode == 'note':
+        for location, tool, arguments in result.externals:
+            if not args.quiet:
+                print(f'{location}: note: external tool {tool!r} not run '
+                      '(use --externals check or run)', file=sys.stderr)
+    elif result.externals:
+        done = getattr(result, 'externals_result', None)
+        if done is None:
+            map_files = None
+            if is_map:
+                from wc3files.vjass.api import _read_map_files
+                map_files = _read_map_files(first)
+            done = result.run_externals(map_files, workspace=args.workspace,
+                                        stop_on_error=(mode == 'run'))
+        _report_externals(done, args.quiet)
+        if done.errors:
+            raise ValueError(f'{len(done.errors)} external tool call(s) failed')
+        if mode == 'run' and not is_map:
+            folder = args.externals_dir or (os.path.dirname(os.path.abspath(args.output))
+                                            if args.output and args.output != '-'
+                                            else os.getcwd())
+            for name, data in done.changed_files().items():
+                destination = os.path.join(folder, *name.split('\\'))
+                os.makedirs(os.path.dirname(destination), exist_ok=True)
+                with open(destination, 'wb') as handle:
+                    handle.write(data)
+                print(f'Wrote {destination}', file=sys.stderr)
+
+    if args.check:
+        issues = [f for f in result.validate() if f['severity'] == 'issue']
+        for finding in issues:
+            # back to the vJass source when the compiler knows where it was
+            loc = result.source_location(finding['line']) if finding.get('line') else None
+            if loc is not None:
+                where = f'{loc}: '
+            elif finding.get('line'):
+                where = f"compiled line {finding['line']}: "
+            else:
+                where = ''
+            print(f"check: {where}{finding['message']}", file=sys.stderr)
+        if issues:
+            raise ValueError(f'{len(issues)} issue(s) in the compiled script')
+
+    if target is not None:
+        print(f'Compiled {first} -> {target}')
+        return
+    _write_or_print(result.jass, args.output)
+
+
+def _report_externals(done, quiet=False):
+    """Print what running the external tool calls did."""
+    for error in done.errors:
+        print(f'error: {error}', file=sys.stderr)
+        for position, function in error.traceback[1:6]:
+            print(f'    in {function} at {position}', file=sys.stderr)
+    if quiet:
+        return
+    if done.output.strip():
+        for line in done.output.rstrip('\n').split('\n'):
+            print(f'lua: {line}', file=sys.stderr)
+    for operation, what in done.denied:
+        print(f'note: sandbox refused to {operation} {what}', file=sys.stderr)
+    ran = sum(1 for _, status in done.ran if status == 'ok')
+    skipped = sum(1 for _, status in done.ran if status == 'skipped')
+    summary = f'externals: {ran} ran, {len(done.errors)} failed'
+    if skipped:
+        summary += f', {skipped} skipped'
+    if done.changed:
+        summary += '; changed ' + ', '.join(done.changed)
+    print(summary, file=sys.stderr)
+
+
+def _cmd_lua(args):
+    """Run a Lua script: plain Lua in a sandbox, or with the functions of a
+    Grim Extension Pack tool (ObjectMerger, ...) against a map."""
+    from wc3files.scripts.lua_vm import LuaVM, LuaError, run_with_stack
+    from wc3files.scripts.lua_stdlib import LuaHost, LuaExit
+
+    with open(args.script, 'rb') as handle:
+        source = handle.read().decode('utf-8', 'replace')
+    if args.tool is None:
+        root = os.path.abspath(args.root or os.path.dirname(os.path.abspath(args.script)))
+        host = LuaHost(root=root, writable=args.allow_write, output=sys.stdout.write)
+        vm = LuaVM(version=args.lua_version, host=host,
+                   max_steps=args.max_steps or None)
+        try:
+            run_with_stack(vm.execute, source, args.script, None, args.args)
+        except LuaError as error:
+            sys.stdout.flush()
+            print(f'lua: {error}', file=sys.stderr)
+            for position, function in error.traceback[1:6]:
+                print(f'    in {function} at {position}', file=sys.stderr)
+            raise SystemExit(1)
+        except LuaExit as exit_:
+            raise SystemExit(exit_.code)
+        for operation, what in host.denied:
+            print(f'note: sandbox refused to {operation} {what}', file=sys.stderr)
+        return
+
+    from wc3files.grimex import ExternalRunner
+    map_files = None
+    if args.map:
+        from wc3files.vjass.api import _read_map_files
+        map_files = _read_map_files(args.map)
+    with ExternalRunner(map_files, workspace=args.workspace,
+                        lookup_folders=[os.path.dirname(os.path.abspath(args.script))]
+                        ) as runner:
+        done = runner.run_script(source, tool=args.tool, chunkname=args.script)
+    _report_externals(done)
+    if done.errors:
+        raise SystemExit(1)
+    if not done.changed:
+        return
+    if args.output is None:
+        if args.map is None:
+            return
+        args.output = args.map
+    if args.output.lower().endswith(('.w3x', '.w3m')):
+        from wc3files.w3x import W3xFile
+        W3xFile().build_from_files(done.files, args.output)
+        print(f'Wrote {args.output}')
+        return
+    for name, data in done.changed_files().items():
+        destination = os.path.join(args.output, *name.split('\\'))
+        os.makedirs(os.path.dirname(destination), exist_ok=True)
+        with open(destination, 'wb') as handle:
+            handle.write(data)
+        print(f'Wrote {destination}')
+
+
+def _write_or_print(text, output):
+    if output and output != '-':
+        with open(output, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(text)
+        print(f'Wrote {output}')
     else:
         sys.stdout.write(text)
 
@@ -507,9 +885,15 @@ def _cmd_replay_actions(args):
             apm_totals[player_id] += 1
 
     minutes = (data['header']['sub'].get('replay_length') or 0) / 60000.0
+    unfinished = getattr(replay, 'unfinished', False)
+    if unfinished:
+        # The game never wrote this replay's header (a crash or a hang),
+        # so its length is the sum of the recorded time slots.
+        minutes = sum(block.get('time_increment') or 0 for block in blocks) / 60000.0
 
     print(f"actions      : {sum(totals.values())}")
-    print(f"length       : {minutes:.1f} min")
+    print(f"length       : {minutes:.1f} min"
+          + (' (unfinished replay: up to the last recorded time slot)' if unfinished else ''))
     print(f"id mapping   : {'shifted at 0x%02X' % threshold if threshold else 'classic'}")
     print()
     header = f"{'player':24} {'actions':>9} {'apm-actions':>12}"
@@ -993,6 +1377,10 @@ def build_parser():
         prog='wc3files',
         description='Read/write Warcraft III map, campaign, and replay files.',
     )
+    parser.add_argument('--game-data', metavar='PROFILE', default=None,
+                        help=('Read game tables (object data, natives, GUI triggers) from '
+                              'a profile made by gamedata-extract instead of the bundled '
+                              'Reforged ones.'))
     parser.add_argument('-v', '--verbose', action='store_true',
                          help='Show this package\'s own debug/info logging (quiet by default).')
     subparsers = parser.add_subparsers(dest='command', required=True)
@@ -1344,7 +1732,178 @@ def build_parser():
     p_jass.add_argument('--keep', action='append', default=None,
                         help=('An identifier to leave alone (repeatable). Use for '
                               'names other scripts or the map call into.'))
+    p_jass.add_argument('--to-lua', action='store_true',
+                        help=('Translate a JASS script to Lua 5.3, as Reforged runs '
+                              'JASS-era code (integer division, string +, arrays).'))
+    p_jass.add_argument('--check', action='store_true',
+                        help=('Check calls against common.j/blizzard.j (and, for Lua, '
+                              'undefined globals and the Lua 5.3 library) and print '
+                              'the findings instead of the script. Exits 1 on an issue.'))
     p_jass.set_defaults(func=_cmd_jass)
+
+    p_vjass = subparsers.add_parser(
+        'vjass', help=('Compile vJass and Zinc to plain JASS (what JassHelper '
+                       'does): a script, several scripts, or a whole map.'))
+    p_vjass.add_argument('input', nargs='+',
+                         help=('Source file(s), compiled together in order; or '
+                               'one map (.w3x/.w3m or a folder map), whose '
+                               'war3map.j is compiled and written back.'))
+    p_vjass.add_argument('-o', '--output', default=None,
+                         help=("Where to write the JASS (default: stdout). For "
+                               "a map: the map to write (default: in place)."))
+    p_vjass.add_argument('--debug', action='store_true',
+                         help='Debug build: keep debug code, DEBUG_MODE=true.')
+    p_vjass.add_argument('-O', '--optimize', action='store_true',
+                         help='Inline one-line functions (JassHelper\'s '
+                              'optimizer).')
+    p_vjass.add_argument('--common', help='common.j to compile against '
+                                          '(default: the bundled copy).')
+    p_vjass.add_argument('--blizzard', help='Blizzard.j to compile against '
+                                            '(default: the bundled copy).')
+    p_vjass.add_argument('--conf', help="A JassHelper jasshelper.conf to read "
+                                        "(lookup folders and options).")
+    p_vjass.add_argument('-I', '--lookup', action='append', default=None,
+                         help='A folder //! import searches (repeatable).')
+    p_vjass.add_argument('-D', '--define', action='append', default=None,
+                         help=('Force a constant for static if, NAME or '
+                               'NAME=false (repeatable).'))
+    p_vjass.add_argument('--max-array-size', type=int, default=None,
+                         help=('Size of one JASS array: 8191 (default, matches '
+                               'JassHelper) or 32768 (game 1.29+).'))
+    p_vjass.add_argument('--strict', action='store_true',
+                         help='Make undeclared names an error instead of a '
+                              'warning.')
+    p_vjass.add_argument('--force-method-evaluate', action='store_true',
+                         help=('Calling a method above its declaration is an '
+                               'error ([forcemethodevaluate]).'))
+    p_vjass.add_argument('--no-implicit-this', action='store_true',
+                         help='Bare member names do not mean this.member.')
+    p_vjass.add_argument('--check', action='store_true',
+                         help='Validate the compiled JASS against the natives.')
+    p_vjass.add_argument('--preprocess', action='store_true',
+                         help=('Print the source after imports, text macros, '
+                               'debug lines and Zinc translation, and stop.'))
+    p_vjass.add_argument('-q', '--quiet', action='store_true',
+                         help='Do not print warnings.')
+    p_vjass.add_argument('--max-warnings', type=int, default=50,
+                         help='Warnings to print before summarizing '
+                              '(default: 50).')
+    p_vjass.add_argument('--externals', choices=('note', 'check', 'run'),
+                         default='note',
+                         help=('What to do with //! external calls and external '
+                               'blocks: note them (default), check them (run them '
+                               'in a sandbox and report errors, changing nothing) '
+                               'or run them (a map gets the object data they '
+                               'make; for a script, the changed files are written '
+                               'to --externals-dir).'))
+    p_vjass.add_argument('--externals-dir', default=None,
+                         help=('Where --externals run writes the files it changes '
+                               'when the input is a script (default: next to -o).'))
+    p_vjass.add_argument('--workspace', default=None,
+                         help=('The external tools\' sandbox folder, kept between '
+                               'runs (default: a temporary one).'))
+    p_vjass.set_defaults(func=_cmd_vjass)
+
+    p_lua = subparsers.add_parser(
+        'lua', help=('Run a Lua script in a sandbox: plain Lua 5.1/5.3, or with a '
+                     'Grim Extension Pack tool\'s functions (ObjectMerger, ...) '
+                     'against a map.'))
+    p_lua.add_argument('script', help='The .lua file to run.')
+    p_lua.add_argument('args', nargs='*', help='Arguments for the script (...).')
+    p_lua.add_argument('--tool', default=None,
+                       choices=('ObjectMerger', 'FileImporter', 'FileExporter',
+                                'ConstantMerger'),
+                       help='Run it as this tool would (its functions are defined).')
+    p_lua.add_argument('--map', help='The map the tool works on (.w3x/.w3m or folder).')
+    p_lua.add_argument('-o', '--output',
+                       help=('Where to write the result: a .w3x/.w3m map, or a '
+                             'folder for the changed files (default: the --map, '
+                             'in place).'))
+    p_lua.add_argument('--workspace', help='The tool\'s sandbox folder.')
+    p_lua.add_argument('--lua-version', choices=('5.1', '5.3'), default='5.1',
+                       help='Lua version to run (plain mode; default 5.1).')
+    p_lua.add_argument('--root',
+                       help='Plain mode: the folder the script may read (default: '
+                            'its own).')
+    p_lua.add_argument('--allow-write', action='store_true',
+                       help='Plain mode: let the script write under --root.')
+    p_lua.add_argument('--max-steps', type=int, default=50_000_000,
+                       help='Stop the script after this many steps (0: no limit).')
+    p_lua.set_defaults(func=_cmd_lua)
+
+    p_gd = subparsers.add_parser(
+        'gamedata-extract', help=('Copy a game install\'s data tables (classic MPQ or '
+                                  'CASC) into a profile folder for --game-data.'))
+    p_gd.add_argument('install', help='The game install folder.')
+    p_gd.add_argument('output', help='The profile folder to write.')
+    p_gd.add_argument('--locale', default='enUS', help='Locale of the strings (CASC).')
+    p_gd.add_argument('--name', help='A name for the profile (default: the folder name).')
+    p_gd.set_defaults(func=_cmd_gamedata_extract)
+
+    p_slk = subparsers.add_parser(
+        'slk', help=('Slk mode: move a map\'s object data into the tables the game '
+                     'reads (Units\\UnitData.slk, ...), for release.'))
+    p_slk.add_argument('input', help='The .w3x/.w3m map.')
+    p_slk.add_argument('output', help='The map to write.')
+    p_slk.set_defaults(func=_cmd_slk_mode)
+
+    p_obj = subparsers.add_parser(
+        'obj', help=('Obj mode: turn a map\'s object-data tables back into object '
+                     'files the World Editor reads.'))
+    p_obj.add_argument('input', help='The .w3x/.w3m map.')
+    p_obj.add_argument('output', help='The map to write.')
+    p_obj.set_defaults(func=_cmd_obj_mode)
+
+    p_opt = subparsers.add_parser(
+        'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '
+                          'drop unused objects and editor-only files, move object '
+                          'data to the game\'s tables.'))
+    p_opt.add_argument('input', help='The .w3x/.w3m map.')
+    p_opt.add_argument('output', help='The map to write.')
+    p_opt.add_argument('--remove-unused-objects', action='store_true',
+                       help='Drop custom objects nothing refers to.')
+    p_opt.add_argument('--remove-we-only', action='store_true',
+                       help='Drop the files only the World Editor reads.')
+    p_opt.add_argument('--mdx-squeeze', action='store_true',
+                       help='Cut the precision of version 800 models so they compress '
+                            'about a third better (lossy, about 0.8%%).')
+    p_opt.add_argument('--computed-text', action='store_true',
+                       help='Write the values of <A000,DataA1> references into the text.')
+    p_opt.add_argument('--slk', action='store_true',
+                       help='Then move object data into the tables (as `slk`).')
+    p_opt.set_defaults(func=_cmd_optimize)
+
+    p_ui = subparsers.add_parser(
+        'trigger-ui', help=('Convert GUI trigger definitions between the World Editor\'s '
+                            'TriggerData.txt/TriggerStrings.txt and YDWE\'s ui folder; '
+                            'several folders are merged in order.'))
+    p_ui.add_argument('inputs', nargs='+',
+                      help=('TriggerData.txt [TriggerStrings.txt], or one or more ui folders '
+                            '(a base, then plugins), then the output: a ui folder, or a '
+                            'folder for the two .txt files.'))
+    p_ui.add_argument('--lang', help='Language subfolder of the ui folders to read (zhCN, ...).')
+    p_ui.set_defaults(func=_cmd_trigger_ui)
+
+    p_lni = subparsers.add_parser(
+        'lni', help=('Turn a map into a folder of text files (objects as Lni, '
+                     'the rest as JSON or as they are), or such a folder back into a map.'))
+    p_lni.add_argument('input', help='A .w3x/.w3m map, or an Lni folder.')
+    p_lni.add_argument('output', help='The folder to write, or the map to build.')
+    p_lni.set_defaults(func=_cmd_lni)
+
+    p_run_map = subparsers.add_parser(
+        'run-map', help=('Run a map script without the game (common.j stubs, '
+                         'blizzard.j, timers) and report its runtime errors.'))
+    p_run_map.add_argument('input', help='A war3map.lua or war3map.j, or a .w3x/.w3m map.')
+    p_run_map.add_argument('--seconds', type=float, default=10.0,
+                           help='Game time to let pass after main() (default 10).')
+    p_run_map.add_argument('--players', type=int, default=1,
+                           help='Player slots in use (default 1).')
+    p_run_map.add_argument('--messages', action='store_true',
+                           help='Also print the text the map displays.')
+    p_run_map.add_argument('--max-steps', type=int, default=200_000_000,
+                           help='Stop after this many interpreter steps.')
+    p_run_map.set_defaults(func=_cmd_run_map)
 
     p_trig_text = subparsers.add_parser(
         'trigger-text',
@@ -1379,12 +1938,18 @@ def main(argv=None):
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    if getattr(args, 'game_data', None):
+        from wc3files import gamedata
+        gamedata.use(args.game_data)
+
     if not args.verbose:
         logger.remove()
         logger.add(sys.stderr, level='WARNING')
 
     try:
-        args.func(args)
+        # A command returns 1 (or another status) when it failed after
+        # reporting why; None means success.
+        status = args.func(args)
     except NotImplementedError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
@@ -1415,12 +1980,12 @@ def main(argv=None):
                             LuaParseError)):
             print(f"error: {args.input}: {exc}", file=sys.stderr)
             print("hint: if this script uses vJass (struct, method, library, "
-                  "scope) it needs JassHelper's compilation first - this "
-                  "package preprocesses text macros but does not compile "
-                  "vJass. See TODO.md.", file=sys.stderr)
+                  "scope) or Zinc, compile it to JASS first: "
+                  f"wc3files vjass {args.input} -o compiled.j",
+                  file=sys.stderr)
             return 1
         raise
-    return 0
+    return status if isinstance(status, int) else 0
 
 
 if __name__ == '__main__':

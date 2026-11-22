@@ -48,11 +48,16 @@ def load_mdx(data):
         raise ValueError(f'Invalid MDX magic: {magic!r}')
 
     model = empty_model()
+    # The chunks in the order the file has them, empty ones included, so
+    # that an unedited model writes back to the same bytes (tools differ:
+    # some put CAMS before EVTS, some keep an empty PREM).
+    model['chunkOrder'] = []
     while stream.remaining() >= 8:
         tag = stream.read_tag()
         size = stream.read_u32()
         start = stream.tell()
         end = start + size
+        model['chunkOrder'].append(tag)
 
         if tag == 'VERS':
             model['version'] = stream.read_u32()
@@ -83,7 +88,8 @@ def load_mdx(data):
         elif tag == 'BONE':
             model['bones'] = _read_until(stream, size, _read_bone)
         elif tag == 'LITE':
-            model['lights'] = _read_sized_objects(stream, size, _read_light)
+            model['lights'] = _read_sized_objects(stream, size,
+                                                  lambda s: _read_light(s, model['version']))
         elif tag == 'HELP':
             model['helpers'] = _read_until(stream, size, _read_helper)
         elif tag == 'ATCH':
@@ -102,7 +108,8 @@ def load_mdx(data):
         elif tag == 'CAMS':
             model['cameras'] = _read_sized_objects(stream, size, _read_camera)
         elif tag == 'CLID':
-            model['collisionShapes'] = _read_until(stream, size, _read_collision_shape)
+            model['collisionShapes'] = _read_until(stream, size,
+                                                   lambda s: _read_collision_shape(s, end))
         elif tag == 'BPOS':
             count = stream.read_u32()
             model['bindPose'] = [stream.read_float_array(12) for _ in range(count)]
@@ -133,15 +140,12 @@ def save_mdx(model):
     stream = BinaryStream(mode='write')
     stream.write_tag('MDLX')
 
+    written = []                 # (tag, payload), in the default order
+
     def chunk(tag, writer):
         body = BinaryStream(mode='write')
         writer(body)
-        payload = body.getvalue()
-        if not payload and tag not in ('VERS', 'MODL'):
-            return
-        stream.write_tag(tag)
-        stream.write_u32(len(payload))
-        stream.write_bytes(payload)
+        written.append((tag, body.getvalue()))
 
     version = model.get('version', 800)
     chunk('VERS', lambda s: s.write_u32(version))
@@ -164,7 +168,7 @@ def save_mdx(model):
     if model.get('bones'):
         chunk('BONE', lambda s: [_write_bone(s, b) for b in model['bones']])
     if model.get('lights'):
-        chunk('LITE', lambda s: [_write_light(s, lit) for lit in model['lights']])
+        chunk('LITE', lambda s: [_write_light(s, lit, version) for lit in model['lights']])
     if model.get('helpers'):
         chunk('HELP', lambda s: [_write_helper(s, h) for h in model['helpers']])
     if model.get('attachments'):
@@ -199,22 +203,58 @@ def save_mdx(model):
         chunk('CORN', lambda s: [_write_corn_emitter(s, e) for e in model['particleEmittersPopcorn']])
 
     for unknown in model.get('unknownChunks') or []:
-        data = unknown.get('data') or b''
-        stream.write_tag(unknown['tag'])
-        stream.write_u32(len(data))
-        stream.write_bytes(data)
+        written.append((unknown['tag'], unknown.get('data') or b''))
+
+    def emit(tag, payload):
+        stream.write_tag(tag)
+        stream.write_u32(len(payload))
+        stream.write_bytes(payload)
+
+    # The order the model was read in, when it has one; a chunk listed
+    # there that is now missing is written empty, as it was read. Chunks
+    # it does not list (added since, or a model from MDL) follow in the
+    # default order, and an empty one is left out.
+    for tag in model.get('chunkOrder') or []:
+        for index, (name, payload) in enumerate(written):
+            if name == tag:
+                emit(name, written.pop(index)[1])
+                break
+        else:
+            if tag in _ORDERED_EMPTY_OK:
+                emit(tag, b'')
+    for tag, payload in written:
+        if payload or tag in ('VERS', 'MODL'):
+            emit(tag, payload)
 
     return stream.getvalue()
+
+
+# Chunks the writer knows; one listed in chunkOrder with nothing left to
+# write is written empty (unknown chunks keep their data in unknownChunks).
+_ORDERED_EMPTY_OK = frozenset((
+    'SEQS', 'GLBS', 'MTLS', 'TEXS', 'TXAN', 'GEOS', 'GEOA', 'BONE', 'LITE', 'HELP',
+    'ATCH', 'PIVT', 'PREM', 'PRE2', 'RIBB', 'EVTS', 'CAMS', 'CLID', 'BPOS', 'FAFX',
+    'CORN'))
 
 
 def _read_sized_objects(stream, size, reader):
     objects = []
     total = 0
+    chunk_end = stream.tell() + size
     while total < size:
         start = stream.tell()
         inclusive = stream.read_u32()
         stream.seek(start)
-        objects.append(reader(stream))
+        item = reader(stream)
+        if isinstance(item, dict) and item.get('inclusiveSizeRaw') == inclusive:
+            inclusive &= 0xFFFFFF
+        if inclusive > size - total and isinstance(item, dict):
+            # Some exporters leave junk in the size's high byte (0x03 in
+            # version-1800 cameras). Kept to be written back as it was;
+            # the record really ends where its data does.
+            item['inclusiveSizeRaw'] = inclusive
+            inclusive = min(stream.tell(), chunk_end) - start
+        objects.append(item)
         total += inclusive
     return objects
 
@@ -227,11 +267,14 @@ def _read_until(stream, size, reader):
     return objects
 
 
-def _write_sized(stream, writer):
+def _write_sized(stream, writer, raw_size=None):
     body = BinaryStream(mode='write')
     writer(body)
     payload = body.getvalue()
-    stream.write_u32(len(payload) + 4)
+    size = len(payload) + 4
+    if raw_size is not None and raw_size & 0xFFFFFF == size:
+        size = raw_size           # the junk high byte it was read with
+    stream.write_u32(size)
     stream.write_bytes(payload)
 
 
@@ -317,7 +360,7 @@ def _write_material(stream, material, version):
         body.write_u32(len(layers))
         for layer in layers:
             _write_layer(body, layer, version)
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, material.get('inclusiveSizeRaw'))
 
 
 def _read_layer(stream, version):
@@ -371,7 +414,7 @@ def _write_layer(stream, layer, version):
         write_tracks(body, layer.get('tracks'))
         if layer.get('trailing'):
             body.write_u8_array(layer['trailing'])
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, layer.get('inclusiveSizeRaw'))
 
 
 def _read_texture_animation(stream):
@@ -471,6 +514,8 @@ def _read_geoset(stream, version):
                     pass
             stream.seek(start)
             geoset['skin'] = stream.read_u8_array(size)
+            # kept so the count is written back the way it was read
+            geoset['skinCountUnit'] = 1 if size == count else 2
 
     expect('UVAS')
     uv_sets = stream.read_u32()
@@ -549,7 +594,10 @@ def _write_geoset(stream, geoset, version):
         if version > 800 and geoset.get('skin') is not None:
             skin = geoset['skin']
             body.write_tag('SKIN')
-            body.write_u32(len(skin) // 2)  # influences, not bytes - see _read_geoset
+            # bytes or two-byte influences - see _read_geoset; a geoset
+            # without a recorded unit gets the one its version was seen with
+            unit = geoset.get('skinCountUnit') or (2 if version >= 1800 else 1)
+            body.write_u32(len(skin) // unit)
             body.write_u8_array(skin)
 
         uv_sets = geoset.get('uvSets') or []
@@ -560,7 +608,7 @@ def _write_geoset(stream, geoset, version):
             body.write_u32(len(uv) // 2)
             body.write_float_array(uv)
 
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, geoset.get('inclusiveSizeRaw'))
 
 
 def _read_geoset_animation(stream):
@@ -585,7 +633,7 @@ def _write_geoset_animation(stream, anim):
         body.write_float_array(anim.get('color') or [1.0, 1.0, 1.0])
         body.write_u32(anim.get('geosetId', 0))
         write_tracks(body, anim.get('tracks'))
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, anim.get('inclusiveSizeRaw'))
 
 
 def _read_bone(stream):
@@ -611,7 +659,10 @@ def _write_helper(stream, helper):
     write_node(stream, helper.get('node') or {})
 
 
-def _read_light(stream):
+_LIGHT_TRACKS = frozenset(('KLAS', 'KLAE', 'KLAC', 'KLAI', 'KLBI', 'KLBC', 'KLAV'))
+
+
+def _read_light(stream, version=800):
     inclusive = stream.read_u32()
     end = stream.tell() + inclusive - 4
     # inclusive covers node + light fields + tracks; node has its own inclusive.
@@ -625,14 +676,27 @@ def _read_light(stream):
         'intensity': stream.read_f32(),
         'ambientColor': stream.read_float_array(3),
         'ambientIntensity': stream.read_f32(),
-        'tracks': read_tracks(stream, end),
     }
+    if version > 800 and stream.tell() + 4 <= end and \
+            stream.peek(4).decode('latin-1') not in _LIGHT_TRACKS:
+        # Many Reforged lights carry a shadow intensity before their tracks
+        # (not all: version-1000 files are seen both ways); without it the
+        # tracks were not found and both were dropped.
+        light['shadowIntensity'] = stream.read_f32()
+    if stream.tell() + 4 <= end and stream.peek(4).decode('latin-1') not in _LIGHT_TRACKS:
+        # A layout with more fields than the known one (4 files of 3,756
+        # checked, from one exporter): the fields above may be misplaced,
+        # so the rest is kept as it is and written back unchanged.
+        light['unparsedTail'] = stream.read_bytes(end - stream.tell())
+        light['tracks'] = {}
+        return light
+    light['tracks'] = read_tracks(stream, end)
     if stream.tell() != end:
         stream.seek(end)
     return light
 
 
-def _write_light(stream, light):
+def _write_light(stream, light, version=800):
     def write_body(body):
         write_node(body, light.get('node') or {})
         body.write_u32(light.get('type', 0))
@@ -642,8 +706,13 @@ def _write_light(stream, light):
         body.write_f32(light.get('intensity', 0.0))
         body.write_float_array(light.get('ambientColor') or [0.0, 0.0, 0.0])
         body.write_f32(light.get('ambientIntensity', 0.0))
-        write_tracks(body, light.get('tracks'))
-    _write_sized(stream, write_body)
+        if version > 800 and 'shadowIntensity' in light:
+            body.write_f32(light['shadowIntensity'])
+        if light.get('unparsedTail') is not None:
+            body.write_bytes(light['unparsedTail'])
+        else:
+            write_tracks(body, light.get('tracks'))
+    _write_sized(stream, write_body, light.get('inclusiveSizeRaw'))
 
 
 def _read_attachment(stream):
@@ -666,7 +735,7 @@ def _write_attachment(stream, attachment):
         body.write_fixed_string(attachment.get('path', ''), 260)
         body.write_u32(attachment.get('attachmentId', 0))
         write_tracks(body, attachment.get('tracks'))
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, attachment.get('inclusiveSizeRaw'))
 
 
 def _read_particle_emitter(stream):
@@ -699,7 +768,7 @@ def _write_particle_emitter(stream, emitter):
         body.write_f32(emitter.get('lifespan', 0.0))
         body.write_f32(emitter.get('initialVelocity', 0.0))
         write_tracks(body, emitter.get('tracks'))
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, emitter.get('inclusiveSizeRaw'))
 
 
 def _read_particle_emitter2(stream):
@@ -769,7 +838,7 @@ def _write_particle_emitter2(stream, emitter):
         body.write_u32(emitter.get('priorityPlane', 0))
         body.write_u32(emitter.get('replaceableId', 0))
         write_tracks(body, emitter.get('tracks'))
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, emitter.get('inclusiveSizeRaw'))
 
 
 def _read_ribbon_emitter(stream):
@@ -810,7 +879,7 @@ def _write_ribbon_emitter(stream, emitter):
         body.write_u32(emitter.get('materialId', 0))
         body.write_f32(emitter.get('gravity', 0.0))
         write_tracks(body, emitter.get('tracks'))
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, emitter.get('inclusiveSizeRaw'))
 
 
 def _read_event_object(stream):
@@ -838,7 +907,10 @@ def _write_event_object(stream, event):
 
 
 def _read_camera(stream):
-    inclusive = stream.read_u32()
+    raw = stream.read_u32()
+    # The size is the low 24 bits; the game's own cinematic cameras (and
+    # some exporters' version-1800 ones) have 0x03 in the high byte.
+    inclusive = raw & 0xFFFFFF
     end = stream.tell() + inclusive - 4
     camera = {
         'name': stream.read_fixed_string(80),
@@ -851,6 +923,8 @@ def _read_camera(stream):
     }
     if stream.tell() != end:
         stream.seek(end)
+    if raw != inclusive:
+        camera['inclusiveSizeRaw'] = raw
     return camera
 
 
@@ -863,12 +937,18 @@ def _write_camera(stream, camera):
         body.write_f32(camera.get('nearClippingPlane', 0.0))
         body.write_float_array(camera.get('targetPosition') or [0.0, 0.0, 0.0])
         write_tracks(body, camera.get('tracks'))
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, camera.get('inclusiveSizeRaw'))
 
 
-def _read_collision_shape(stream):
+def _read_collision_shape(stream, end=None):
     node = read_node(stream)
     shape_type = stream.read_u32()
+    needed = {0: 24, 1: 24, 2: 16, 3: 28}.get(shape_type, 12)
+    if end is not None and stream.tell() + needed > end:
+        # Shorter than its type needs (one exporter writes a type-3 shape
+        # with two floats): kept as it is rather than refused.
+        return {'node': node, 'type': shape_type,
+                'unparsedTail': stream.read_bytes(end - stream.tell())}
     if shape_type in (0, 1, 3):
         vertices = [stream.read_float_array(3), stream.read_float_array(3)]
     else:
@@ -887,6 +967,9 @@ def _write_collision_shape(stream, shape):
     write_node(stream, shape.get('node') or {})
     shape_type = shape.get('type', 0)
     stream.write_u32(shape_type)
+    if shape.get('unparsedTail') is not None:
+        stream.write_bytes(shape['unparsedTail'])
+        return
     for vertex in shape.get('vertices') or []:
         stream.write_float_array(vertex)
     if shape_type in (2, 3):
@@ -923,4 +1006,4 @@ def _write_corn_emitter(stream, emitter):
         body.write_fixed_string(emitter.get('path', ''), 260)
         body.write_fixed_string(emitter.get('flags', ''), 260)
         write_tracks(body, emitter.get('tracks'))
-    _write_sized(stream, write_body)
+    _write_sized(stream, write_body, emitter.get('inclusiveSizeRaw'))

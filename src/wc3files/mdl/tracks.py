@@ -59,6 +59,13 @@ TRACK_VALUE_SIZE = {
     'KCTR': ('f32x3', 12),
     'KCRL': ('f32', 4),
     'KTTR': ('f32x3', 12),
+    # Reforged cinematic cameras (the game's own Cinematics/ models): one
+    # float per key each; the tags read back to front are FUDI, FALE and
+    # FSTP, perhaps depth-of-field settings - unconfirmed, so the raw tags
+    # are kept.
+    'IDUF': ('f32', 4),
+    'ELAF': ('f32', 4),
+    'PTSF': ('f32', 4),
     # Corn emitter
     'KPPA': ('f32', 4),
     'KPPC': ('f32x3', 12),

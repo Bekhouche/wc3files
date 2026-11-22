@@ -2,6 +2,7 @@
 metadata-driven schema/base-data/enum/string pipeline. The metadata-side
 assertions are pinned to facts already verified once (and documented in
 TODO.md) against a real Reforged install - not guesses."""
+import copy
 import os
 import tempfile
 import unittest
@@ -9,6 +10,8 @@ import unittest
 import _helpers
 from wc3files import ObjectFile
 from wc3files.data import BinaryDataType, ObjectFileType
+from wc3files.files.binary_file import BinaryFile
+from wc3files.w3o.object_file import ObjectTable
 from wc3files.w3o.object_metadata import ObjectMetaData
 from wc3files.w3o.object_base_data import BaseObjectData
 from wc3files.w3o.object_editor_enums import ObjectEditorEnums
@@ -35,6 +38,60 @@ class TestObjectFileRoundTrip(unittest.TestCase):
             out = os.path.join(tmp, 'roundtrip.w3u')
             self.obj.write(out)
             self.assertEqual(_helpers.read_bytes(out), original)
+
+
+class TestObjectTableFilter(unittest.TestCase):
+    """ObjectTable.filter (issue #2): `remove` used to keep exactly the listed
+    ids instead of dropping them. The table is built from the real custom
+    unit of sample.w3u, copied under two more ids."""
+
+    def setUp(self):
+        obj = ObjectFile()
+        obj.read(_helpers.sample_path('sample.w3u'))
+        custom = obj.export_data()['w3u']['custom']
+        self.data = {'h000': custom['h000'],
+                     'h001': copy.deepcopy(custom['h000']),
+                     'h002': copy.deepcopy(custom['h000'])}
+
+    def table(self):
+        table = ObjectTable(ObjectFileType.Units, 'custom')
+        table.load(dict(self.data))
+        return table
+
+    def test_remove_drops_the_listed_ids(self):
+        table = self.table()
+        table.filter(remove=['h000'])
+        self.assertEqual(list(table.get()), ['h001', 'h002'])
+        self.assertEqual(len(table), 2)
+
+    def test_keep_keeps_only_the_listed_ids_in_table_order(self):
+        table = self.table()
+        table.filter(keep=['h002', 'h000', 'hNOT'])
+        self.assertEqual(list(table.get()), ['h000', 'h002'])
+        self.assertEqual(len(table), 2)
+
+    def test_keep_then_remove(self):
+        table = self.table()
+        table.filter(keep=['h000', 'h001'], remove=['h001'])
+        self.assertEqual(list(table.get()), ['h000'])
+
+    def test_no_arguments_changes_nothing(self):
+        table = self.table()
+        table.filter()
+        self.assertEqual(list(table.get()), ['h000', 'h001', 'h002'])
+
+    def test_filtered_table_writes_and_reads_back(self):
+        table = self.table()
+        table.filter(remove=['h001'])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'table.bin')
+            with BinaryFile(out, 'write') as writer:
+                table.write(writer)
+            reread = ObjectTable(ObjectFileType.Units, 'custom')
+            with BinaryFile(out, 'read') as reader:
+                reread.read(reader)
+        self.assertEqual(list(reread.get()), ['h000', 'h002'])
+        self.assertEqual(reread.get(), table.get())
 
 
 class TestObjectMetadataPipeline(unittest.TestCase):
@@ -325,6 +382,68 @@ class TestObjectFileMutationHooks(unittest.TestCase):
             obj.register_hook('bogus', lambda instance, data: None)
         with self.assertRaises(ValueError):
             obj.clear_hooks('bogus')
+
+
+class TestObjectFileFilter(unittest.TestCase):
+    """ObjectFile.filter (issue #3) was a stub with no `self` whose body did
+    nothing. The data is the real sample.w3u (original hfoo, custom h000) with
+    its custom unit copied under two more ids."""
+
+    def setUp(self):
+        import copy
+        self.obj = ObjectFile()
+        self.obj.read(_helpers.sample_path('sample.w3u'))
+        custom = self.obj.export_data()['w3u']['custom']
+        custom['h001'] = copy.deepcopy(custom['h000'])
+        custom['h002'] = copy.deepcopy(custom['h000'])
+
+    def ids(self, table):
+        return list(self.obj.export_data()['w3u'][table])
+
+    def test_remove_drops_the_listed_ids(self):
+        self.assertIs(self.obj.filter(remove=['h001']), self.obj)
+        self.assertEqual(self.ids('custom'), ['h000', 'h002'])
+        self.assertEqual(self.ids('original'), ['hfoo'])
+
+    def test_keep_keeps_only_the_listed_ids(self):
+        self.obj.filter(ObjectFileType.Units, keep=['h002', 'hfoo', 'hNOT'])
+        self.assertEqual(self.ids('custom'), ['h002'])
+        self.assertEqual(self.ids('original'), ['hfoo'])
+
+    def test_table_selects_where_the_filter_applies(self):
+        self.obj.filter('w3u', table='original', remove=['hfoo', 'h000'])
+        self.assertEqual(self.ids('original'), [])
+        self.assertEqual(self.ids('custom'), ['h000', 'h001', 'h002'])
+
+    def test_other_object_type_is_left_alone(self):
+        self.obj.filter('w3a', remove=['h000'])
+        self.assertEqual(self.ids('custom'), ['h000', 'h001', 'h002'])
+
+    def test_unknown_table_raises(self):
+        with self.assertRaises(ValueError):
+            self.obj.filter(table='customs', remove=['h000'])
+
+    def test_filtered_file_writes_and_reads_back(self):
+        self.obj.filter(remove=['h000', 'h002'])
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'filtered.w3u')
+            self.obj.write(out)
+            reread = ObjectFile()
+            reread.read(out)
+        data = reread.export_data()['w3u']
+        self.assertEqual(list(data['custom']), ['h001'])
+        self.assertEqual(data['custom']['h001']['ID'], 'hfoo')
+        self.assertEqual(data['original']['hfoo']['utst']['value'], 999)
+
+    def test_no_arguments_keeps_the_file_byte_identical(self):
+        obj = ObjectFile()
+        obj.read(_helpers.sample_path('sample.w3u'))
+        obj.filter()
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'same.w3u')
+            obj.write(out)
+            self.assertEqual(_helpers.read_bytes(out),
+                             _helpers.read_bytes(_helpers.sample_path('sample.w3u')))
 
 
 if __name__ == '__main__':

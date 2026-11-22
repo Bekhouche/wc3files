@@ -7,7 +7,10 @@ description: Work on the wc3files codebase itself (a pure-Python Warcraft III fi
 
 `wc3files` is a pure-Python library for reading and writing Warcraft III file
 formats (MPQ archives, W3X maps, W3O object data, W3R regions, W3G replays,
-MDL/MDX models). No StormLib dependency is required for the formats it
+MDL/MDX models, GUI triggers, images, and more), plus the tools built on
+them: a vJass/Zinc compiler, JASS and Lua interpreters, whole-map
+Lni/Slk/Obj conversion, a map optimizer, a CASC reader for an installed game
+and a `wc3files` CLI. No StormLib dependency is required for the formats it
 targets - MPQ is documented well enough to implement natively.
 
 ## Where things live
@@ -36,12 +39,18 @@ targets - MPQ is documented well enough to implement natively.
 - `src/wc3files/w3x/` - `W3xFile`: the top-level map wrapper. `build()` /
   `build_from_files()` repack a map from a directory or an in-memory
   `{filename: bytes}` table - this is the read -> edit `self.files` ->
-  repack workflow.
+  repack workflow. `w3x/modes.py` holds w3x2lni's whole-map Slk and Obj
+  modes (`map_to_slk`: object data moved into the literal SLK tables the game
+  reads, and back), and `w3x/optimize.py` the optimizer passes
+  (`remove_unused_objects`, `remove_we_only`), run by `wc3files optimize`.
 - `src/wc3files/w3i/` - `W3iFile`, `war3map.w3i` (map info: head, players,
   forces, camera bounds, loading screen, fog, environment, tech/upgrade
-  availability, random unit/item tables). Verified byte-offset-by-byte
-  against real maps for versions 18/25/28/31. Raises on version > 31 rather
-  than guessing - see TODO.md for the version-33 gap.
+  availability, random unit/item tables). Versions 18, 25-33 and 39 are
+  read, checked against real maps; any other version raises. Version 39
+  (Reforged 3.0 editor) is undocumented and has two player-record layouts,
+  so every version-39 parse is re-serialized and compared with the bytes it
+  came from: a file either reads correctly or raises. See the docstring at
+  the top of `w3i_file.py` for the per-version layout.
 - `src/wc3files/table/` - generic tabular text formats reused across formats
   (not object-data-specific despite originating in `w3o/`): `SlkFile`/`Sylk`/
   `SylkParser` (SYLK spreadsheet format, read/write) and `WtsFile` (war3map.wts
@@ -86,8 +95,11 @@ targets - MPQ is documented well enough to implement natively.
   `Literal`/`VarExpr`/`UnaryExpr`/`BinaryExpr`/`IfStmt` where the shape
   genuinely matches JASS's, with new Lua-only node types everywhere else (see
   `ir.py`'s "Lua-only nodes" section) - `ScriptFile` dispatches `.lua` to this
-  frontend (`validate=True` against a `.lua` path still raises - no native/BJ
-  checker exists for Lua). `lua_obfuscator.py`'s `obfuscate_lua` (phase 5) is
+  frontend; `validate()` on Lua runs `lua_checker.py`'s `check_chunk`
+  (undefined globals, Lua 5.3 library members, native/BJ argument counts and
+  inferable types - FourCC, boolexpr - with feature tests, hooks, aliases and
+  metatable operators deliberately left alone; CLI `jass --check`).
+  `lua_obfuscator.py`'s `obfuscate_lua` (phase 5) is
   a genuinely different design from JASS's flat-namespace `obfuscator.py`, not
   a reuse of it - a real scope-tracking walk that renames every local/param/
   loop-var binding and never touches a global at all (Lua's dynamic global
@@ -95,7 +107,12 @@ targets - MPQ is documented well enough to implement natively.
   `ExecuteFunc`/`TriggerRegisterVariableEvent` mechanisms) and does not
   attempt dead-code elimination (removing a Lua local could discard its
   initializer's side effects). See TODO.md for the full accounting, including
-  three real bugs a 23-fixture real-world sweep found and fixed.
+  three real bugs a 23-fixture real-world sweep found and fixed. Scripts can
+  also be run: `jass_vm.py` is a small JASS interpreter for testing compiled
+  scripts, `lua_vm.py` a pure-Python Lua interpreter, `wc3_runtime.py`
+  (`MapRuntime`) runs a Reforged `war3map.lua` without the game to find the
+  errors it makes while it sets itself up (CLI `run-map`), and
+  `jass_to_lua.py` translates JASS to Lua 5.3.
 - `src/wc3files/w3r/` - region files (`RegionFile`), full read/write.
 - `src/wc3files/mmp/` - `PreviewIconsFile`, war3map.mmp (minimap preview-icon
   overlays - gold-mine/neutral-building/player-start markers on the map preview
@@ -122,9 +139,56 @@ targets - MPQ is documented well enough to implement natively.
   versions 1-3). The version>=2 tail is a genuinely unresolved ambiguity across
   every reference source - kept as an opaque bytes blob per record rather than
   assigning unverified field names (see TODO.md).
-- `src/wc3files/w3g/` - replay files. `read()` currently has dev-debug
-  `print()`/`exit()` left in; `write()` is unimplemented. Known-broken, see
-  TODO.md.
+- `src/wc3files/w3g/` - `ReplayFile`, replay files, read/write. The block
+  stream after the setup preamble is modelled (`blocks.py`), player actions
+  are decoded (`actions.py`) and named (`names.py`), and W3MMD map metadata
+  is read (`mmd.py`; CLI `replay-mmd`, `replay-actions`). An unfinished
+  replay (the `TempReplay.w3g` left after a crash, with no header yet) reads
+  up to its last whole block and is written back only unchanged.
+- `src/wc3files/doo/` - `MapDoodadsFile` (`war3map.doo`, doodad and
+  destructable placement) and `MapUnitsFile` (`war3mapUnits.doo`, unit and
+  item placement). The two share the `.doo` extension and the `W3do` magic
+  but are different formats.
+- `src/wc3files/imp/` - `ImpFile`, `war3map.imp` / `war3campaign.imp` (the
+  imported-file list).
+- `src/wc3files/w3f/` - `CampaignInfoFile`, `war3campaign.w3f` (campaign
+  info and map lists).
+- `src/wc3files/wtg/` - GUI triggers: `MapTriggersFile` (`war3map.wtg`,
+  needs the bundled `TriggerData.txt`) and `MapCustomTextTriggersFile`
+  (`war3map.wct`). Also `from_script.py` (GUI triggers recovered from the
+  JASS the World Editor generated; recall is measured in TODO.md),
+  `trigger_text.py` (triggers rendered as the editor shows them), `merge.py`
+  (Grim Extension Pack's TriggerMerger) and `ydwe_ui.py` (YDWE's `ui` folder
+  to and from `TriggerData.txt`/`TriggerStrings.txt`).
+- `src/wc3files/wai/` - `.wai` AI Editor scripts. Deliberately partial: the
+  format is undocumented and only six samples ship with the game.
+- `src/wc3files/fdf/` - `.fdf` frame definition files (the UI layout
+  language) and their `.toc` tables of contents.
+- `src/wc3files/popcorn/` - the PopcornFX files Reforged ships: `.pkcf`
+  read/write, `.pkmm` name table only, `.pkb` header only.
+- `src/wc3files/casc/` - `CascStorage`: open an installed game and read files
+  out of its CASC storage (`.build.info` and configs, local index, archives,
+  BLTE, encoding and root tables). BLTE's encrypted `E` chunks cannot be
+  read, since the storage does not carry their keys. CLI `casc-info`,
+  `casc-list`, `casc-search`, `casc-extract`, `casc-export-gamedata`.
+- `src/wc3files/vjass/` - `VJassCompiler`, a vJass and Zinc compiler (a
+  pure-Python JassHelper). The output is plain JASS, and generated names
+  follow JassHelper's (`s__Struct_member`, ...), so code written against
+  JassHelper's output keeps working. `//! external` and `//! externalblock`
+  calls are collected for `grimex`. CLI `vjass`.
+- `src/wc3files/grimex/` - Grim Extension Pack's external tools
+  (ObjectMerger, FileImporter, FileExporter, ConstantMerger), run without
+  the World Editor on the calls `vjass` collects; their Lua runs on
+  `scripts/lua_vm.py`.
+- `src/wc3files/lni/` - Lni mode: a whole map as a folder of text files, in
+  w3x2lni's layout, and back (`map_to_lni`, `lni_to_map`; CLI `lni`).
+- `src/wc3files/gamedata.py` - game-data profiles: the bundled tables are one
+  game version's; a profile is the same files taken from another install
+  (`gamedata-extract`, then `--game-data <profile>`).
+- `src/wc3files/cli/` - the `wc3files` console script (also
+  `python -m wc3files.cli`). `main.py` defines the subcommands, and
+  `formats.py` the per-format `dump` (binary to JSON) and `build` (JSON to
+  binary) adapters. `wc3files --help` lists every command.
 - `src/wc3files/mdl/` - MDL/MDX model files, full read/write for text and
   binary formats. Ahead of w3x2lni here (it doesn't parse models
   structurally).
@@ -179,9 +243,14 @@ targets - MPQ is documented well enough to implement natively.
 - `StormLib/` - another local dev-only reference clone (gitignored, same as
   `w3x2lni/`), present for reference/comparison only; not a runtime
   dependency of this package.
-- `TODO.md` - the authoritative gap list against w3x2lni. Check it before
-  starting work to avoid duplicating a documented "not implemented" item,
-  and update it when a gap is closed or a new one is found.
+- GitHub issues (`Bekhouche/wc3files`) - where bugs, gaps and follow-ups are
+  tracked. One issue per specific case, fixed by its own PR that links it
+  (`Fixes #N`). Milestones are release versions (`v0.1.1`, ...); an issue
+  goes in the milestone of the release it should ship in, and backlog issues
+  have none. Check the open issues before starting work.
+- `TODO.md` - the gap list against w3x2lni from before the issues, kept
+  locally (gitignored) as a record of what was measured and why. Read it for
+  context; new findings go into issues, not here.
 
 ## Conventions
 
@@ -189,14 +258,19 @@ targets - MPQ is documented well enough to implement natively.
   on a `*File` class; keep new formats consistent with that shape.
 - When a parser can't confidently handle a case (e.g. an undocumented field
   layout), raise rather than silently mis-parsing - see `W3iFile`'s
-  version > 31 guard for the pattern to follow.
+  version-39 check (re-serialize and compare, raise on a mismatch) for the
+  pattern to follow. The exception is a field the game itself ignores: map
+  protectors set such fields to junk, so check the benchmark corpus before
+  making one a reason to raise.
 - Round-trip correctness is the bar: read a real file, write it back
   unmodified, and diff against the original (or reread and compare
   structurally) before considering a parser/writer done.
-- Lazy-import optional/heavy decompression paths (see `dclimplode` in the
-  MPQ reader) rather than importing them eagerly at module load - eager
-  imports of unbuildable deps previously broke the package on plain
-  installs.
+- Keep runtime dependencies pure Python. Every MPQ compression method
+  (zlib, bzip2, PKWare DCL, Huffman, ADPCM) lives in `mpq/compression.py`,
+  and one block reader (`mpq/sectors.py`) serves both `MpqFiles` and
+  `W3xFile`; the optional C `dclimplode` codec it replaced never built here.
+  Lazy-import anything optional rather than importing it at module load -
+  eager imports of unbuildable deps previously broke plain installs.
 
 ## Testing
 
@@ -225,11 +299,12 @@ subfolder per source package (`samples/img/sample.blp`,
 recursively, so call sites (`sample_path('sample.blp')`) never need to know
 or care which subfolder a fixture actually lives in. `w3o/gamedata/*.slk` and
 `scripts/gamedata/{common,blizzard}.j` (real bundled Blizzard data) are used
-directly as fixtures too, rather than duplicated into `tests/samples/`. The
-one exception is `war3map.w3g`: `ReplayFile.write()` rebuilds from internal
-reader state, not a plain data dict, so there's no safe synthetic fixture -
-that test skips unless a real replay is pointed at via the
-`WC3FILES_TEST_REPLAY` env var.
+directly as fixtures too, rather than duplicated into `tests/samples/`.
+Replays are built synthetically inside `test_w3g.py`; the tests that need
+real game bytes skip unless a real replay is pointed at via the
+`WC3FILES_TEST_REPLAY` env var. Likewise the CASC tests need
+`WC3FILES_TEST_CASC` (a game install), and the script sweeps local
+`outputs/` fixtures.
 
 When adding a new format or fixing a bug, add a real test for it here rather
 than a scratch script - a scratch script only proves the fix once, on one

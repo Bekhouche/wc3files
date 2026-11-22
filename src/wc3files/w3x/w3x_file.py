@@ -1,7 +1,5 @@
 import os
 import re
-import bz2
-import zlib
 import struct
 import ctypes
 from enum import Enum
@@ -13,6 +11,8 @@ from wc3files.w3o.object_file import ObjectFile
 from wc3files.mpq.writer import MpqWriter
 from wc3files.mpq.data import MpqProtectionLevel
 from wc3files.mpq.files import extract_references, is_scan_candidate
+from wc3files.mpq.sectors import read_block
+from wc3files.mpq import compression as _compression
 
 
 class W3xReadMode(Enum):
@@ -341,7 +341,6 @@ class W3xFile(object):
                self._data['BLOCK_TABLE'].append(entry)
 
      def read_file(self, reader, filename):
-          force_decompress = False
           hash_entry = self.get_hash_table_entry(filename)
           if hash_entry is None:
                return None
@@ -362,67 +361,11 @@ class W3xFile(object):
                     if block_entry['Flags'] & MPQFileDataType.FIX_KEY.value:
                          key = (key + block_entry['BlockOffset']) ^ block_entry['FileSize']
 
-               if not block_entry['Flags'] & MPQFileDataType.SINGLE_UNIT.value:
-                    sector_size = 512 << self._data['HEADER']['SectorSizeShift']
-                    sectors = block_entry['FileSize'] // sector_size + 1
-                    if block_entry['Flags'] & MPQFileDataType.SECTOR_CRC.value:
-                         crc = True
-                         sectors += 1
-                    else:
-                         crc = False
+               sector_size = 512 << self._data['HEADER']['SectorSizeShift']
+               file_data = read_block(
+                    reader, block_entry, offset, sector_size, self.decrypt,
+                    key if block_entry['Flags'] & MPQFileDataType.ENCRYPTED.value else 0)
 
-                    result = BytesIO()
-                    sector_bytes_left = block_entry['FileSize']
-                    # 'sectors' already spans every data sector including a trailing partial one
-                    # (positions[-1] always lands on the block's true compressed end).
-                    block_count = sectors
-
-                    reader.seek(offset)
-                    sectors_data = reader.read(BinaryDataType.BYTES, num=4*(sectors+1))
-                    if block_entry['Flags'] & MPQFileDataType.ENCRYPTED.value:
-                         sectors_data = self.decrypt(sectors_data, key - 1)
-                    positions = struct.unpack('<%dI' % (sectors + 1), sectors_data)
-
-                    current_offset = 0
-                    if block_entry['Flags'] & MPQFileDataType.COMPRESS.value :
-                         reader.seek(offset + positions[0])
-                         raw_bytes_to_read = positions[block_count] - positions[0]
-                    else:
-                         raw_bytes_to_read = block_entry['FileSize']
-
-                    file_data = reader.read(BinaryDataType.BYTES, num=raw_bytes_to_read)
-
-                    for i in range(block_count):
-                         expected_sector_size = min(sector_size, sector_bytes_left)
-                         this_sector_size = expected_sector_size
-                         if block_entry['Flags'] & MPQFileDataType.COMPRESS.value:
-                              this_sector_size = positions[i+1] - positions[i]
-
-                         sector = file_data[current_offset:current_offset + this_sector_size]
-                         if block_entry['Flags'] & MPQFileDataType.ENCRYPTED.value:
-                              sector = self.decrypt(sector, key + i)
-
-                         # A sector is only actually compressed when its stored size is smaller
-                         # than its decompressed size; otherwise it was stored raw (common for
-                         # already-compressed media like .mp3/.blp) and must be used as-is.
-                         if (block_entry['Flags'] & MPQFileDataType.COMPRESS.value and
-                         (force_decompress or len(sector) < expected_sector_size)):
-                              sector = self.decompress(sector)
-
-                         sector_bytes_left -= len(sector)
-                         result.write(sector)
-
-                         current_offset += this_sector_size
-                    file_data = result.getvalue()
-
-               else:
-                    reader.seek(offset)
-                    file_data = reader.read(BinaryDataType.BYTES, num=block_entry['BlockSize'])
-
-                    if (block_entry['Flags'] & MPQFileDataType.COMPRESS.value and
-                         (force_decompress or block_entry['FileSize'] > block_entry['BlockSize'])):
-                         file_data = self.decompress(file_data)
-               
                return file_data
 
      def initialize_crypt_table(self):
@@ -517,26 +460,10 @@ class W3xFile(object):
           return best
      
      @staticmethod
-     def decompress(data):
-          """Decompresses a single MPQ sector: the first byte is a compression-method bitmask, the rest is the compressed payload."""
-          compression_mask = data[0]
-          if compression_mask == 0:
-               return data[1:]
+     def decompress(data, size=None):
+          """Decompress one MPQ sector (its method byte, then the data)."""
+          return _compression.decompress(data, size)
 
-          decompressed_data = data[1:]
-
-          if compression_mask & 0x01:  # Huffman encoded
-               decompressed_data = decompressed_data
-          if compression_mask & 0x02:  # Deflated (ZLib)
-               decompressed_data = zlib.decompress(decompressed_data)
-          if compression_mask & 0x08:  # Imploded (PKWare)
-               import dclimplode  # optional native codec, rarely hit - keep it out of the module's hard dependencies
-               decompressed_data = dclimplode.decompressobj().decompress(decompressed_data)
-          if compression_mask & 0x10:  # BZip2 compressed
-               decompressed_data = bz2.decompress(decompressed_data)
-
-          return decompressed_data
-          
      @staticmethod
      def get_filelist():
           files = [

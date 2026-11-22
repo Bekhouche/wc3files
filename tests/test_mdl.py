@@ -105,6 +105,144 @@ class TestBonesAndMultiGroupGeosets(unittest.TestCase):
         self.assertEqual(reread['geosets'][0]['faces'], [0, 1, 2, 3, 4, 5])
 
 
+def _chunks(data):
+    import struct
+    out, pos = [], 4
+    while pos + 8 <= len(data):
+        size = struct.unpack('<I', data[pos + 4:pos + 8])[0]
+        out.append((data[pos:pos + 4], data[pos + 8:pos + 8 + size]))
+        pos += 8 + size
+    return out
+
+
+def _join(chunks):
+    import struct
+    return b'MDLX' + b''.join(tag + struct.pack('<I', len(body)) + body for tag, body in chunks)
+
+
+def _node(name, object_id):
+    return {'name': name, 'objectId': object_id, 'parentId': 0xFFFFFFFF, 'flags': 0,
+            'tracks': {}}
+
+
+def _track(*values):
+    return {'interpolationType': 1, 'globalSequenceId': 0xFFFFFFFF,
+            'keys': [{'frame': i * 100, 'value': v} for i, v in enumerate(values)]}
+
+
+class TestByteExactRewrites(unittest.TestCase):
+    """An unedited model writes back to its own bytes. Each case here broke
+    that for real files: the game's 15,090 models and 4,780 from local maps
+    (19,870 in all) read and rewrite exactly; before these fixes 1,657 of
+    3,756 distinct map models did not, some of them losing data."""
+
+    def assertExact(self, data):
+        self.assertEqual(save_mdx(load_mdx(data)), data)
+
+    def test_chunk_order_and_empty_chunks_are_kept(self):
+        model = empty_model()
+        model['globalSequences'] = [1000]
+        model['pivotPoints'] = [[0.0, 0.0, 0.0]]
+        model['cameras'] = [{'name': 'Cam', 'position': [0.0] * 3, 'fieldOfView': 0.9,
+                             'farClippingPlane': 1000.0, 'nearClippingPlane': 8.0,
+                             'targetPosition': [1.0, 0.0, 0.0], 'tracks': {}}]
+        model['eventObjects'] = [{'node': _node('SNDxHERO', 0), 'globalSequenceId': 0xFFFFFFFF,
+                                  'tracks': [10]}]
+        data = save_mdx(model)
+        chunks = _chunks(data)
+        self.assertGreater(len(chunks), 4)
+        # another tool's order, plus an empty PREM chunk (seen in real files)
+        reordered = chunks[:2] + chunks[2:][::-1] + [(b'PREM', b'')]
+        self.assertExact(_join(reordered))
+        # a model built in code still gets the default order
+        model = load_mdx(data)
+        del model['chunkOrder']
+        self.assertEqual([t for t, _ in _chunks(save_mdx(model))], [t for t, _ in chunks])
+
+    def test_light_shadow_intensity(self):
+        for version, shadow in ((1000, None), (1000, 0.4), (1200, 0.4)):
+            with self.subTest(version=version, shadow=shadow):
+                light = {'node': _node('Omni01', 0), 'type': 0, 'attenuationStart': 80.0,
+                         'attenuationEnd': 200.0, 'color': [1.0, 1.0, 1.0], 'intensity': 8.0,
+                         'ambientColor': [1.0, 1.0, 1.0], 'ambientIntensity': 0.0,
+                         'tracks': {'KLAV': _track(1.0, 0.0)}}
+                if shadow is not None:
+                    light['shadowIntensity'] = shadow
+                model = empty_model()
+                model['version'] = version
+                model['lights'] = [light]
+                data = save_mdx(model)
+                read = load_mdx(data)['lights'][0]
+                # the visibility track used to be lost behind the float
+                self.assertIn('KLAV', read['tracks'])
+                self.assertEqual('shadowIntensity' in read, shadow is not None)
+                self.assertExact(data)
+
+    def test_camera_size_high_byte_and_cinematic_tracks(self):
+        import struct
+        model = empty_model()
+        model['version'] = 1800
+        model['cameras'] = [
+            {'name': f'CAM_{i}', 'position': [0.0, 0.0, 0.0], 'fieldOfView': 0.9,
+             'farClippingPlane': 10000.0, 'nearClippingPlane': 8.0,
+             'targetPosition': [1.0, 0.0, 0.0],
+             'tracks': {'KCRL': _track(0.0, 1.0), 'IDUF': _track(509.9),
+                        'ELAF': _track(35.0), 'PTSF': _track(2.8)}}
+            for i in range(2)]
+        data = save_mdx(model)
+        chunks = _chunks(data)
+        index = [t for t, _ in chunks].index(b'CAMS')
+        body = bytearray(chunks[index][1])
+        # the game's cinematic cameras have 0x03 in each size's high byte
+        first = struct.unpack('<I', body[:4])[0]
+        body[3] = 0x03
+        body[first + 3] = 0x03
+        chunks[index] = (b'CAMS', bytes(body))
+        patched = _join(chunks)
+        cameras = load_mdx(patched)['cameras']
+        self.assertEqual([c['name'] for c in cameras], ['CAM_0', 'CAM_1'])
+        self.assertEqual(sorted(cameras[1]['tracks']), ['ELAF', 'IDUF', 'KCRL', 'PTSF'])
+        self.assertExact(patched)
+
+    def test_skin_count_unit_is_kept(self):
+        vertex_count = 3
+        skin = [0] * (vertex_count * 16)
+        for version, unit in ((1000, 1), (1000, 2), (1800, 2)):
+            with self.subTest(version=version, unit=unit):
+                model = empty_model()
+                model['version'] = version
+                model['geosets'] = [{
+                    'vertices': [0.0] * (vertex_count * 3), 'normals': [0.0] * (vertex_count * 3),
+                    'faceTypeGroups': [4], 'faceGroups': [3], 'faces': [0, 1, 2],
+                    'vertexGroups': [0] * vertex_count, 'matrixGroups': [1],
+                    'matrixIndices': [0], 'materialId': 0, 'selectionGroup': 0,
+                    'selectionFlags': 0, 'levelOfDetail': 0, 'name': 'geo',
+                    'extent': {'bounds': 0.0, 'minimum': [0.0] * 3, 'maximum': [0.0] * 3},
+                    'sequenceExtents': [], 'skin': skin, 'skinCountUnit': unit,
+                    'uvSets': [[0.0] * (vertex_count * 2)]}]
+                data = save_mdx(model)
+                geoset = load_mdx(data)['geosets'][0]
+                self.assertEqual(geoset['skinCountUnit'], unit)
+                self.assertEqual(len(geoset['skin']), len(skin))
+                self.assertExact(data)
+
+    def test_short_collision_shape_is_kept(self):
+        import struct
+        # one exporter writes a type-3 shape (needs 28 bytes) with 8
+        node = bytearray(96)
+        node[0:4] = struct.pack('<I', 96)
+        node[4:13] = b'Plane_Col'
+        node[84:96] = struct.pack('<IiI', 1, 0, 0x2000)
+        clid = bytes(node) + struct.pack('<I', 3) + struct.pack('<2f', 100.0, 100.0)
+        model = empty_model()
+        chunks = _chunks(save_mdx(model)) + [(b'CLID', clid)]
+        data = _join(chunks)
+        shape = load_mdx(data)['collisionShapes'][0]
+        self.assertEqual(shape['type'], 3)
+        self.assertIn('unparsedTail', shape)
+        self.assertExact(data)
+
+
 if __name__ == '__main__':
     unittest.main()
 

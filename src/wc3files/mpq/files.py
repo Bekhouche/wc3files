@@ -1,11 +1,9 @@
 import os
 import re
-import struct
 from tqdm import tqdm
-from io import BytesIO
-from ..data import BinaryDataType
 from .data import *
 from .cipher import MpqCipher
+from .sectors import read_block
 from .header import MpqHeader
 from .hash_table import MpqHashTable
 from .block_table import MpqBlockTable
@@ -214,7 +212,6 @@ class MpqFiles:
 
     def read_file(self, reader, filename):
         
-        force_decompress = False
         hash_entry = self.mpq_hash_table.get_hash_table_entry(filename)
         if hash_entry is None:
             return None
@@ -233,64 +230,10 @@ class MpqFiles:
                 if block_entry['Flags'] & MPQFileDataType.FIX_KEY.value:
                         key = (key + block_entry['BlockOffset']) ^ block_entry['FileSize']
 
-            if not block_entry['Flags'] & MPQFileDataType.SINGLE_UNIT.value:
-                sector_size = 512 << self.data_archive_header['SectorSizeShift']
-                sectors = block_entry['FileSize'] // sector_size + 1
-                if block_entry['Flags'] & MPQFileDataType.SECTOR_CRC.value:
-                        crc = True
-                        sectors += 1
-                else:
-                        crc = False
-                
-                result = BytesIO()
-                sector_bytes_left = block_entry['FileSize']
-                # 'sectors' (FileSize // sector_size + 1) already spans every data sector
-                # including a trailing partial/empty one - positions[-1] always lands on
-                # the block's true compressed end.
-                block_count = sectors
-
-                reader.seek(offset)
-                sectors_data = reader.read(BinaryDataType.BYTES, num=4*(sectors+1))
-                if block_entry['Flags'] & MPQFileDataType.ENCRYPTED.value:
-                        sectors_data = self.mpq_cipher.decrypt(sectors_data, key - 1)
-                positions = struct.unpack('<%dI' % (sectors + 1), sectors_data)
-
-                current_offset = 0
-                if block_entry['Flags'] & MPQFileDataType.COMPRESS.value :
-                        reader.seek(offset + positions[0])
-                        raw_bytes_to_read = positions[block_count] - positions[0]
-                else:
-                        raw_bytes_to_read = block_entry['FileSize']
-
-                file_data = reader.read(BinaryDataType.BYTES, num=raw_bytes_to_read)
-
-                for i in range(block_count):
-                    expected_sector_size = min(sector_size, sector_bytes_left)
-                    this_sector_size = expected_sector_size
-                    if block_entry['Flags'] & MPQFileDataType.COMPRESS.value:
-                        this_sector_size = positions[i+1] - positions[i]
-
-                    sector = file_data[current_offset:current_offset + this_sector_size]
-                    if block_entry['Flags'] & MPQFileDataType.ENCRYPTED.value:
-                        sector = self.mpq_cipher.decrypt(sector, key + i)
-
-                    if (block_entry['Flags'] & MPQFileDataType.COMPRESS.value and
-                    (force_decompress or len(sector) < expected_sector_size)):
-                        sector = self.mpq_cipher.decompress(sector)
-
-                    sector_bytes_left -= len(sector)
-                    result.write(sector)
-
-                    current_offset += this_sector_size
-                file_data = result.getvalue()
-                
-            else:
-                reader.seek(offset)
-                file_data = reader.read(BinaryDataType.BYTES, num=block_entry['BlockSize'])
-
-                if (block_entry['Flags'] & MPQFileDataType.COMPRESS.value and
-                        (force_decompress or block_entry['FileSize'] > block_entry['BlockSize'])):
-                        file_data = self.mpq_cipher.decompress(file_data)
+            sector_size = 512 << self.data_archive_header['SectorSizeShift']
+            file_data = read_block(
+                reader, block_entry, offset, sector_size, self.mpq_cipher.decrypt,
+                key if block_entry['Flags'] & MPQFileDataType.ENCRYPTED.value else 0)
 
             return file_data, hash_entry
 

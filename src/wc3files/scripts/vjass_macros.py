@@ -19,12 +19,9 @@ A `$NAME$` in the body is replaced by the matching argument, quotes stripped.
 Bodies may run other macros, so expansion repeats until nothing is left -
 bounded, because a macro that expands to itself would otherwise never stop.
 
-**This is the preprocessor only, not a vJass compiler.** Expanding macros
-leaves vJass behind, not JASS: `struct`, `method`, `library`, `scope`,
-`module`, `implement`, `key`, `private`/`public` and operator overloading all
-remain, and turning those into plain JASS - struct allocation, inheritance,
-module injection, library dependency ordering, scope name-mangling - is the
-bulk of what JassHelper does. See `vjass_scan` for reading that structure.
+**This is the preprocessor only.** Expanding macros leaves vJass behind, not
+JASS. The full compiler, which turns vJass and Zinc into plain JASS, is
+`wc3files.vjass`; this module stays as a standalone text-macro pass.
 
 Directives handled: `textmacro`, `textmacro_once`, `endtextmacro`,
 `runtextmacro`, and `runtextmacro optional` (which is silently skipped when

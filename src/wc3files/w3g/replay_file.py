@@ -22,10 +22,24 @@ class ReplayFile(object):
           if file_type not in [item.value for item in ReplayFileType]:
                raise ValueError("Invalid replay file type")
 
+          with open(file_path, 'rb') as handle:
+               original = handle.read()
+          self.unfinished = _is_unfinished(original)
           with BinaryFile(file_path, 'read') as reader:
                self.header.read(reader)
-               self.compressed_data.set_header(self.header.get_data())
-               self.compressed_data.read(reader)
+               header = dict(self.header.get_data())
+               if self.unfinished:
+                    # The game writes the header only when the game ends; a
+                    # replay left by a crash or a hang has zeros there, or a
+                    # header saying 0 bytes. Its blocks are real: read them
+                    # all, up to a last one cut short.
+                    header['fileoffset'] = _HEADER_SIZE
+                    header['number_compressed'] = None
+                    header['size_decompressed'] = None
+                    header['reforged'] = _blocks_are_reforged(original)
+               self.compressed_data.set_header(header)
+               self.compressed_data.read(reader, partial_ok=self.unfinished)
+          self._original = original if self.unfinished else None
 
           self._data = {
                'header': self.header.get_data(),
@@ -53,6 +67,18 @@ class ReplayFile(object):
           package's own read() parses it back identically. Not knowing what they are, they
           are written as zero.
           """
+          if getattr(self, 'unfinished', False):
+               # No complete header exists to rebuild from, so an unfinished
+               # replay is written back only as it was read.
+               empty = self.compressed_data.get_data().get('_empty')
+               if not empty and self.compressed_data.build() !=                          self.compressed_data._source_decompressed:
+                    raise ValueError(
+                         'this replay was never finished by the game (no complete '
+                         'header), so it can only be written back unchanged')
+               with open(file_path, 'wb') as handle:
+                    handle.write(self._original)
+               return
+
           header_data = dict(self.header.get_data())
           header_data['sub'] = dict(header_data.get('sub', {}))
           is_reforged = header_data.get('reforged', False)
@@ -148,3 +174,29 @@ class ReplayFile(object):
 
      def get_data(self):
           return self._data
+
+
+_HEADER_SIZE = 68           # the Reforged (version-1) header
+
+
+def _is_unfinished(data):
+     """A replay whose header the game never wrote: all zeros, or a header
+     with no decompressed data although blocks follow it."""
+     if len(data) < _HEADER_SIZE:
+          return False
+     if not any(data[:_HEADER_SIZE]):
+          return len(data) > _HEADER_SIZE
+     if data[:26] == b'Warcraft III recorded game':
+          size_decompressed = int.from_bytes(data[40:44], 'little')
+          return size_decompressed == 0 and len(data) > _HEADER_SIZE
+     return False
+
+
+def _blocks_are_reforged(data):
+     """Reforged blocks start with two 32-bit sizes, classic ones with two
+     16-bit sizes: in a Reforged block the second 16 bits are zero and the
+     uncompressed size follows."""
+     block = data[_HEADER_SIZE:_HEADER_SIZE + 8]
+     if len(block) < 8:
+          return True
+     return block[2:4] == b'\x00\x00' and int.from_bytes(block[4:6], 'little') > 0

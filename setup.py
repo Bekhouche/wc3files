@@ -36,8 +36,6 @@ setup(
         # installed copy fail on `import wc3files` with ModuleNotFoundError.
         'loguru',
         'tqdm',
-        # Used for a single pd.isna() call in table/slk_file.py.
-        'pandas',
     ],
     entry_points={
         'console_scripts': ['wc3files=wc3files.cli.main:main'],

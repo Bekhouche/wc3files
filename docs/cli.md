@@ -7,7 +7,7 @@ wc3files --help
 wc3files <command> --help     # every command documents its own options
 ```
 
-26 commands, grouped below by what they are for.
+28 commands, grouped below by what they are for.
 
 ## Archives
 
@@ -15,6 +15,11 @@ wc3files <command> --help     # every command documents its own options
 wc3files unpack MyMap.w3x out/          # extract to loose files
 wc3files pack out/ MyMap.edited.w3x     # repack a directory
 ```
+
+For a folder that is text rather than binary, use [Lni mode](lni.md):
+`wc3files lni MyMap.w3x MyMap/` and `wc3files lni MyMap/ Out.w3x`.
+`wc3files slk` and `wc3files obj` convert a whole map's object data to the
+game's tables and back ([Slk and Obj modes](lni.md#5-slk-and-obj-modes)).
 
 `unpack` then `pack` is the whole edit cycle: unpack, change files on disk,
 pack. `pack` round-trips through the archive writer, so the result is a fresh
@@ -85,9 +90,22 @@ wc3files model-info Footman.mdx                    # version, sequences, texture
 
 ```bash
 wc3files jass war3map.j                      # parse and print back
+wc3files jass war3map.lua --check            # check calls against the game API
+wc3files jass war3map.j --to-lua             # translate JASS to Lua 5.3
+wc3files run-map MyMap.w3x                   # run config/main and timers, report errors
 wc3files trigger-text war3map.wtg            # render as World Editor text
 wc3files script-to-triggers war3map.j        # rebuild GUI triggers from a script
 ```
+
+`jass --check` prints one `file:line: severity: message` per finding instead
+of the script, and exits with status 1 when there is an issue. It works on
+JASS and on Reforged Lua; what it checks is described in [Triggers and
+scripts](triggers.md#checking-a-script).
+
+`run-map` runs a map's script against stubs of the game API and prints its
+runtime errors and argument warnings, exiting with status 1 on an error;
+`--seconds`, `--players` and `--messages` are explained in [Running a map
+script](triggers.md#running-a-map-script).
 
 `trigger-text` takes `--trigger-data` for a map built with an extended editor,
 whose GUI functions stock Warcraft III does not declare. Both trigger
@@ -95,12 +113,61 @@ commands take `--json` to emit structured output instead of text.
 
 `script-to-triggers` is covered in [Triggers and scripts](triggers.md).
 
+### vJass and Zinc
+
+```bash
+wc3files vjass war3map.j -o compiled.j       # compile to plain JASS
+wc3files vjass a.j b.j main.j -o out.j       # several files, as one script
+wc3files vjass MyMap.w3x -o Compiled.w3x     # a map: compile its war3map.j
+wc3files vjass war3map.j --preprocess        # source after imports, macros, Zinc
+```
+
+`--debug` builds with `debug` code kept, `-O` inlines, `--check` validates the
+result against the natives, and `-I DIR` adds a folder for `//! import`.
+`--conf jasshelper.conf` reads JassHelper's own settings. Warnings go to
+stderr. The compiler itself is covered in [vJass and Zinc](vjass.md).
+
+`--externals` decides what happens to the `//! external` calls and external
+blocks of Lua:
+
+```bash
+wc3files vjass war3map.j --externals check            # run in a sandbox, report errors
+wc3files vjass MyMap.w3x -o Out.w3x --externals run   # write the objects they make
+wc3files vjass war3map.j -o out.j --externals run --externals-dir objects/
+```
+
+`note` (the default) only lists them. `check` runs them and changes nothing;
+it exits with an error when one fails. `run` writes what they change into the
+map, or, for a script, writes the changed files (`war3map.w3a`, ...) next to
+`-o` or into `--externals-dir`. `--workspace DIR` keeps the tools' sandbox
+folder between runs. See [External tools and Lua](grimex.md).
+
+### Lua
+
+```bash
+wc3files lua script.lua arg1 arg2                     # plain Lua 5.1, sandboxed
+wc3files lua script.lua --lua-version 5.3
+wc3files lua make.lua --tool ObjectMerger --map MyMap.w3x -o Out.w3x
+```
+
+Plain mode lets the script read its own folder (`--root` to change it) and
+write nothing unless `--allow-write` is given. `--tool` runs the script as
+that Grim Extension Pack tool would, with its functions defined, against
+`--map` (or an empty map); `-o` is the map to write, or a folder for the
+changed files.
+
 ## Replays
 
 ```bash
 wc3files replay-mmd replay.w3g            # the W3MMD meta data a replay carries
 wc3files replay-actions replay.w3g        # per-player action totals
 ```
+
+An unfinished replay also reads: the `TempReplay.w3g` the game leaves after a
+crash or a hang has no header yet (the game writes it when the game ends),
+and its last block may be cut short. Its players, chat and actions are read
+up to the last whole block, and `replay-actions` takes the length from the
+recorded time slots. Such a replay is written back only unchanged.
 
 ## An installed game
 

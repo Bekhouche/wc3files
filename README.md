@@ -31,7 +31,11 @@ Full documentation lives in [docs/](docs/README.md):
 - [Concepts](docs/concepts.md) - the rules that explain the API's shape
 - [Formats](docs/formats.md) - every format, its class, and how far support goes
 - [API reference](docs/api-reference.md) - every public class and method
-- [Command line](docs/cli.md) - the `wc3files` command and its 26 subcommands
+- [Command line](docs/cli.md) - the `wc3files` command and its 28 subcommands
+- [vJass and Zinc](docs/vjass.md) - compiling vJass and Zinc to JASS, as JassHelper does
+- [External tools and Lua](docs/grimex.md) - running a map's ObjectMerger, FileImporter and other tool calls, and the Lua interpreter
+- [Game data for other versions](docs/gamedata.md) - profiles of 1.24, 1.27, 1.32... tables extracted from an install, used with `--game-data`
+- [Lni mode](docs/lni.md) - a map as a folder of text files (objects as Lni, the rest as JSON) and back, for git
 - [Triggers and scripts](docs/triggers.md) - GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script
 
 ## Features
@@ -58,6 +62,18 @@ Full documentation lives in [docs/](docs/README.md):
 ### Replay Files (W3G)
 - Parse Warcraft III replay files (.w3g)
 - Extract game information, player data, and actions
+
+### vJass and Zinc
+- Compile vJass and Zinc to plain JASS, as JassHelper does, without the World Editor
+- Compile a single script, a set of library files, or the `war3map.j` of a whole map
+- `wc3files vjass war3map.j -o compiled.j`, or `VJassCompiler().compile_file(...)` from Python
+
+### External tools and Lua
+- Run the `//! external` calls and Lua `//! externalblock` blocks of a vJass map (ObjectMerger, FileImporter, FileExporter, ConstantMerger), as the World Editor does when saving
+- Check that Lua before opening the editor: errors name the `.j` line they come from
+- A Lua 5.1/5.3 interpreter in pure Python, sandboxed: `wc3files lua script.lua`
+- Check a Reforged `war3map.lua` against the game API (undefined globals, missing `FourCC`, wrong argument counts and types): `wc3files jass war3map.lua --check`
+- Run a map's script without the game (common.j stubs, blizzard.j, timers) to find its start-up errors: `wc3files run-map MyMap.w3x`; translate JASS to Lua with `wc3files jass war3map.j --to-lua`
 
 ## Usage Examples
 
