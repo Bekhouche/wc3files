@@ -59,6 +59,35 @@ class TestJassToLua(unittest.TestCase):
           self.assertEqual(vm.call(vm.globals.get('f'), [2]), [3])
 
 
+class TestStepLimit(unittest.TestCase):
+     """--max-steps said "Stop after this many interpreter steps", but only
+     the callback that reached the limit failed: every later callback failed
+     the same way (200 errors on a real melee map) and the clock ran on."""
+
+     SCRIPT = '''
+          function main()
+               TimerStart(CreateTimer(), 0.1, true, function()
+                    local s = 0
+                    for i = 1, 2000 do s = s + i end
+               end)
+          end
+     '''
+
+     def test_the_limit_ends_the_run(self):
+          runtime = MapRuntime(max_steps=200_000)
+          report = runtime.run(self.SCRIPT, seconds=60)
+          self.assertEqual(len(report.errors), 1, report.errors[:3])
+          self.assertIn('stopped after 200000 steps', report.errors[0])
+          self.assertIsNotNone(report.stopped)
+          self.assertLess(report.game_time, 60)
+
+     def test_without_the_limit_the_clock_runs_to_the_end(self):
+          report = MapRuntime().run(self.SCRIPT, seconds=2)
+          self.assertEqual(report.errors, [])
+          self.assertIsNone(report.stopped)
+          self.assertEqual(report.game_time, 2)
+
+
 class TestRuntime(unittest.TestCase):
 
      def test_start_up_runs(self):

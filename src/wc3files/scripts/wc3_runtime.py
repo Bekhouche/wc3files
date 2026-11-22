@@ -201,12 +201,29 @@ class MapRuntime:
           co.wc3_thread = True
           self._resume(co, list(args), on_done)
 
+     def _out_of_steps(self):
+          return self.vm.max_steps is not None and self.vm.steps > self.vm.max_steps
+
+     def _stop(self, message):
+          """End the run at the step limit. The limit used to fail only the
+          callback that reached it: every later callback then failed the same
+          way, one error each (200 of them), and game time ran to the end."""
+          if self.report.stopped is None:
+               text = message if isinstance(message, str) else self.vm.tostring(message)
+               self.report.stopped = text
+               self._error(text)
+
      def _resume(self, co, args, on_done):
+          if self.report.stopped is not None:
+               return
           self.report.callbacks += 1
           result = co.resume(args)
           if not result[0]:
                message = result[1] if len(result) > 1 else 'error'
-               self._error(message, co)
+               if self._out_of_steps():
+                    self._stop(message)
+               else:
+                    self._error(message, co)
                return
           if co.status == 'suspended' and len(result) > 1 and result[1] is _SLEEP:
                delay = result[2] if len(result) > 2 else 0.0
@@ -240,17 +257,20 @@ class MapRuntime:
                return self.report
           for name in entry:
                fn = self.vm.globals.get(name)
-               if fn is None:
+               if fn is None or self.report.stopped is not None:
                     continue
                try:
                     run_with_stack(self.run_thread, fn)
                except LuaError as error:
-                    self._error(str(error))
-          try:
-               run_with_stack(self.advance, seconds)
-          except LuaError as error:
-               self.report.stopped = str(error)
-               self._error(str(error))
+                    if self._out_of_steps():
+                         self._stop(str(error))
+                    else:
+                         self._error(str(error))
+          if self.report.stopped is None:
+               try:
+                    run_with_stack(self.advance, seconds)
+               except LuaError as error:
+                    self._stop(str(error))
           return self.report
 
      def advance(self, seconds):
@@ -261,6 +281,8 @@ class MapRuntime:
                self.now = max(self.now, when)
                self.report.game_time = self.now
                callback()
+               if self.report.stopped is not None:
+                    return          # the step limit: the clock stops here
           self.now = end
           self.report.game_time = end
 
