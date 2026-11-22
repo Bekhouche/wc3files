@@ -446,5 +446,54 @@ class TestObjectFileFilter(unittest.TestCase):
                              _helpers.read_bytes(_helpers.sample_path('sample.w3u')))
 
 
+def _v3_table(entries):
+    """A version-3 object table: count, then per entry the original id, the
+    new id, one set (flag 0) and no modifications."""
+    import struct
+    out = struct.pack('<I', len(entries))
+    for original, new in entries:
+        out += original + new + struct.pack('<III', 1, 0, 0)
+    return out
+
+
+class TestVersion3LayoutWithoutModifications(unittest.TestCase):
+    """Built like Lotr Risk S 2.13.w3x war3map.w3q (112 bytes): version 3,
+    four original upgrades and one custom upgrade, none modified. Read with
+    the version-2 layout first, this parsed "successfully" into garbage."""
+    NULL = bytes(4)
+
+    def _data(self):
+        import struct
+        return (struct.pack('<I', 3)
+                + _v3_table([(b'Repb', self.NULL), (b'Remg', self.NULL),
+                             (b'Robf', self.NULL), (b'Rupc', self.NULL)])
+                + _v3_table([(b'Rhfl', b'R000')]))
+
+    def test_tables_are_read_with_the_layout_the_version_names(self):
+        data = self._data()
+        self.assertEqual(len(data), 112)
+        obj = ObjectFile()
+        obj.read(data, 'w3q')
+        self.assertTrue(obj._skin_used)
+        self.assertEqual(list(obj._data['w3q']['original']), ['Repb', 'Remg', 'Robf', 'Rupc'])
+        self.assertEqual(list(obj._data['w3q']['custom']), ['R000'])
+        self.assertEqual(obj._data['w3q']['custom']['R000']['ID'], 'Rhfl')
+
+    def test_it_writes_back_byte_for_byte(self):
+        data = self._data()
+        obj = ObjectFile()
+        obj.read(data, 'w3q')
+        with tempfile.TemporaryDirectory() as tmp:
+            out = os.path.join(tmp, 'war3map.w3q')
+            obj.write(out)
+            with open(out, 'rb') as handle:
+                self.assertEqual(handle.read(), data)
+
+    def test_forcing_a_layout_still_works(self):
+        obj = ObjectFile()
+        obj.read(self._data(), 'w3q', skin=True)
+        self.assertEqual(list(obj._data['w3q']['custom']), ['R000'])
+
+
 if __name__ == '__main__':
     unittest.main()

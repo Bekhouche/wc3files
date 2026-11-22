@@ -353,6 +353,60 @@ class ObjectFile(object):
                if result is not None:
                     self._data = result
 
+     @staticmethod
+     def _read_tables(reader, object_type, version, skin, container):
+          """Read the original and custom tables of one object type. Returns
+          (original, custom, skin_used).
+
+          The entry layout follows the version: version 3 and above carry the
+          per-entry set list (`skin=True`), older versions do not. Trying the
+          old layout first, as this used to whatever the version said, let a
+          version-3 table without modifications parse "successfully" in the
+          wrong layout - reads ran past the end, came back as zeros, and the
+          file was accepted with garbage ids (14 corpus files, among them
+          Lotr Risk S 2.13.w3x war3map.w3q). The other layout is still tried
+          when the first one does not fit, and `skin=True/False` forces one.
+
+          `container` is a war3map.w3o-style file: the next 4 bytes after a
+          type's tables must be a has-data flag (0 or 1), or the end."""
+          start = reader.tell()
+          forced = skin != 'auto'
+          first = skin if forced else version >= 3
+          layouts = (first,) if forced else (first, not first)
+          for attempt, use_skin in enumerate(layouts):
+               last = attempt == len(layouts) - 1
+               reader.seek(start)
+               try:
+                    original = ObjectTable(ObjectFileType(object_type), 'original', skin=use_skin)
+                    original.read(reader)
+                    custom = ObjectTable(ObjectFileType(object_type), 'custom', skin=use_skin)
+                    custom.read(reader)
+                    if forced:
+                         return original, custom, use_skin
+                    if container:
+                         # As before: the fallback layout of a container is
+                         # taken without this check.
+                         pos = reader.tell()
+                         if not last and pos < reader.size():
+                              flag = reader.read(BinaryDataType.INT)
+                              reader.seek(pos)
+                              if flag not in (0, 1):
+                                   raise ValueError("misaligned object table")
+                    elif reader.tell() != reader.size() and _has_nonzero_trailing(reader):
+                         raise ValueError("misaligned object table")
+                    return original, custom, use_skin
+               except ValueError as exc:
+                    if attempt == 0:
+                         first_error = exc
+                    if last:
+                         if forced or container:
+                              raise
+                         # The reason the layout the version names failed is
+                         # the useful one (a duplicate id, say), so keep it.
+                         raise ValueError(
+                              f"unable to parse {object_type} object table: does not fit "
+                              f"either known entry format ({first_error})") from first_error
+
      def read(self, file_path, object_type=None, skin='auto'):
           file_path = fspath(file_path)
           if isinstance(file_path, str):
@@ -374,62 +428,17 @@ class ObjectFile(object):
                     reader.read(BinaryDataType.INT)  # container version, not used
                     for object_type_ in self._data.keys():
                          if reader.read(BinaryDataType.INT):
-                              reader.read(BinaryDataType.INT)  # table version, not used
-                              start_pos = reader.tell()
-                              use_skin = skin if skin != 'auto' else False
-                              try:
-                                   original = ObjectTable(ObjectFileType(object_type_), 'original', skin=use_skin)
-                                   original.read(reader)
-                                   custom = ObjectTable(ObjectFileType(object_type_), 'custom', skin=use_skin)
-                                   custom.read(reader)
-                                   # Peek: the next 4 bytes should be a plausible has-data
-                                   # flag (0 or 1) for the next type, or we're at EOF.
-                                   pos = reader.tell()
-                                   ok = pos >= reader.size()
-                                   if not ok:
-                                        flag = reader.read(BinaryDataType.INT)
-                                        reader.seek(pos)
-                                        ok = flag in (0, 1)
-                                   if not ok and skin == 'auto':
-                                        raise ValueError("misaligned object table")
-                              except ValueError:
-                                   if skin != 'auto':
-                                        raise
-                                   reader.seek(start_pos)
-                                   original = ObjectTable(ObjectFileType(object_type_), 'original', skin=True)
-                                   original.read(reader)
-                                   custom = ObjectTable(ObjectFileType(object_type_), 'custom', skin=True)
-                                   custom.read(reader)
+                              version = reader.read(BinaryDataType.INT)
+                              original, custom, _ = self._read_tables(
+                                   reader, object_type_, version, skin, container=True)
                               self._data[object_type_] = {'original': original.get(), 'custom': custom.get()}
                               self._data_total[object_type_]['original'] = len(self._data[object_type_]['original'])
                               self._data_total[object_type_]['custom'] = len(self._data[object_type_]['custom'])
                else:
                     version = reader.read(BinaryDataType.INT)
                     self._version = version
-                    start_pos = reader.tell()
-                    use_skin = skin if skin != 'auto' else False
-                    self._skin_used = use_skin
-                    try:
-                         original = ObjectTable(ObjectFileType(object_type), 'original', skin=use_skin)
-                         original.read(reader)
-                         custom = ObjectTable(ObjectFileType(object_type), 'custom', skin=use_skin)
-                         custom.read(reader)
-                         if skin == 'auto' and reader.tell() != reader.size() and _has_nonzero_trailing(reader):
-                              raise ValueError("misaligned object table")
-                    except ValueError:
-                         if skin != 'auto':
-                              raise
-                         reader.seek(start_pos)
-                         self._skin_used = True
-                         original = ObjectTable(ObjectFileType(object_type), 'original', skin=True)
-                         original.read(reader)
-                         custom = ObjectTable(ObjectFileType(object_type), 'custom', skin=True)
-                         custom.read(reader)
-                         if reader.tell() != reader.size() and _has_nonzero_trailing(reader):
-                              raise ValueError(
-                                   f"unable to parse {object_type} object table: "
-                                   "does not fit either known entry format"
-                              )
+                    original, custom, self._skin_used = self._read_tables(
+                         reader, object_type, version, skin, container=False)
                     self._data[object_type] = {'original': original.get(), 'custom': custom.get()}
                     self._data_total[object_type]['original'] = len(self._data[object_type]['original'])
                     self._data_total[object_type]['custom'] = len(self._data[object_type]['custom'])
