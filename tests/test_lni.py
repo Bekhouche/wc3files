@@ -104,5 +104,30 @@ class TestFolder(unittest.TestCase):
                shutil.rmtree(work, ignore_errors=True)
 
 
+class TestNamesThatAreNotUtf8(unittest.TestCase):
+     """A trigger name can hold half a UTF-8 character (the editor cuts names
+     at a byte limit); the reader keeps the stray byte as a surrogate. Writing
+     the trigger JSON then failed with UnicodeEncodeError, and the whole
+     conversion stopped (two corpus maps)."""
+
+     def test_the_map_converts_and_rebuilds(self):
+          from wc3files import MapTriggersFile
+          triggers = MapTriggersFile()
+          triggers.read(_helpers.sample_path('sample.wtg'))
+          # 'Copy ' and the first byte of a two-byte character, as read.
+          triggers.get_triggers()[0]['name'] = 'Copy ' + bytes([0xD0]).decode('utf-8', 'surrogateescape')
+          with tempfile.TemporaryDirectory() as tmp:
+               wtg = os.path.join(tmp, 'war3map.wtg')
+               triggers.write(wtg)
+               with open(wtg, 'rb') as handle:
+                    data = handle.read()
+               self.assertIn(b'Copy ' + bytes([0xD0]), data)
+               folder = os.path.join(tmp, 'lni')
+               map_to_lni(None, folder, files={'war3map.wtg': data})
+               self.assertEqual(lni_files(folder)['war3map.wtg'], data)
+               with open(os.path.join(folder, 'trigger', 'war3map.wtg.json'), encoding='utf-8') as handle:
+                    self.assertIn('Copy ' + chr(92) + 'udcd0', handle.read())
+
+
 if __name__ == '__main__':
      unittest.main()
