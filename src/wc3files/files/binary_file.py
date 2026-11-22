@@ -88,7 +88,7 @@ class BinaryFile:
         if data_type == BinaryDataType.INT:
             return int.from_bytes(self.file.read(num), byteorder, signed=signed)
         elif data_type == BinaryDataType.REAL:
-            return struct.unpack('f', self.file.read(num))[0]
+            return struct.unpack('<f', self.file.read(num))[0]
         elif data_type == BinaryDataType.UNREAL:
             # Returned exactly as stored. Rounding to seven decimals here
             # looked harmless but changed the value: a real object field
@@ -96,7 +96,7 @@ class BinaryFile:
             # different four bytes, so the file could never be written back
             # unchanged. 19 of the 23 object files that still failed to
             # round-trip differed only in float bytes like this one.
-            return struct.unpack('f', self.file.read(num))[0]
+            return struct.unpack('<f', self.file.read(num))[0]
         elif data_type == BinaryDataType.STRING:
             # Read in chunks and scan for the null terminator instead of one
             # byte-at-a-time file.read(1) call per character (was the single
@@ -149,9 +149,9 @@ class BinaryFile:
             # the same four bytes for every value either one could hold.
             self.file.write(struct.pack('<I', int(value) & 0xFFFFFFFF))
         elif data_type == BinaryDataType.REAL:
-            self.file.write(struct.pack('f', float(value)))
+            self.file.write(struct.pack('<f', float(value)))
         elif data_type == BinaryDataType.UNREAL:
-            self.file.write(struct.pack('f', float(value)))
+            self.file.write(struct.pack('<f', float(value)))
         elif data_type == BinaryDataType.BYTES:
             self.file.write(value)
         elif data_type == BinaryDataType.STRING:

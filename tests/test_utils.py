@@ -48,5 +48,52 @@ class TestFixedLengthStr(unittest.TestCase):
         self.assertEqual(result, '\xe9\xe8\xe7')
 
 
+class _BigEndianStruct:
+    """Stands in for `struct` on a big-endian machine: a format with no byte
+    order prefix resolves to big-endian, as native order would there."""
+    @staticmethod
+    def _fmt(fmt):
+        return fmt if fmt[:1] in '<>!=@' else '>' + fmt
+
+    def pack(self, fmt, *values):
+        return struct.pack(self._fmt(fmt), *values)
+
+    def unpack(self, fmt, data):
+        return struct.unpack(self._fmt(fmt), data)
+
+
+class TestFloatByteOrder(unittest.TestCase):
+    """Warcraft III files are little-endian on every machine, so a float must
+    not follow the host's byte order."""
+    ONE = b'\x00\x00\x80\x3f'  # 1.0 as a little-endian float
+
+    def setUp(self):
+        import importlib
+        from unittest import mock
+        # import_module, because the package attribute `wc3files.files` is
+        # rebound to wc3files.mpq.files on import.
+        modules = [importlib.import_module('wc3files.files.binary_file'),
+                   importlib.import_module('wc3files.utils.converter')]
+        for module in modules:
+            patcher = mock.patch.object(module, 'struct', _BigEndianStruct())
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_binary_file_writes_and_reads_little_endian_floats(self):
+        from wc3files.files.binary_file import BinaryFile
+        for data_type in (BinaryDataType.REAL, BinaryDataType.UNREAL):
+            with self.subTest(data_type=data_type):
+                with BinaryFile(b'', 'write') as writer:
+                    writer.write(data_type, 1.0)
+                    written = writer.file.getvalue()
+                self.assertEqual(written, self.ONE)
+                with BinaryFile(self.ONE) as reader:
+                    self.assertEqual(reader.read(data_type), 1.0)
+
+    def test_convert_bytes_to_reads_little_endian_floats(self):
+        self.assertEqual(convert_bytes_to(self.ONE, BinaryDataType.REAL), 1.0)
+        self.assertEqual(convert_bytes_to(self.ONE, BinaryDataType.UNREAL), 1.0)
+
+
 if __name__ == '__main__':
     unittest.main()
