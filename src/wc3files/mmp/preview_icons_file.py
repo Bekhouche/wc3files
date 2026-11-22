@@ -3,6 +3,7 @@ from .preview_icon import PreviewIcon
 from ..data import BinaryDataType
 from wc3files.files import BinaryFile
 from typing import Dict
+from wc3files.files.binary_file import fspath
 
 
 class PreviewIconsFile:
@@ -26,6 +27,7 @@ class PreviewIconsFile:
           self.number: int = 0
 
      def read(self, file_path: str):
+          file_path = fspath(file_path)
           file_type = file_path.split('.')[-1].lower()
           if file_type not in [item.value for item in PreviewIconFileType]:
                raise ValueError(f"Invalid preview icon file type: {file_type}")
@@ -40,6 +42,7 @@ class PreviewIconsFile:
                     self._data[idx] = PreviewIcon(**fields)
 
      def write(self, file_path: str):
+          file_path = fspath(file_path)
           file_type = file_path.split('.')[-1].lower()
           if file_type not in [item.value for item in PreviewIconFileType]:
                raise ValueError(f"Invalid preview icon file type: {file_type}")

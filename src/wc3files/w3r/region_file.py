@@ -4,6 +4,7 @@ from .data import RegionFileType
 from .region import Region
 from wc3files.files import BinaryFile
 from typing import Dict
+from wc3files.files.binary_file import fspath
 
 class RegionFile:
     def __init__(self):
@@ -30,6 +31,7 @@ class RegionFile:
         Raises:
         ValueError: If the file extension is not a valid region file type.
         """
+        file_path = fspath(file_path)
         file_type = file_path.split('.')[-1].lower()
 
         # Check if the file type is valid for a region file
@@ -57,6 +59,7 @@ class RegionFile:
         Raises:
         ValueError: If the file extension is not a valid region file type.
         """
+        file_path = fspath(file_path)
         file_type = file_path.split('.')[-1].lower()
 
         # Check if the file type is valid for a region file

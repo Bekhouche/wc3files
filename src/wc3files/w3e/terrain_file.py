@@ -1,6 +1,7 @@
 from ..data import BinaryDataType
 from .data import TerrainFileType
 from wc3files.files import BinaryFile
+from wc3files.files.binary_file import fspath
 
 
 class TerrainFile(object):
@@ -46,6 +47,7 @@ class TerrainFile(object):
           self._data = {}
 
      def read(self, file_path):
+          file_path = fspath(file_path)
           if isinstance(file_path, str):
                file_type = file_path.split('.')[-1].lower()
                if file_type not in [item.value for item in TerrainFileType]:
@@ -55,6 +57,7 @@ class TerrainFile(object):
                self._data = self._read(reader)
 
      def write(self, file_path):
+          file_path = fspath(file_path)
           with BinaryFile(file_path, 'write') as writer:
                self._write(writer, self._data)
 

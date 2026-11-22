@@ -5,6 +5,7 @@ import os
 from .data import ModelFileType
 from .mdx_io import empty_model, load_mdx, save_mdx
 from .mdl_io import load_mdl, save_mdl
+from wc3files.files.binary_file import fspath
 
 
 class ModelFile:
@@ -45,6 +46,7 @@ class ModelFile:
         return self
 
     def read(self, file_path):
+        file_path = fspath(file_path)
         if isinstance(file_path, (bytes, bytearray)):
             data = bytes(file_path)
             if data[:4] == b'MDLX':
@@ -74,6 +76,7 @@ class ModelFile:
         return self
 
     def write(self, file_path):
+        file_path = fspath(file_path)
         ext = file_path.rsplit('.', 1)[-1].lower()
         if ext not in (item.value for item in ModelFileType):
             raise ValueError(f'Invalid model file type: {ext}')

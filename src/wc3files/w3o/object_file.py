@@ -5,6 +5,7 @@ from ..table.wts_file import WtsFile
 from .object_slk import object_table_to_slk
 from .object_validator import validate_object_table
 from .object_override import build_override_tables, rebuild_object_table
+from wc3files.files.binary_file import fspath
 
 
 def _has_nonzero_trailing(reader):
@@ -353,6 +354,7 @@ class ObjectFile(object):
                     self._data = result
 
      def read(self, file_path, object_type=None, skin='auto'):
+          file_path = fspath(file_path)
           if isinstance(file_path, str):
                object_type = file_path.split('.')[-1].lower()
                if object_type in [item.value for item in ObjectFileType]:
@@ -448,6 +450,7 @@ class ObjectFile(object):
           # Forcing it on unconditionally rewrote real version-2 files that
           # legitimately do not carry the field. Pass True or False to choose
           # explicitly.
+          file_path = fspath(file_path)
           self._call_hooks('write')
           object_type = file_path.split('.')[-1].lower()
           if object_type in [item.value for item in ObjectFileType]:

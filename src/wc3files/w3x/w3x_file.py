@@ -13,6 +13,7 @@ from wc3files.mpq.data import MpqProtectionLevel
 from wc3files.mpq.files import extract_references, is_scan_candidate
 from wc3files.mpq.sectors import read_block
 from wc3files.mpq import compression as _compression
+from wc3files.files.binary_file import fspath
 
 
 class W3xReadMode(Enum):
@@ -57,6 +58,7 @@ class W3xFile(object):
           self.protected = False
 
      def export(self, path):
+          path = fspath(path)
           if not os.path.exists(os.path.join(path, self.current_name)):
                os.mkdir(os.path.join(path, self.current_name))
 
@@ -86,6 +88,8 @@ class W3xFile(object):
 
      def build(self, src_path, dst_path, protection=MpqProtectionLevel.NONE, attributes=False):
           """Repack a directory previously produced by export() (or laid out the same way) into a .w3x archive."""
+          src_path = fspath(src_path)
+          dst_path = fspath(dst_path)
           files = {}
           for path_, _, filenames in os.walk(src_path):
                for filename in filenames:
@@ -117,6 +121,7 @@ class W3xFile(object):
           is missing mark `self.protected` and stop. Pass `mode=DEEP` only
           when you actually want to recover a protected map.
           """
+          file_path = fspath(file_path)
           if not isinstance(mode, W3xReadMode):
                mode = W3xReadMode(mode)
           self.clear()

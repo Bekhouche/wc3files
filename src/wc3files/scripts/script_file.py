@@ -6,6 +6,7 @@ from .lua_printer import print_chunk as print_lua
 from .checker import check_program
 from .lua_checker import check_chunk
 from . import ir
+from wc3files.files.binary_file import fspath
 
 
 class ScriptFile:
@@ -36,6 +37,7 @@ class ScriptFile:
           return self
 
      def read(self, file_path):
+          file_path = fspath(file_path)
           if isinstance(file_path, (bytes, bytearray)):
                # utf-8-sig drops a leading byte-order mark if there is one
                # and behaves as plain utf-8 otherwise. Real map scripts are
@@ -93,6 +95,7 @@ class ScriptFile:
           return self
 
      def write(self, file_path, validate=False):
+          file_path = fspath(file_path)
           ext = file_path.rsplit('.', 1)[-1].lower()
           if ext not in (item.value for item in ScriptFileType):
                raise ValueError(f'Invalid script file type: {ext}')

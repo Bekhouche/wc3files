@@ -2,6 +2,7 @@ import os
 
 from .cfg_file import CfgFile
 from ..table.slk_file import SlkFile
+from wc3files.files.binary_file import fspath
 
 
 class UnitsFile(object):
@@ -22,6 +23,7 @@ class UnitsFile(object):
 
      def read(self, path):
           """Read a Units directory (or a parent map folder containing Units/)."""
+          path = fspath(path)
           self.clear()
           units_dir = path
           if os.path.isdir(os.path.join(path, 'Units')):

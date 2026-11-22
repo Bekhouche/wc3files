@@ -4,6 +4,12 @@ import struct
 from loguru import logger
 from wc3files.data import BinaryDataType
 
+def fspath(value):
+    """A path-like object (pathlib.Path and the like) as its str or bytes
+    path; anything else, a str path or the data itself, as it is."""
+    return os.fspath(value) if isinstance(value, os.PathLike) else value
+
+
 class BinaryFile:
     def __init__(self, file_or_data, mode='read'):
         """
@@ -14,6 +20,7 @@ class BinaryFile:
 
         self.mode = mode
         self.file = None
+        file_or_data = fspath(file_or_data)
 
         # Deliberately does NOT call logger.remove()/logger.add() here: this used to wipe and
         # reconfigure loguru's *global* sink on every single BinaryFile construction (i.e. on
@@ -32,7 +39,7 @@ class BinaryFile:
             self.binary_data = file_or_data
             self.is_binary_data = True
         else:
-            raise TypeError("file_or_data must be a file path (str) or binary data (bytes or bytearray).")
+            raise TypeError("file_or_data must be a file path (str or os.PathLike) or binary data (bytes or bytearray).")
 
     def __enter__(self):
         self.open()
