@@ -1,9 +1,11 @@
 import argparse
 import base64
+import contextlib
 import json
 import os
 import struct
 import sys
+import tempfile
 
 from loguru import logger
 
@@ -53,6 +55,34 @@ def _open_map(path, deep):
               f"recovered by scanning for names, and some may still be missing.",
               file=sys.stderr)
     return archive
+
+
+_MAP_EXTENSIONS = ('.w3x', '.w3m')
+
+
+@contextlib.contextmanager
+def _member_or_file(path, members, deep=False):
+    """`(file path, label)` for a command that reads one map member: a plain
+    file as it is, or, for a .w3x/.w3m, the first of `members` it holds,
+    copied to a temporary file. `label` names it in messages
+    (`MyMap.w3x:war3map.j`)."""
+    if not path.lower().endswith(_MAP_EXTENSIONS):
+        yield path, path
+        return
+    archive = _open_map(path, deep)
+    found = {name.lower(): (name, data) for name, data in archive.files.items()
+             if data is not None}
+    for member in members:
+        if member.lower() in found:
+            name, data = found[member.lower()]
+            break
+    else:
+        raise ValueError(f'{path} has no {" or ".join(members)}')
+    with tempfile.TemporaryDirectory() as tmp:
+        target = os.path.join(tmp, name.replace('\\', '/').rsplit('/', 1)[-1])
+        with open(target, 'wb') as handle:
+            handle.write(data)
+        yield target, f'{path}:{name}'
 
 
 def _cmd_unpack(args):
@@ -225,12 +255,14 @@ def _cmd_jass(args):
     from wc3files.scripts.optimizer import DEFAULT_ENTRY_POINTS
 
     script = ScriptFile()
-    script.read(args.input)
+    with _member_or_file(args.input, ('war3map.lua', 'war3map.j', 'scripts\\war3map.lua',
+                                      'scripts\\war3map.j'), args.deep) as (path, label):
+        script.read(path)
     program = script.get_data()
     is_lua = script.get_file_type().value == 'lua'
 
     if args.check:
-        return _report_script_check(args.input, script.validate())
+        return _report_script_check(label, script.validate())
     if args.to_lua:
         if is_lua:
             raise ValueError('--to-lua takes a JASS script')
@@ -657,7 +689,8 @@ def _cmd_trigger_text(args):
     from wc3files.wtg.trigger_text import TriggerText, describe_trigger
 
     triggers_file = MapTriggersFile()
-    triggers_file.read(args.input)
+    with _member_or_file(args.input, ('war3map.wtg',), args.deep) as (path, _label):
+        triggers_file.read(path)
     triggers = triggers_file.get_triggers()
 
     text = TriggerText.default()
@@ -1740,7 +1773,10 @@ def build_parser():
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
                       'strip unreachable code and obfuscate identifiers.'))
-    p_jass.add_argument('input', help='Script to read (.j or .lua).')
+    p_jass.add_argument('input', help='Script to read (.j or .lua), or a .w3x/.w3m map, '
+                                       'whose war3map.lua or war3map.j is read.')
+    p_jass.add_argument('--deep', action='store_true',
+                        help='Read a protected map by scanning for its file names.')
     p_jass.add_argument('output', nargs='?', default='-',
                         help="Where to write it (default: stdout, '-').")
     p_jass.add_argument('--obfuscate', action='store_true',
@@ -1936,7 +1972,9 @@ def build_parser():
         'trigger-text',
         help=('Render a war3map.wtg as the text the World Editor shows - '
               'events, conditions and actions per trigger.'))
-    p_trig_text.add_argument('input', help='war3map.wtg to read.')
+    p_trig_text.add_argument('input', help='war3map.wtg to read, or a .w3x/.w3m map.')
+    p_trig_text.add_argument('--deep', action='store_true',
+                             help='Read a protected map by scanning for its file names.')
     p_trig_text.add_argument('--name', help='Only triggers whose name contains this.')
     p_trig_text.add_argument('--trigger-data',
                              help=('A TriggerData.txt to use instead of the bundled '
