@@ -26,6 +26,7 @@ kept, as w3x2lni does not keep it either).
 
 import json
 import os
+import re
 import tempfile
 
 from .objects import objects_to_lni, lni_to_objects
@@ -71,6 +72,20 @@ def _temp(data, suffix):
      return handle.name
 
 
+_SURROGATE = re.compile('[\\ud800-\\udfff]')
+
+
+def _json_text(value):
+     """JSON for the folder: readable UTF-8, except that a lone surrogate is
+     written as its escape (`\\udcd0`). Readers keep bytes that are not UTF-8
+     as such surrogates (a trigger name cut in the middle of a character, a
+     member name in an old code page); written raw they cannot be encoded as
+     UTF-8, which stopped the whole conversion. json.loads() gives the same
+     string back, so the file still rebuilds byte for byte."""
+     text = json.dumps(value, indent=1, ensure_ascii=False)
+     return _SURROGATE.sub(lambda match: '\\u%04x' % ord(match.group()), text)
+
+
 def _to_json(fmt_key, name, data):
      """JSON text for a file, or None when building it back would differ."""
      from wc3files.cli.formats import FORMATS
@@ -79,7 +94,7 @@ def _to_json(fmt_key, name, data):
      target = source + '.rebuilt'
      try:
           dumped = fmt.dump(source)
-          text = json.dumps(dumped, indent=1, ensure_ascii=False)
+          text = _json_text(dumped)
           fmt.build(json.loads(text), target)
           with open(target, 'rb') as h:
                if h.read() != data:
@@ -186,7 +201,7 @@ def map_to_lni(map_path, folder, files=None, deep=False):
      manifest = {'format': 'wc3files-lni', 'version': 1,
                  'map': os.path.basename(map_path) if map_path else None,
                  'files': entries}
-     _write(folder, MANIFEST, json.dumps(manifest, indent=1, ensure_ascii=False))
+     _write(folder, MANIFEST, _json_text(manifest))
      return manifest
 
 
