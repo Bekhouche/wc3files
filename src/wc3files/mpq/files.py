@@ -1,6 +1,6 @@
 import os
 import re
-from tqdm import tqdm
+from .progress import track
 from .data import *
 from .cipher import MpqCipher, plain_name
 from .sectors import read_block
@@ -110,7 +110,8 @@ class MpqFiles:
         self.mpq_block_table = mpq_block_table
         self.data_block_table = self.mpq_block_table.get_data()
 
-    def read(self, reader):
+    def read(self, reader, progress=None):
+        """`progress`: see wc3files.mpq.progress (None prints nothing)."""
         self._data = {}
         self._listfile = {}
 
@@ -134,7 +135,7 @@ class MpqFiles:
                 if file_data:
                     self._listfile['(signature)'] = file_data
 
-            for file in tqdm(check_list):
+            for file in track(check_list, progress, 'checking names'):
                 if file not in self._listfile:
                     file_data = self.check_file(file)
                     if file_data:
@@ -150,7 +151,7 @@ class MpqFiles:
         # import list a script references by name, which itself names more
         # real assets).
         if len(self.data_block_table) > len(self._listfile):
-            for file in tqdm(self.default_files):
+            for file in track(self.default_files, progress, 'probing names'):
                 file_data = self.check_file(file)
                 if file_data:
                     self._listfile[file] = file_data
@@ -169,7 +170,7 @@ class MpqFiles:
                     break
 
                 new_candidates = set()
-                for file in tqdm(pending):
+                for file in track(pending, progress, 'scanning for names'):
                     scanned.add(file)
                     # A guessed name can point at a block that is not that
                     # file (a decoy, or a hash collision); skip it.

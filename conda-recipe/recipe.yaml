@@ -33,9 +33,8 @@ requirements:
   run:
     - python >=${{ python_min }}
     # Imported at module import time, so the package cannot be imported
-    # without them.
+    # without it.
     - loguru
-    - tqdm
 
 tests:
   - python:

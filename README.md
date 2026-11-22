@@ -21,7 +21,8 @@ conda install -c conda-forge wc3files
 ```
 
 Python 3.9 or newer. Pure Python - no compiler, and no StormLib or game
-install needed.
+install needed. The only dependency is loguru. `pip install wc3files[progress]`
+adds tqdm, for progress bars while `--deep` scans a protected map.
 
 ## Documentation
 
