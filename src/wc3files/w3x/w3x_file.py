@@ -14,6 +14,7 @@ from wc3files.mpq.files import extract_references, is_scan_candidate
 from wc3files.mpq.sectors import read_block
 from wc3files.mpq import compression as _compression
 from wc3files.files.binary_file import fspath
+from wc3files.mpq.cipher import plain_name
 from wc3files.mpq.export import export_files
 
 
@@ -358,7 +359,7 @@ class W3xFile(object):
                offset = block_entry['BlockOffset'] + self._data['HEADER']['ArchiveOffset']
 
                if block_entry['Flags'] & MPQFileDataType.ENCRYPTED.value:
-                    key = self.hash(os.path.basename(filename), MPQHashType.MPQ_HASH_FILE_KEY)
+                    key = self.hash(plain_name(filename), MPQHashType.MPQ_HASH_FILE_KEY)
                     if block_entry['Flags'] & MPQFileDataType.FIX_KEY.value:
                          key = (key + block_entry['BlockOffset']) ^ block_entry['FileSize']
 
