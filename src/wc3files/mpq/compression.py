@@ -99,76 +99,135 @@ def _dcl_table(compact):
      return count, symbols
 
 
+def _dcl_codes(table):
+     """(symbol, length, code) for every symbol of a canonical table, the code
+     read most significant bit first, as blast.c assigns them."""
+     count, symbols = table
+     codes = []
+     first = index = 0
+     for length in range(1, _MAXBITS + 1):
+          for j in range(count[length]):
+               codes.append((symbols[index + j], length, first + j))
+          index += count[length]
+          first = (first + count[length]) << 1
+     return codes
+
+
+def _dcl_lookup(table):
+     """A table indexed by the next `width` bits of the stream (as they sit in
+     the bit buffer, first bit lowest), giving `symbol << 4 | length`, or -1
+     for a pattern that starts no code.
+
+     The stream stores each code's bits inverted and most significant first,
+     so code c of length L sits in the buffer as the bits of ~c, reversed."""
+     codes = _dcl_codes(table)
+     width = max(length for _, length, _ in codes)
+     lookup = [-1] * (1 << width)
+     for symbol, length, code in codes:
+          pattern = 0
+          for i in range(length):
+               pattern |= (((code >> (length - 1 - i)) & 1) ^ 1) << i
+          for high in range(1 << (width - length)):
+               lookup[pattern | (high << length)] = symbol << 4 | length
+     return lookup, (1 << width) - 1
+
+
 _DCL_TABLES = None
-
-
-class _DclBits:
-     __slots__ = ('data', 'pos', 'buffer', 'count')
-
-     def __init__(self, data):
-          self.data = data
-          self.pos = 0
-          self.buffer = 0
-          self.count = 0
-
-     def bits(self, need):
-          value = self.buffer
-          while self.count < need:
-               if self.pos >= len(self.data):
-                    raise MpqCompressionError('PKWare DCL data ends early')
-               value |= self.data[self.pos] << self.count
-               self.pos += 1
-               self.count += 8
-          self.buffer = value >> need
-          self.count -= need
-          return value & ((1 << need) - 1)
-
-     def decode(self, table):
-          count, symbols = table
-          code = first = index = 0
-          for length in range(1, _MAXBITS + 1):
-               code |= self.bits(1) ^ 1          # the codes are stored inverted
-               number = count[length]
-               if code - first < number:
-                    return symbols[index + code - first]
-               index += number
-               first = (first + number) << 1
-               code <<= 1
-          raise MpqCompressionError('invalid PKWare DCL code')
+# Bits one step of the decoder can use: a flag, a length code (up to 7 bits)
+# and its extra bits (up to 8), a distance code (up to 8) and its low bits
+# (up to 6) - 30. A literal uses at most 1 + 13.
+_DCL_STEP_BITS = 32
+# Zero bytes after the data, so a step can always top up its bit buffer;
+# reading into them is caught below as "ends early".
+_DCL_PAD = 8
 
 
 def explode(data):
-     """Decompress PKWare DCL ("implode") data."""
+     """Decompress PKWare DCL ("implode") data.
+
+     Each code is found with one lookup in a table indexed by the next bits of
+     the stream, from a bit buffer kept in a local int. Walking the codes one
+     bit at a time, as this did before, ran at about 2 MB/s and was most of
+     the time of reading a large imploded map."""
      global _DCL_TABLES
      if _DCL_TABLES is None:
-          _DCL_TABLES = (_dcl_table(_LITLEN), _dcl_table(_LENLEN), _dcl_table(_DISTLEN))
-     litcode, lencode, distcode = _DCL_TABLES
-     stream = _DclBits(bytes(data))
-     coded_literals = stream.bits(8)
+          _DCL_TABLES = tuple(_dcl_lookup(_dcl_table(compact))
+                              for compact in (_LITLEN, _LENLEN, _DISTLEN))
+     (lit_lookup, lit_mask), (len_lookup, len_mask), (dist_lookup, dist_mask) = _DCL_TABLES
+     data = bytes(data)
+     size = len(data)
+     if size < 2:
+          raise MpqCompressionError('PKWare DCL data ends early')
+     coded_literals = data[0]
      if coded_literals > 1:
           raise MpqCompressionError('invalid PKWare DCL literal mode')
-     dictionary = stream.bits(8)
+     dictionary = data[1]
      if not 4 <= dictionary <= 6:
           raise MpqCompressionError('invalid PKWare DCL dictionary size')
+     dictionary_mask = (1 << dictionary) - 1
+     stream = data + bytes(_DCL_PAD)
+     limit = len(stream)
+     pos = 2
+     buffer = count = 0
+     len_base, len_extra = _LEN_BASE, _LEN_EXTRA
      out = bytearray()
      while True:
-          if stream.bits(1):
-               symbol = stream.decode(lencode)
-               length = _LEN_BASE[symbol] + stream.bits(_LEN_EXTRA[symbol])
+          while count < _DCL_STEP_BITS:
+               if pos >= limit:
+                    raise MpqCompressionError('PKWare DCL data ends early')
+               buffer |= stream[pos] << count
+               pos += 1
+               count += 8
+          if buffer & 1:
+               entry = len_lookup[(buffer >> 1) & len_mask]
+               if entry < 0:
+                    raise MpqCompressionError('invalid PKWare DCL code')
+               symbol = entry >> 4
+               used = 1 + (entry & 15)
+               extra = len_extra[symbol]
+               length = len_base[symbol] + ((buffer >> used) & ((1 << extra) - 1))
+               used += extra
                if length == 519:                 # end of stream
+                    count -= used
                     break
-               shift = 2 if length == 2 else dictionary
-               distance = (stream.decode(distcode) << shift) + stream.bits(shift) + 1
+               buffer >>= used
+               count -= used
+               entry = dist_lookup[buffer & dist_mask]
+               if entry < 0:
+                    raise MpqCompressionError('invalid PKWare DCL code')
+               used = entry & 15
+               if length == 2:
+                    distance = ((entry >> 4) << 2) + ((buffer >> used) & 3) + 1
+                    used += 2
+               else:
+                    distance = ((entry >> 4) << dictionary) + ((buffer >> used) & dictionary_mask) + 1
+                    used += dictionary
+               buffer >>= used
+               count -= used
                if distance > len(out):
                     raise MpqCompressionError('PKWare DCL distance too far back')
                start = len(out) - distance
                if distance >= length:
                     out += out[start:start + length]
                else:
-                    for i in range(length):
-                         out.append(out[start + i])
+                    # An overlapping copy repeats the last `distance` bytes.
+                    chunk = out[start:]
+                    out += (chunk * (length // distance + 1))[:length]
+          elif coded_literals:
+               entry = lit_lookup[(buffer >> 1) & lit_mask]
+               if entry < 0:
+                    raise MpqCompressionError('invalid PKWare DCL code')
+               out.append(entry >> 4)
+               used = 1 + (entry & 15)
+               buffer >>= used
+               count -= used
           else:
-               out.append(stream.decode(litcode) if coded_literals else stream.bits(8))
+               out.append((buffer >> 1) & 0xFF)
+               buffer >>= 9
+               count -= 9
+     # Bits consumed past the real data were read from the padding.
+     if pos * 8 - count > size * 8:
+          raise MpqCompressionError('PKWare DCL data ends early')
      return bytes(out)
 
 
