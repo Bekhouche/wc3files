@@ -324,6 +324,8 @@ class ObjectData:
                     mod = {'value': {}, 'ptr': {}, 'type': kind}
                     entry[field_id] = mod
                mod['type'] = kind
+               if 'types' in mod:  # levels of mixed types, see ObjectTable.read
+                    mod['types'][number] = kind
                mod['value'][number] = converted
                mod['ptr'][number] = pointer
           self.changed.add(ext)

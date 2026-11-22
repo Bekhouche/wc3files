@@ -136,6 +136,18 @@ class ObjectTable(object):
                               self._data[IDX][MOD_ID]['seq'] = {}
                          self._data[IDX][MOD_ID]['value'][MOD_LEVEL] = MOD_VALUE
                          self._data[IDX][MOD_ID]['ptr'][MOD_LEVEL] = MOD_DATA_PTR
+                         # 'type' is the type of the first level read. The
+                         # levels of one field can disagree - a real map stores
+                         # acdn as unreal on levels 2-7 and as int on level 8 -
+                         # and writing every level with one type turned that
+                         # int 6 into the float 6.0. Only then is a per-level
+                         # 'types' kept, so the usual entry keeps its shape.
+                         entry = self._data[IDX][MOD_ID]
+                         if 'types' in entry or MOD_TYPE != entry['type']:
+                              types = entry.setdefault('types', {
+                                   level: entry['type'] for level in entry['value']
+                                   if level != MOD_LEVEL})
+                              types[MOD_LEVEL] = MOD_TYPE
                          # Levels of different mods are interleaved in real
                          # files - an ability writes one mod at level 1, the
                          # next mod at level 1, then back for level 2 - while
@@ -222,7 +234,7 @@ class ObjectTable(object):
                                         levels.append(level)
                                         ptrs.append(entry['ptr'][level])
                                         values.append(entry['value'][level])
-                                        types.append(entry['type'])
+                                        types.append(entry.get('types', {}).get(level, entry['type']))
                                         ends.append(
                                              stored_end.get(level, end_token)
                                              if isinstance(stored_end, dict)
