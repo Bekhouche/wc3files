@@ -119,7 +119,7 @@ class MpqFiles:
         if file_data:
             self._listfile['(listfile)'] = file_data[1]
             try:
-                check_list = [file.strip() for file in file_data[0].decode(errors='replace').split('\n')
+                check_list = [file.strip() for file in file_data[0].decode('utf-8', errors='surrogateescape').split('\n')
                               if file.strip()]
             except Exception:
                 check_list = []
@@ -193,7 +193,8 @@ class MpqFiles:
             except Exception:
                 pass
 
-        self._data['(listfile)'] = '\r\n'.join(sorted(self._listfile.keys())).encode()
+        self._data['(listfile)'] = '\r\n'.join(sorted(self._listfile.keys())).encode(
+            'utf-8', errors='surrogateescape')
 
     @staticmethod
     def _is_scan_candidate(name):
@@ -314,7 +315,7 @@ def extract_references(name, raw_bytes):
         return matches
 
     try:
-        text = raw_bytes.decode('utf-8', errors='replace')
+        text = raw_bytes.decode('utf-8', errors='surrogateescape')
     except Exception:
         return matches
     for match in _REFERENCE_PATTERN.finditer(text):

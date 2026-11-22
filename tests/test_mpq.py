@@ -675,6 +675,51 @@ class TestEncryptedMembersInFolders(unittest.TestCase):
                     self.assertEqual(mpq.files.get(name), expected)
 
 
+class TestNonAsciiNames(unittest.TestCase):
+    """The MPQ hash runs over the bytes of a name, upper-casing ASCII only."""
+
+    def test_table_keys_match_the_format(self):
+        # The two fixed keys every MPQ reader uses for its tables.
+        cipher = MpqCipher()
+        self.assertEqual(cipher.hash('(hash table)', 3), 0xC3AF3770)
+        self.assertEqual(cipher.hash('(block table)', 3), 0xEC83B3A3)
+
+    def test_a_name_hashes_as_its_utf8_bytes_and_only_ascii_is_upper_cased(self):
+        cipher, w3x = MpqCipher(), W3xFile()
+        from wc3files.mpq.data import MPQHashType
+        for name in ('war3map.j', 'Units\\café.blp', '中文\\图标.blp'):
+            with self.subTest(name=name):
+                expected = cipher.hash(name.encode('utf-8'), 1)
+                self.assertEqual(cipher.hash(name, 1), expected)
+                self.assertEqual(w3x.hash(name, MPQHashType.MPQ_HASH_NAME_A), expected)
+        # 'e' with an accent is two bytes in UTF-8 and neither is a letter
+        # to upper-case, so the upper-case form is a different name.
+        self.assertNotEqual(cipher.hash('café', 1), cipher.hash('CAFÉ', 1))
+        self.assertEqual(cipher.hash('café', 1), cipher.hash('CAFé', 1))
+
+    def test_names_outside_ascii_round_trip_through_both_readers(self):
+        files = {
+            'war3map.j': b'J',
+            '中文\\图标.blp': b'CJK',
+            'Units\\café.mdx': b'LATIN',
+            # A legacy code-page name, not valid UTF-8: the byte 0xE9 on its
+            # own, as a surrogateescape decode keeps it.
+            'Sound\\\udce9t\udce9.wav': b'CP1252',
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'names.w3x')
+            MpqWriter().write(files, path)
+            w3x = W3xFile()
+            w3x.read(path)
+            mpq = MpqFile()
+            mpq.read(path)
+            mpq.read_files()
+            for name, data in files.items():
+                with self.subTest(name=name):
+                    self.assertEqual(w3x.files.get(name), data)
+                    self.assertEqual(mpq.files.get(name), data)
+
+
 class TestExportCreatesFolders(unittest.TestCase):
     """Archive names separate folders with a backslash, on every platform."""
 

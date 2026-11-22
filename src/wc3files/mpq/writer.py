@@ -45,7 +45,10 @@ class MpqWriter:
           files = {name: (data or b'') for name, data in files.items() if name != self.LISTFILE}
           if protection_module.should_include_listfile(self.protection_level):
                # Blizzard's own tools terminate every entry with \r\n (including the last), not just separate them.
-               files[self.LISTFILE] = ''.join(name + '\r\n' for name in files).encode('utf8')
+               # surrogateescape: a name read from an archive whose listfile was not
+               # UTF-8 is written back as its own bytes, the ones its hash used.
+               files[self.LISTFILE] = ''.join(name + '\r\n' for name in files).encode(
+                    'utf8', errors='surrogateescape')
 
           names = list(files.keys())
           sector_size = 512 << self.sector_size_shift

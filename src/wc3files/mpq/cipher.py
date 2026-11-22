@@ -2,6 +2,37 @@ import struct
 from io import BytesIO
 from .data import *
 
+def name_bytes(name):
+     """The bytes an archive member name is hashed from.
+
+     MPQ hashes the bytes of a name, not its characters. Names are kept as
+     UTF-8 decoded with surrogateescape throughout this package (listfile,
+     object data, scripts), so encoding them back the same way gives exactly
+     the bytes the archive and the game use - UTF-8 for a Reforged map, the
+     original code-page bytes for an older one. A bytes name is used as it
+     is."""
+     if isinstance(name, (bytes, bytearray)):
+          return bytes(name)
+     return name.encode('utf-8', errors='surrogateescape')
+
+
+def hash_name(crypt_table, name, hash_type):
+     """The MPQ hash of `name` for `hash_type` (an int 0-4).
+
+     Only ASCII letters are upper-cased, as the game does: bytes.upper()
+     leaves every byte above 0x7F alone, where str.upper() turned 'e' with
+     an accent into another character and a CJK character into an index
+     past the 256-entry row of the crypt table (a KeyError)."""
+     seed1 = 0x7FED7FED
+     seed2 = 0xEEEEEEEE
+     row = hash_type << 8
+     for ch in name_bytes(name).upper():
+          value = crypt_table[row + ch]
+          seed1 = (value ^ (seed1 + seed2)) & 0xFFFFFFFF
+          seed2 = ch + seed1 + seed2 + (seed2 << 5) + 3 & 0xFFFFFFFF
+     return seed1
+
+
 def plain_name(filename):
      """The part of an archive member name after its last folder separator,
      which is what an encrypted file's key is hashed from.
@@ -74,16 +105,7 @@ class MpqCipher:
           return result.getvalue()
      
      def hash(self, lpszString, hash_type):
-          seed1 = 0x7FED7FED
-          seed2 = 0xEEEEEEEE
-          
-          for ch in lpszString.upper():
-               if not isinstance(ch, int): ch = ord(ch)
-               value = self.crypt_table[(hash_type << 8) + ch]
-               seed1 = (value ^ (seed1 + seed2)) & 0xFFFFFFFF
-               seed2 = ch + seed1 + seed2 + (seed2 << 5) + 3 & 0xFFFFFFFF
-
-          return seed1
+          return hash_name(self.crypt_table, lpszString, hash_type)
      
      @staticmethod
      def decompress(data, size=None):
