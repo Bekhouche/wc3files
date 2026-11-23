@@ -65,6 +65,17 @@ class W3iFile(object):
           'show_water_waves_on_cliff_shores',
           'show_water_waves_on_rolling_shores',
      ]
+     # Bits above those, by HiveWE's war3map.w3i page: only the ones it
+     # documents are named, the rest keep a raw name. Real maps set several
+     # of both (0x8000 in 701 corpus maps, 0x400000 and 0x800000 in a few
+     # version-39 ones), and decode_flags used to drop them all.
+     MAP_FLAG_HIGH_BITS = {
+          17: 'accurate_probability',          # 0x020000, version 31+
+          18: 'custom_ability_skins',          # 0x040000, version 31+
+          19: 'default_zoom_override',         # 0x080000, version 32+
+          20: 'maximum_zoom_override',         # 0x100000, version 32+
+          21: 'minimum_zoom_override',         # 0x200000, version 33+
+     }
 
      FORCE_FLAG_BITS = {
           0: 'allied',
@@ -259,15 +270,28 @@ class W3iFile(object):
      # ---- flag helpers --------------------------------------------------------------
 
      @classmethod
+     def map_flag_names(cls):
+          """{bit: name} for all 32 bits of the map flags: the known names, and
+          `bit_N` for the bits nothing documents."""
+          names = {i: name for i, name in enumerate(cls.MAP_FLAG_BITS)}
+          names.update(cls.MAP_FLAG_HIGH_BITS)
+          return {bit: names.get(bit, f'bit_{bit}') for bit in range(32)}
+
+     @classmethod
      def decode_flags(cls, flags):
-          return {name: bool(flags & (1 << i)) for i, name in enumerate(cls.MAP_FLAG_BITS)}
+          return {name: bool(flags & (1 << bit)) for bit, name in cls.map_flag_names().items()}
 
      @classmethod
      def encode_flags(cls, named_flags, base=0):
+          """The flags value: `base`, with each bit `named_flags` names set or
+          cleared. A bit it does not name keeps its value from `base`, so a
+          dict with only some of the names (or only the first 13, as
+          decode_flags gave before) cannot clear the others."""
           flags = base
-          for i, name in enumerate(cls.MAP_FLAG_BITS):
-               bit = 1 << i
-               flags = (flags | bit) if named_flags.get(name) else (flags & ~bit)
+          for bit, name in cls.map_flag_names().items():
+               if name in named_flags:
+                    mask = 1 << bit
+                    flags = (flags | mask) if named_flags[name] else (flags & ~mask)
           return flags & 0xFFFFFFFF
 
      @classmethod
