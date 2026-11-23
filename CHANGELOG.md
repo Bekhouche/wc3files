@@ -14,6 +14,10 @@ section to the new version and its date.
 
 - This changelog (#133).
 
+### Changed
+
+- `W3xFile()` and `MpqFiles()` no longer read the 332,532 reference names when they are created. A DEEP read loads them once, on first use, and probes them in sorted order. Reading 30 small corpus maps goes from 5.2 to 1.9 s (#135).
+
 ## [0.4.0] - 2026-11-23
 
 ### Added

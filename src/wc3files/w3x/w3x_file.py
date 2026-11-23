@@ -8,7 +8,7 @@ from wc3files.files import BinaryFile
 from wc3files.w3o.object_file import ObjectFile
 from wc3files.mpq.writer import MpqWriter
 from wc3files.mpq.data import MpqProtectionLevel
-from wc3files.mpq.files import extract_references, is_scan_candidate
+from wc3files.mpq.files import extract_references, is_scan_candidate, reference_names, _DefaultFiles
 from wc3files.mpq.sectors import read_block
 from wc3files.mpq import compression as _compression
 from wc3files.files.binary_file import fspath
@@ -41,6 +41,13 @@ class W3xReadMode(Enum):
      DEEP = 'deep'
 
 
+_W3X_PROBE_NAMES = (
+     '(listfile)', 'war3map.j', 'war3map.w3e', 'war3map.wpm', 'war3map.doo',
+     'war3map.w3u', 'war3map.w3b', 'war3map.w3d', 'war3map.w3a', 'war3map.w3q',
+     'war3map.wtg', 'war3map.wct', 'war3map.wts', 'war3map.shd', 'war3map.mmp',
+     'war3mapMap.blp', 'war3mapPreview.blp', 'war3mapSkin.blp')
+
+
 class W3xFile(object):
      # Script files that may reference other map assets by path.
      SCRIPT_FILES = ['war3map.j', 'war3map.lua', 'scripts\\war3map.j', 'scripts\\war3map.lua']
@@ -51,11 +58,12 @@ class W3xFile(object):
      # Extensions commonly referenced (by string literal) from WC3 map scripts, object data, and text manifests.
      SCRIPT_ASSET_EXTENSIONS = ['.mdl', '.mdx', '.blp', '.dds', '.tga', '.toc', '.wav', '.mp3', '.ai', '.fdf', '.txt']
 
+     default_files = _DefaultFiles(lambda: W3xFile.get_filelist())
+
      def __init__(self):
 
           self.initialize_crypt_table()
           self.clear()
-          self.default_files = self.get_filelist()
      
      def clear(self):
           self.files = {}
@@ -465,32 +473,9 @@ class W3xFile(object):
 
      @staticmethod
      def get_filelist():
-          files = [
-               '(listfile)',
-               'war3map.j',
-               'war3map.w3e',
-               'war3map.wpm',
-               'war3map.doo',
-               'war3map.w3u',
-               'war3map.w3b',
-               'war3map.w3d',
-               'war3map.w3a',
-               'war3map.w3q',
-               'war3map.wtg',
-               'war3map.wct',
-               'war3map.wts',
-               'war3map.shd',
-               'war3map.mmp',
-               'war3mapMap.blp',
-               'war3mapPreview.blp',
-               'war3mapSkin.blp'
-          ]
-          reference_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'reference')
-          for file_path in ['Warcraft III.txt', 'Warcraft III Maps.txt']:
-               with open(os.path.join(reference_path, file_path), mode='r', encoding='utf8') as file:
-                    files += [file.strip() for file in file.readlines()]
-          files = list(set(files))
-          return files
+          """The names a DEEP read probes: the archive's own special names and
+          the main map members, then every name of data/reference."""
+          return sorted(set(_W3X_PROBE_NAMES).union(reference_names()))
 
 class ProtectedMapError(ValueError):
      """A map whose (listfile) is missing or leaves files out, read without
