@@ -25,6 +25,8 @@ gradients, DXT1 for no/binary alpha at the smallest size.
 """
 import struct
 
+from wc3files.files.binary_file import TruncatedDataError
+
 from .dxt import block_size, decode_dxt_image, encode_dxt_image
 from .png_writer import write_png
 from .transform import resize_box
@@ -61,6 +63,11 @@ class DdsError(ValueError):
     pass
 
 
+class DdsTruncatedError(DdsError, TruncatedDataError):
+    """A DDS file that ends before its header or a mip it points to. Both a
+    DdsError and a TruncatedDataError, so either catches it."""
+
+
 class DdsFile:
     def __init__(self):
         self.clear()
@@ -76,6 +83,14 @@ class DdsFile:
         self._rgba_cache = {}
 
     def read(self, file_or_data):
+        try:
+            return self._read(file_or_data)
+        except (struct.error, IndexError) as exc:
+            # The header is unpacked straight from the bytes, so a file cut
+            # short raised struct.error rather than this format's error.
+            raise DdsTruncatedError(f'the DDS file ends before its header is complete: {exc}') from exc
+
+    def _read(self, file_or_data):
         if isinstance(file_or_data, (bytes, bytearray)):
             data = bytes(file_or_data)
         else:

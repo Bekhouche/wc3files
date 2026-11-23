@@ -469,7 +469,9 @@ ReplayFile().read(path) / .get_data() / .import_data(d) / .write(path)
 ```
 
 Exceptions: `FdfError`, `PopcornError`, `WaiError`, `BlpError`, `DdsError`,
-`TgaError`, `BmpError`, `TiffError`, `PngError`, and the CASC family
+`TgaError`, `BmpError`, `TiffError`, `PngError`, `BlpTruncatedError` and
+`DdsTruncatedError` (a file cut short; each is also a `TruncatedDataError`),
+and the CASC family
 (`CascStorageError`, `BlteError`, `BlteEncryptedError`, `CascConfigError`,
 `CascEncodingError`, `CascIndexError`, `CascRootError`).
 

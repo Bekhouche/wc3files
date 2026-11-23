@@ -177,5 +177,35 @@ class TestReadDoesNotAskForTheOffset(unittest.TestCase):
                     'the data ends at offset 10: 4 bytes were needed at offset 8, 2 are left')
 
 
+class TestTruncatedImages(unittest.TestCase):
+    """A BLP or DDS file cut short raised struct.error from its header
+    (#142). It is now BlpTruncatedError or DdsTruncatedError, which are
+    both the format's error and a TruncatedDataError."""
+
+    def test_cut_images_raise_the_format_error(self):
+        from wc3files.img import BlpFile, BlpError, DdsFile, DdsError
+        for cls, error, sample in ((BlpFile, BlpError, 'BTNMountainKing.blp'),
+                                   (BlpFile, BlpError, 'sample.blp'),
+                                   (DdsFile, DdsError, 'sample.dds')):
+            data = _helpers.read_bytes(_helpers.sample_path(sample))
+            for cut in list(range(0, 200)) + [len(data) // 2]:
+                with self.subTest(sample=sample, cut=cut):
+                    try:
+                        image = cls()
+                        image.read(data[:cut])
+                    except error:
+                        pass
+
+    def test_a_cut_header_is_also_a_truncated_data_error(self):
+        from wc3files.img import BlpFile, BlpTruncatedError, DdsFile, DdsTruncatedError
+        for cls, error, sample in ((BlpFile, BlpTruncatedError, 'sample.blp'),
+                                   (DdsFile, DdsTruncatedError, 'sample.dds')):
+            data = _helpers.read_bytes(_helpers.sample_path(sample))
+            with self.subTest(sample=sample):
+                with self.assertRaises(error) as caught:
+                    cls().read(data[:10])
+                self.assertIsInstance(caught.exception, TruncatedDataError)
+
+
 if __name__ == '__main__':
     unittest.main()

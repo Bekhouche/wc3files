@@ -27,6 +27,7 @@ section to the new version and its date.
 
 - A truncated or damaged `war3map.doo` raises `TruncatedDataError` instead of `struct.error` or `IndexError` (#140).
 - A truncated MDX model raises `TruncatedDataError`, which is still an `EOFError`, instead of a plain `EOFError` (#141).
+- A BLP or DDS image cut short raises the new `BlpTruncatedError` or `DdsTruncatedError` instead of `struct.error`. Each is both the format's error and a `TruncatedDataError` (#142).
 
 ## [0.4.0] - 2026-11-23
 
