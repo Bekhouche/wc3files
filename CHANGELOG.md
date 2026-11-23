@@ -19,6 +19,7 @@ section to the new version and its date.
 - `W3xFile()` and `MpqFiles()` no longer read the 332,532 reference names when they are created. A DEEP read loads them once, on first use, and probes them in sorted order. Reading 30 small corpus maps goes from 5.2 to 1.9 s (#135).
 - `BinaryFile` no longer asks the file for its position before every read, and reads a file of up to 64 MB into memory. Reading w3e, wtg and object data files is about twice as fast: w3e goes from 1.0 to 2.7 MB/s, wtg from 3.3 to 6.7 MB/s (#136).
 - `TerrainFile` reads and writes the tile grid in one pass. war3map.w3e reads at 10.3 MB/s, up from 2.7, and writes at 11.0 MB/s, up from 3.2 (#137).
+- The JASS lexer walks the source with `finditer` and takes columns from the line start. It gives the same tokens on all 703 corpus scripts, 32% faster, and `ScriptFile.read` parses JASS at 3.1 MB/s, up from 2.7 (#138).
 
 ## [0.4.0] - 2026-11-23
 
