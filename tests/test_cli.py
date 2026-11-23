@@ -350,8 +350,22 @@ class TestProtectedMaps(unittest.TestCase):
                 rc, err = self.run_quietly(argv)
                 self.assertEqual(rc, 1)
                 self.assertIn('is protected: it has no (listfile)', err)
-                self.assertIn('--deep', err)
+                self.assertNotIn('--deep', err)
         self.assertEqual(sorted(os.listdir(self.tmp.name)), ['protected.w3x'])
+
+    def test_help_does_not_describe_deep(self):
+        """--deep still works (test_read_with_deep), but no --help shows it
+        (#130)."""
+        import contextlib
+        import io
+        for name in ('unpack', 'lni', 'slk', 'obj', 'optimize', 'run-map',
+                     'jass', 'trigger-text', 'script-to-triggers'):
+            with self.subTest(command=name):
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+                    main([name, '--help'])
+                self.assertNotIn('--deep', out.getvalue())
+                self.assertNotIn('protected', out.getvalue())
 
     def test_read_with_deep(self):
         from wc3files import W3xFile

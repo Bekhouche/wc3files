@@ -33,15 +33,7 @@ A protected map has no `(listfile)`, or one that leaves files out. `unpack`,
 the listfile does not name would be lost:
 
 ```
-error: MyMap.w3x is protected: it has no (listfile). Reading it as it is would lose those files. ...
-```
-
-`--deep` reads it anyway, by scanning the map's scripts, object data and
-models for the names of its other files. The result is a recovery: the
-command says so, and some files may still be missing.
-
-```bash
-wc3files unpack Protected.w3x out/ --deep
+error: MyMap.w3x is protected: it has no (listfile). Reading it as it is would lose those files.
 ```
 
 ## Inspecting map sub-files

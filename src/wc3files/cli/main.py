@@ -1473,7 +1473,7 @@ def build_parser():
     p_unpack = subparsers.add_parser('unpack', help='Extract a .w3x/.w3m/.w3n archive to loose files.')
     p_unpack.add_argument('src', help='Path to the .w3x/.w3m/.w3n archive.')
     p_unpack.add_argument('out_dir', help='Directory to extract into (files land under out_dir/<map name>/).')
-    p_unpack.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
+    p_unpack.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_unpack.set_defaults(func=_cmd_unpack)
 
     p_pack = subparsers.add_parser('pack', help='Repack loose files (as produced by unpack) into an archive.',
@@ -1815,7 +1815,7 @@ def build_parser():
     p_jass.add_argument('input', help='Script to read (.j or .lua), or a .w3x/.w3m map, '
                                        'whose war3map.lua or war3map.j is read.')
     p_jass.add_argument('--deep', action='store_true',
-                        help='Read a protected map by scanning for its file names.')
+                        help=argparse.SUPPRESS)
     p_jass.add_argument('output', nargs='?', default='-',
                         help="Where to write it (default: stdout, '-').")
     p_jass.add_argument('--obfuscate', action='store_true',
@@ -1942,7 +1942,7 @@ def build_parser():
                      'reads (Units\\UnitData.slk, ...), for release.'))
     p_slk.add_argument('input', help='The .w3x/.w3m map.')
     p_slk.add_argument('output', help='The map to write.')
-    p_slk.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
+    p_slk.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_slk.set_defaults(func=_cmd_slk_mode)
 
     p_obj = subparsers.add_parser(
@@ -1950,7 +1950,7 @@ def build_parser():
                      'files the World Editor reads.'))
     p_obj.add_argument('input', help='The .w3x/.w3m map.')
     p_obj.add_argument('output', help='The map to write.')
-    p_obj.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
+    p_obj.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_obj.set_defaults(func=_cmd_obj_mode)
 
     p_opt = subparsers.add_parser(
@@ -1970,7 +1970,7 @@ def build_parser():
                        help='Write the values of <A000,DataA1> references into the text.')
     p_opt.add_argument('--slk', action='store_true',
                        help='Then move object data into the tables (as `slk`).')
-    p_opt.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
+    p_opt.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_opt.set_defaults(func=_cmd_optimize)
 
     p_ui = subparsers.add_parser(
@@ -1989,7 +1989,7 @@ def build_parser():
                      'the rest as JSON or as they are), or such a folder back into a map.'))
     p_lni.add_argument('input', help='A .w3x/.w3m map, or an Lni folder.')
     p_lni.add_argument('output', help='The folder to write, or the map to build.')
-    p_lni.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
+    p_lni.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_lni.set_defaults(func=_cmd_lni)
 
     p_run_map = subparsers.add_parser(
@@ -2004,7 +2004,7 @@ def build_parser():
                            help='Also print the text the map displays.')
     p_run_map.add_argument('--max-steps', type=int, default=200_000_000,
                            help='Stop after this many interpreter steps.')
-    p_run_map.add_argument('--deep', action='store_true', help=('Read a protected map (no full (listfile)) by scanning for its file names. Without it, a protected map is refused, since its unnamed files would be lost.'))
+    p_run_map.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_run_map.set_defaults(func=_cmd_run_map)
 
     p_trig_text = subparsers.add_parser(
@@ -2013,7 +2013,7 @@ def build_parser():
               'events, conditions and actions per trigger.'))
     p_trig_text.add_argument('input', help='war3map.wtg to read, or a .w3x/.w3m map.')
     p_trig_text.add_argument('--deep', action='store_true',
-                             help='Read a protected map by scanning for its file names.')
+                             help=argparse.SUPPRESS)
     p_trig_text.add_argument('--name', help='Only triggers whose name contains this.')
     p_trig_text.add_argument('--trigger-data',
                              help=('A TriggerData.txt to use instead of the bundled '
@@ -2030,7 +2030,7 @@ def build_parser():
     p_from_script.add_argument('input', help=('war3map.j to read, or a .w3x/.w3m map, whose '
                                               'war3map.j and object data are read.'))
     p_from_script.add_argument('--deep', action='store_true',
-                               help='Read a protected map by scanning for its file names.')
+                               help=argparse.SUPPRESS)
     p_from_script.add_argument('--json', action='store_true',
                                help='Emit the full reconstruction as JSON.')
     p_from_script.add_argument('--out', help='Write JSON here instead of stdout.')
