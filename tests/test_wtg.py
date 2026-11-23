@@ -68,6 +68,23 @@ class TestTriggerData(unittest.TestCase):
         with self.assertRaises(KeyError):
             trigger_data.arg_count(EVENT, 'ThisIsNotARealTriggerFunction')
 
+    def test_unknown_function_is_also_a_value_error(self):
+        # A ValueError like every other unreadable file, so a caller that
+        # catches ValueError for a bad file catches this too (#144).
+        from wc3files.wtg import TriggerDataError
+        trigger_data = TriggerData.default()
+        with self.assertRaises(ValueError) as caught:
+            trigger_data.arg_count(EVENT, 'ThisIsNotARealTriggerFunction')
+        self.assertIsInstance(caught.exception, TriggerDataError)
+        self.assertIsInstance(caught.exception, KeyError)
+        self.assertTrue(str(caught.exception).startswith(
+            "Unknown events function: 'ThisIsNotARealTriggerFunction'."))
+
+    def test_invalid_function_type_is_a_value_error(self):
+        trigger_data = TriggerData.default()
+        with self.assertRaises(ValueError):
+            trigger_data.arg_count(65536, 'MapInitializationEvent')
+
     def test_a_native_or_comparison_missing_from_the_file_still_has_a_count(self):
         # Extended editors expose natives as GUI functions with the native's
         # own parameters, and every OperatorCompare* condition takes 3.
