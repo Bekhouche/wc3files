@@ -1,7 +1,13 @@
+import struct
+
 from ..data import BinaryDataType
 from .data import TerrainFileType
 from wc3files.files import BinaryFile
 from wc3files.files.binary_file import fspath
+
+
+_TILE_V11 = struct.Struct('<HHBBB')
+_TILE_V12 = struct.Struct('<HHHBB')
 
 
 class TerrainFile(object):
@@ -77,38 +83,22 @@ class TerrainFile(object):
 
      # ---- tilepoint decode/encode -----------------------------------------------
 
+     # Version 11: height, water and edge, then one byte of texture and
+     # flags, variation, cliff and layer. Version 12 widens the texture byte
+     # to two bytes, with a 6-bit texture. Heights and water are unsigned, as
+     # they always were here.
+
      @staticmethod
-     def _decode_tilepoint(reader, version):
-          ground_height = reader.read(BinaryDataType.INT, num=2)
-          water_and_edge = reader.read(BinaryDataType.INT, num=2)
-
-          if version >= 12:
-               texture_bits = reader.read(BinaryDataType.INT, num=2)
-               ground_texture = texture_bits & 0x3F
-               is_ramp = bool(texture_bits & 0x40)
-               is_blight = bool(texture_bits & 0x80)
-               is_water = bool(texture_bits & 0x100)
-               is_boundary = bool(texture_bits & 0x200)
-          else:
-               texture_bits = reader.read(BinaryDataType.INT, num=1)
-               ground_texture = texture_bits & 0x0F
-               is_ramp = bool(texture_bits & 0x10)
-               is_blight = bool(texture_bits & 0x20)
-               is_water = bool(texture_bits & 0x40)
-               is_boundary = bool(texture_bits & 0x80)
-
-          variation = reader.read(BinaryDataType.INT, num=1)
-          cliff_and_layer = reader.read(BinaryDataType.INT, num=1)
-
+     def _decode_v11(height, water_and_edge, texture_bits, variation, cliff_and_layer):
           return {
-               'ground_height': ground_height,
+               'ground_height': height,
                'water_level': water_and_edge & 0x3FFF,
                'is_map_edge': bool(water_and_edge & 0x4000),
-               'ground_texture': ground_texture,
-               'is_ramp': is_ramp,
-               'is_blight': is_blight,
-               'is_water': is_water,
-               'is_boundary': is_boundary,
+               'ground_texture': texture_bits & 0x0F,
+               'is_ramp': bool(texture_bits & 0x10),
+               'is_blight': bool(texture_bits & 0x20),
+               'is_water': bool(texture_bits & 0x40),
+               'is_boundary': bool(texture_bits & 0x80),
                'ground_variation': variation & 0x1F,
                'cliff_variation': (variation >> 5) & 0x07,
                'layer_height': cliff_and_layer & 0x0F,
@@ -116,42 +106,50 @@ class TerrainFile(object):
           }
 
      @staticmethod
-     def _encode_tilepoint(writer, tile, version):
-          writer.write(BinaryDataType.BYTES, int(tile['ground_height']).to_bytes(2, 'little'))
+     def _decode_v12(height, water_and_edge, texture_bits, variation, cliff_and_layer):
+          return {
+               'ground_height': height,
+               'water_level': water_and_edge & 0x3FFF,
+               'is_map_edge': bool(water_and_edge & 0x4000),
+               'ground_texture': texture_bits & 0x3F,
+               'is_ramp': bool(texture_bits & 0x40),
+               'is_blight': bool(texture_bits & 0x80),
+               'is_water': bool(texture_bits & 0x100),
+               'is_boundary': bool(texture_bits & 0x200),
+               'ground_variation': variation & 0x1F,
+               'cliff_variation': (variation >> 5) & 0x07,
+               'layer_height': cliff_and_layer & 0x0F,
+               'cliff_texture': (cliff_and_layer >> 4) & 0x0F,
+          }
 
+     @staticmethod
+     def _common_fields(tile):
           water_and_edge = tile['water_level'] & 0x3FFF
           if tile['is_map_edge']:
                water_and_edge |= 0x4000
-          writer.write(BinaryDataType.BYTES, water_and_edge.to_bytes(2, 'little'))
-
-          if version >= 12:
-               texture_bits = tile['ground_texture'] & 0x3F
-               if tile['is_ramp']:
-                    texture_bits |= 0x40
-               if tile['is_blight']:
-                    texture_bits |= 0x80
-               if tile['is_water']:
-                    texture_bits |= 0x100
-               if tile['is_boundary']:
-                    texture_bits |= 0x200
-               writer.write(BinaryDataType.BYTES, texture_bits.to_bytes(2, 'little'))
-          else:
-               texture_bits = tile['ground_texture'] & 0x0F
-               if tile['is_ramp']:
-                    texture_bits |= 0x10
-               if tile['is_blight']:
-                    texture_bits |= 0x20
-               if tile['is_water']:
-                    texture_bits |= 0x40
-               if tile['is_boundary']:
-                    texture_bits |= 0x80
-               writer.write(BinaryDataType.BYTES, bytes([texture_bits]))
-
           variation = (tile['ground_variation'] & 0x1F) | ((tile['cliff_variation'] & 0x07) << 5)
-          writer.write(BinaryDataType.BYTES, bytes([variation]))
-
           cliff_and_layer = (tile['layer_height'] & 0x0F) | ((tile['cliff_texture'] & 0x0F) << 4)
-          writer.write(BinaryDataType.BYTES, bytes([cliff_and_layer]))
+          return int(tile['ground_height']), water_and_edge, variation, cliff_and_layer
+
+     @classmethod
+     def _encode_v11(cls, tile):
+          height, water_and_edge, variation, cliff_and_layer = cls._common_fields(tile)
+          texture_bits = (tile['ground_texture'] & 0x0F
+                          | (0x10 if tile['is_ramp'] else 0)
+                          | (0x20 if tile['is_blight'] else 0)
+                          | (0x40 if tile['is_water'] else 0)
+                          | (0x80 if tile['is_boundary'] else 0))
+          return _TILE_V11.pack(height, water_and_edge, texture_bits, variation, cliff_and_layer)
+
+     @classmethod
+     def _encode_v12(cls, tile):
+          height, water_and_edge, variation, cliff_and_layer = cls._common_fields(tile)
+          texture_bits = (tile['ground_texture'] & 0x3F
+                          | (0x40 if tile['is_ramp'] else 0)
+                          | (0x80 if tile['is_blight'] else 0)
+                          | (0x100 if tile['is_water'] else 0)
+                          | (0x200 if tile['is_boundary'] else 0))
+          return _TILE_V12.pack(height, water_and_edge, texture_bits, variation, cliff_and_layer)
 
      # ---- read -------------------------------------------------------------------
 
@@ -181,7 +179,12 @@ class TerrainFile(object):
           data['offset_x'] = reader.read(BinaryDataType.REAL)
           data['offset_y'] = reader.read(BinaryDataType.REAL)
 
-          data['tiles'] = [self._decode_tilepoint(reader, version) for _ in range(width * height)]
+          # The whole grid in one read and one pass: reading each tile point
+          # field by field was most of the time of reading a terrain.
+          layout = _TILE_V12 if version >= 12 else _TILE_V11
+          grid = reader.read(BinaryDataType.BYTES, num=width * height * layout.size)
+          decode = self._decode_v12 if version >= 12 else self._decode_v11
+          data['tiles'] = [decode(*fields) for fields in layout.iter_unpack(grid)]
 
           return data
 
@@ -210,5 +213,6 @@ class TerrainFile(object):
           writer.write(BinaryDataType.REAL, data.get('offset_x', 0.0))
           writer.write(BinaryDataType.REAL, data.get('offset_y', 0.0))
 
-          for tile in data.get('tiles', []):
-               self._encode_tilepoint(writer, tile, version)
+          encode = self._encode_v12 if version >= 12 else self._encode_v11
+          writer.write(BinaryDataType.BYTES,
+                       b''.join([encode(tile) for tile in data.get('tiles', [])]))
