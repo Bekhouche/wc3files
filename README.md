@@ -2,7 +2,6 @@
 Warcraft III maps files reader and writer for Python
 
 [![PyPI](https://img.shields.io/pypi/v/wc3files.svg)](https://pypi.python.org/pypi/wc3files)
-[![conda-forge](https://img.shields.io/conda/vn/conda-forge/wc3files.svg)](https://anaconda.org/conda-forge/wc3files)
 [![Python](https://img.shields.io/pypi/pyversions/wc3files.svg)](https://pypi.python.org/pypi/wc3files)
 [![License](https://img.shields.io/pypi/l/wc3files.svg)](LICENSE)
 
@@ -14,11 +13,7 @@ A Python library for reading and writing various Warcraft III file formats. This
 pip install wc3files
 ```
 
-Or with conda:
-
-```bash
-conda install -c conda-forge wc3files
-```
+A conda-forge package is in review and not published yet.
 
 Python 3.9 or newer. Pure Python - no compiler, and no StormLib or game
 install needed. The only dependency is loguru. `pip install wc3files[progress]`
@@ -78,59 +73,74 @@ Full documentation lives in [docs/](docs/README.md):
 
 ## Usage Examples
 
-### Working with MPQ Archives
+These examples are run by the test suite (`tests/test_readme.py`), on the
+checked-in sample files, so they stay correct.
+
+### Working with a map
+
 ```python
-from wc3files.mpq import MPQ
+from wc3files import W3xFile
 
-# Open an MPQ archive
-mpq = MPQ("path/to/archive.mpq")
+# Read a map: every member it lists, by name, as bytes.
+archive = W3xFile()
+archive.read("MyMap.w3x")
+print(sorted(archive.files))
 
-# List files in the archive
-files = mpq.list_files()
-print(files)
-
-# Extract a file
-data = mpq.extract_file("path/in/archive.txt")
+# Change a member, and build the map again.
+script = archive.files["war3map.j"]
+archive.files["war3map.j"] = script + b"// edited with wc3files\r\n"
+archive.build_from_files(archive.files, "MyMap.edited.w3x")
 ```
 
-### Working with Object Data
+A map without a full `(listfile)` reads with `archive.protected` set; pass
+`mode=W3xReadMode.DEEP` to recover its files by scanning for their names.
+
+### Working with MPQ archives
+
+```python
+from wc3files.mpq import MpqFile
+
+mpq = MpqFile()
+mpq.read("MyMap.w3x")   # .mpq, .w3x, .w3m and .w3n
+mpq.read_files()
+for name, data in mpq.files.items():
+    print(name, len(data or b""))
+```
+
+### Working with object data
+
 ```python
 from wc3files.w3o import ObjectFile
 
-# Load an object file
-obj_file = ObjectFile.from_file("path/to/war3map.w3u")
-
-# Access object data
-for obj in obj_file.objects:
-    print(f"Object ID: {obj.id}")
-    print(f"Modifications: {obj.modifications}")
+units = ObjectFile()
+units.read("war3map.w3u")
+tables = units.export_data()["w3u"]
+for table in ("original", "custom"):
+    for object_id, fields in tables[table].items():
+        print(table, object_id, sorted(code for code in fields if code != "ID"))
 ```
 
-### Working with Region Data
+### Working with regions
+
 ```python
 from wc3files.w3r import RegionFile
 
-# Load a region file
-region_file = RegionFile.from_file("path/to/war3map.w3r")
-
-# Access regions
-for region in region_file.regions:
-    print(f"Region: {region.name}")
-    print(f"Position: {region.position}")
-    print(f"Size: {region.size}")
+regions = RegionFile()
+regions.read("war3map.w3r")
+for region in regions.get_regions().values():
+    print(region.name, (region.left, region.bottom), (region.right, region.top))
 ```
 
-### Working with Replay Files
+### Working with replays
+
 ```python
 from wc3files.w3g import ReplayFile
 
-# Load a replay file
-replay = ReplayFile.from_file("path/to/replay.w3g")
-
-# Access replay data
-print(f"Game: {replay.header.game_identifier}")
-print(f"Version: {replay.header.version}")
-print(f"Players: {len(replay.player_records)}")
+replay = ReplayFile()
+replay.read("replay.w3g")
+data = replay.get_data()
+game = data["compressed_data"]
+print(game["MapName"], game["GameName"], data["header"]["sub"]["version_number"])
 ```
 
 ## Credits
