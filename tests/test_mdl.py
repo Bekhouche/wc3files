@@ -347,3 +347,28 @@ class TestReforgedMdxFields(unittest.TestCase):
         # rewrite lose more entries than the last.
         again = self._round_trip(result)
         self.assertEqual(len(again['faceEffects']), 5)
+
+
+class TestCommentMarkersInStrings(unittest.TestCase):
+    """The tokenizer cut each line at `//` before looking at quotes, so a
+    string holding a URL lost its closing quote and the parser read on into
+    the next block ("Unexpected end of MDL"). A real map's model has the
+    attachment path "THIS MODEL WAS RIPPED BY INICO. PM? (http://...)"."""
+
+    PATH = 'RIPPED BY SOMEONE (http://example.org/u1)'
+
+    def test_tokens(self):
+        from wc3files.mdl.mdl_io import MdlTokenizer
+        tokens = MdlTokenizer('Path "see http://x.y/z",\nAttachmentID 8, // a comment\n')._tokens
+        self.assertEqual(tokens, ['Path', '"see http://x.y/z"', ',', 'AttachmentID', '8', ','])
+
+    def test_an_attachment_path_with_a_url(self):
+        with open(_helpers.sample_path('sample.mdl'), encoding='utf-8') as handle:
+            text = handle.read()
+        text += ('Attachment "README" {\n\tObjectId 9,\n\tAttachmentID 0,\n'
+                 '\tPath "' + self.PATH + '",\n}\n')
+        model = load_mdl(text)
+        self.assertEqual(model['attachments'][0]['path'], self.PATH)
+        again = load_mdl(save_mdl(model))
+        self.assertEqual(again['attachments'][0]['path'], self.PATH)
+        self.assertEqual(save_mdl(again), save_mdl(model))

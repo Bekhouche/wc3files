@@ -10,17 +10,21 @@ from .mdx_io import empty_model
 _NUMBER = re.compile(r'^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$')
 
 
+_TOKEN = re.compile(
+    r'"[^"]*"'                  # a string, which may itself contain //
+    r'|//[^\n]*'                # a comment, to the end of the line
+    r'|[{},]'
+    r'|(?:(?!//)[^\s{},"])+')   # anything else, up to a comment
+
+
 class MdlTokenizer:
     def __init__(self, text):
-        # Strip // comments while preserving newlines for line tracking.
-        cleaned = []
-        for line in text.splitlines(True):
-            if '//' in line:
-                code, _ = line.split('//', 1)
-                cleaned.append(code + ('\n' if line.endswith('\n') else ''))
-            else:
-                cleaned.append(line)
-        self._tokens = re.findall(r'"[^"]*"|[{},]|[^\s{},]+', ''.join(cleaned))
+        # Comments are matched by the same pattern as strings, so a `//`
+        # inside a string stays part of it. They used to be cut from each
+        # line before tokenizing: an attachment path holding a URL lost its
+        # closing quote, and the parser read on into the next block.
+        self._tokens = [token for token in _TOKEN.findall(text)
+                        if not token.startswith('//')]
         self._i = 0
 
     def peek(self):
@@ -850,7 +854,15 @@ def _parse_geoset_anim(tokens):
 
 
 def _parse_node_body(tokens, node):
-    while tokens.peek() != '}':
+    """Parse one node entry (ObjectId, Parent, a flag, a node track) into
+    `node`, or consume a key it does not know and return it for the caller.
+
+    One entry per call: every caller already calls this once per key from its
+    own loop. It used to go on reading entries after the first, so the key
+    after a node entry was consumed here, returned as "leftover", and its
+    value dropped by the caller: an attachment's Path or a light's type,
+    written after its ObjectId, read back empty."""
+    if tokens.peek() != '}':
         key = tokens.next()
         if key == 'ObjectId':
             node['objectId'] = int(_parse_number(tokens.next()))
