@@ -41,15 +41,15 @@ def _bytes_decode_hook(obj):
     return obj
 
 
-def _open_map(path, deep):
+def _open_map(path, deep, members=None):
     """Read a map for a command that writes something from it: a protected
     map is refused unless --deep (wc3files.w3x.read_map), and a recovered one
-    is reported as such."""
+    is reported as such. `members` reads only those files."""
     from wc3files.w3x.w3x_file import read_map, protection_reason
     # A deep read takes minutes, so the command shows its progress (if tqdm
     # is installed); the library itself prints nothing.
-    archive = read_map(path, deep=deep, progress=deep)
-    if archive.protected:
+    archive = read_map(path, deep=deep, progress=deep, members=members)
+    if archive.protected and members is None:
         print(f"note: {path} is protected ({protection_reason(archive)}); "
               f"{sum(1 for v in archive.files.values() if v is not None)} files were "
               f"recovered by scanning for names, and some may still be missing.",
@@ -69,7 +69,9 @@ def _member_or_file(path, members, deep=False):
     if not path.lower().endswith(_MAP_EXTENSIONS):
         yield path, path
         return
-    archive = _open_map(path, deep)
+    # Only the members asked for are read: decompressing the whole of a
+    # large map took longer than the command itself.
+    archive = _open_map(path, deep, members=members)
     found = {name.lower(): (name, data) for name, data in archive.files.items()
              if data is not None}
     for member in members:
@@ -727,15 +729,25 @@ def _cmd_script_to_triggers(args):
     from wc3files.wtg.from_script import reconstruct_from_jass, object_ids_from_files
 
     object_ids = None
+    scripts = ('war3map.j', 'scripts\\war3map.j')
     if args.input.lower().endswith(_MAP_EXTENSIONS):
         # A map gives its object data too: its custom units and upgrades
         # tell SetPlayerUnitMaxAllowed from SetPlayerTechMaxAllowedSwap.
-        object_ids = object_ids_from_files(_open_map(args.input, args.deep).files)
-    with _member_or_file(args.input, ('war3map.j', 'scripts\\war3map.j'),
-                         args.deep) as (path, _label):
+        # One read of just these files; the map used to be read whole, twice.
+        files = _open_map(args.input, args.deep,
+                          members=scripts + ('war3map.w3u', 'war3map.w3q')).files
+        object_ids = object_ids_from_files(files)
+        found = {name.lower(): data for name, data in files.items() if data is not None}
+        data = next((found[name] for name in scripts if name in found), None)
+        if data is None:
+            raise ValueError(f'{args.input} has no {" or ".join(scripts)}')
+        # Decoded as the file read below is: bare CR runs in real map
+        # scripts otherwise wreck every line number.
+        source = bytes(data).decode('utf-8', errors='replace')
+    else:
         # newline='' for the same reason ScriptFile.read uses it: bare CR
         # runs in real map scripts otherwise wreck every line number.
-        with open(path, encoding='utf-8', errors='replace', newline='') as handle:
+        with open(args.input, encoding='utf-8', errors='replace', newline='') as handle:
             source = handle.read()
     result = reconstruct_from_jass(source, object_ids=object_ids)
 

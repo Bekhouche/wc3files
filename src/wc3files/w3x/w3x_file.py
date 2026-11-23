@@ -129,7 +129,7 @@ class W3xFile(object):
           MpqWriter(sector_size_shift=sector_size_shift, protection=protection,
                     attributes=attributes).write(files, dst_path)
 
-     def read(self, file_path, mode=W3xReadMode.LISTFILE, progress=None):
+     def read(self, file_path, mode=W3xReadMode.LISTFILE, progress=None, members=None):
           """Read a `.w3x`/`.w3m`/`.w3n`. See `W3xReadMode` for `mode`.
 
           Default is LISTFILE: use the archive's own `(listfile)`, and if it
@@ -140,6 +140,12 @@ class W3xFile(object):
           `progress` reports the deep scan: None (default) prints nothing,
           True shows a tqdm bar if tqdm is installed, and a callable gets
           `(done, total, label)` (see wc3files.mpq.progress).
+
+          `members` reads only those names (any case) instead of every file,
+          for a caller that needs one or two of them: the rest of the map is
+          not decompressed. In LISTFILE mode a name is read only if the
+          listfile names it; in DEEP mode it is looked up directly, and the
+          scan for further names does not run. `protected` is set as usual.
           """
           file_path = fspath(file_path)
           if not isinstance(mode, W3xReadMode):
@@ -178,12 +184,29 @@ class W3xFile(object):
                self.protected = not names or self.unlisted_blocks > 0
                if mode is W3xReadMode.SIMPLE:
                     return
+               if members is not None:
+                    self._read_members(reader, names, members, mode)
+                    return
                for name in names:
                     data = self.read_file(reader, name)
                     if data is not None:
                          self.files[name] = data
                if self.protected and mode is W3xReadMode.DEEP:
                     self.read_without_listfile(reader)
+
+     def _read_members(self, reader, names, members, mode):
+          wanted = {member.lower(): member for member in members}
+          for name in names:
+               if name.lower() in wanted:
+                    data = self.read_file(reader, name)
+                    if data is not None:
+                         self.files[name] = data
+                         wanted.pop(name.lower())
+          if mode is W3xReadMode.DEEP:
+               for member in wanted.values():
+                    data = self._read_candidate(reader, member)
+                    if data is not None:
+                         self.files[member] = data
 
      # Named by the archive format itself, never listed in (listfile).
      _SPECIAL_MEMBERS = ('(listfile)', '(attributes)', '(signature)')
@@ -483,7 +506,7 @@ class ProtectedMapError(ValueError):
      files the listfile does not name."""
 
 
-def read_map(path, deep=False, progress=None):
+def read_map(path, deep=False, progress=None, members=None):
      """Read a map for a command that writes something from it.
 
      A protected map raises ProtectedMapError, unless `deep` is True: then
@@ -491,10 +514,12 @@ def read_map(path, deep=False, progress=None):
      the caller can say its member list is a recovery. Reading such a map
      in the default mode and writing it back gave an almost empty map (one
      protected map of 47 files came back as 120 bytes) with exit status 0.
+
+     `members` reads only those files (see W3xFile.read).
      """
      archive = W3xFile()
      archive.read(path, mode=W3xReadMode.DEEP if deep else W3xReadMode.LISTFILE,
-                  progress=progress)
+                  progress=progress, members=members)
      if archive.protected and not deep:
           raise ProtectedMapError(
                f'{fspath(path)} is protected: {protection_reason(archive)}. '

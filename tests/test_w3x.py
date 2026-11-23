@@ -248,6 +248,62 @@ class TestReferenceNamesAreLazy(unittest.TestCase):
         self.assertEqual(archive.default_files, ['war3map.j'])
         self.assertIsNone(self.files._REFERENCE_NAMES)
 
+class TestReadMembers(unittest.TestCase):
+    """read(members=...) reads only those files, so a command that needs
+    the script of a large map does not decompress the rest (#139)."""
+
+    FILES = {
+        'war3map.j': b'function main takes nothing returns nothing\nendfunction\n',
+        'war3map.w3i': b'\x01' * 64,
+        'war3map.w3u': b'\x02' * 64,
+        'Units\\big.txt': b'x' * 5000,
+    }
+
+    def setUp(self):
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+        self.path = os.path.join(self.tmpdir.name, 'map.w3x')
+
+    def _reads(self, archive):
+        names = []
+        original = archive.read_file
+
+        def counting(reader, name):
+            names.append(name)
+            return original(reader, name)
+        archive.read_file = counting
+        return names
+
+    def test_only_the_members_asked_for(self):
+        W3xFile().build_from_files(self.FILES, self.path)
+        w3x = W3xFile()
+        reads = self._reads(w3x)
+        w3x.read(self.path, members=['WAR3MAP.J', 'war3map.w3u', 'war3map.missing'])
+        self.assertFalse(w3x.protected)
+        self.assertEqual(w3x.files['war3map.j'], self.FILES['war3map.j'])
+        self.assertEqual(w3x.files['war3map.w3u'], self.FILES['war3map.w3u'])
+        self.assertNotIn('war3map.w3i', w3x.files)
+        self.assertNotIn('Units\\big.txt', w3x.files)
+        self.assertEqual(sorted(reads), ['(listfile)', 'war3map.j', 'war3map.w3u'])
+
+    def test_protected_map_is_still_refused(self):
+        from wc3files.w3x import read_map, ProtectedMapError
+        W3xFile().build_from_files(self.FILES, self.path,
+                                   protection=MpqProtectionLevel.SAFE)
+        with self.assertRaises(ProtectedMapError):
+            read_map(self.path, members=['war3map.j'])
+
+    def test_deep_looks_members_up_by_name(self):
+        W3xFile().build_from_files(self.FILES, self.path,
+                                   protection=MpqProtectionLevel.SAFE)
+        w3x = W3xFile()
+        reads = self._reads(w3x)
+        w3x.read(self.path, mode=W3xReadMode.DEEP, members=['war3map.j'])
+        self.assertTrue(w3x.protected)
+        self.assertEqual(w3x.files['war3map.j'], self.FILES['war3map.j'])
+        self.assertNotIn('war3map.w3i', w3x.files)
+        self.assertEqual(sorted(reads), ['(listfile)', 'war3map.j'])
+
 
 if __name__ == '__main__':
     unittest.main()
