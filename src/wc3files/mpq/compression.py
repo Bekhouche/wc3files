@@ -50,18 +50,32 @@ def decompress(sector, size=None):
           raise MpqCompressionError(f'unsupported MPQ compression methods 0x{methods:02x}')
      if size is None:
           size = 1 << 30
-     if methods & BZIP2:
-          data = bz2.decompress(data)
-     if methods & PKWARE:
-          data = explode(data)
-     if methods & ZLIB:
-          data = zlib.decompress(data)
-     if methods & HUFFMAN:
-          data = huffman_decompress(data, size)
-     if methods & ADPCM_STEREO:
-          data = adpcm_decompress(data, size, 2)
-     if methods & ADPCM_MONO:
-          data = adpcm_decompress(data, size, 1)
+     stage = None
+     try:
+          if methods & BZIP2:
+               stage = 'bzip2'
+               data = bz2.decompress(data)
+          if methods & PKWARE:
+               stage = 'PKWare DCL'
+               data = explode(data)
+          if methods & ZLIB:
+               stage = 'zlib'
+               data = zlib.decompress(data)
+          if methods & HUFFMAN:
+               stage = 'Huffman'
+               data = huffman_decompress(data, size)
+          if methods & ADPCM_STEREO:
+               stage = 'ADPCM'
+               data = adpcm_decompress(data, size, 2)
+          if methods & ADPCM_MONO:
+               stage = 'ADPCM'
+               data = adpcm_decompress(data, size, 1)
+     except MpqCompressionError:
+          raise
+     except (zlib.error, OSError, EOFError, ValueError, IndexError) as exc:
+          # zlib and bz2 raise their own errors (zlib.error, OSError,
+          # EOFError); a damaged sector is one error whatever the method.
+          raise MpqCompressionError(f'damaged {stage} sector: {exc}') from exc
      return data
 
 
