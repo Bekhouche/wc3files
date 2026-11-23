@@ -1,0 +1,9 @@
+# The game's own files, bundled as they are: the package reads them byte for
+# byte (the SLK and TXT tables, common.j, blizzard.j, common.ai,
+# TriggerData.txt), and their CRLF line endings are part of those bytes. As
+# text they were stored with LF, and only a Windows checkout turned them back
+# into the game's files; on Linux and macOS they came out different, and
+# every bundled SLK failed its byte-for-byte test.
+src/wc3files/w3o/gamedata/** -text
+src/wc3files/scripts/gamedata/** -text
+src/wc3files/wtg/gamedata/** -text
