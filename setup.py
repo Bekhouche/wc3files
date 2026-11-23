@@ -50,6 +50,11 @@ setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/Bekhouche/wc3files',
+    project_urls={
+        'Changelog': 'https://github.com/Bekhouche/wc3files/blob/main/CHANGELOG.md',
+        'Documentation': 'https://github.com/Bekhouche/wc3files/tree/main/docs',
+        'Issues': 'https://github.com/Bekhouche/wc3files/issues',
+    },
     # The README has always claimed MIT and pointed at a LICENSE file that
     # did not exist; both the file and this declaration close that gap.
     license='MIT',

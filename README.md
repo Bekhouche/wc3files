@@ -33,6 +33,8 @@ Full documentation lives in [docs/](docs/README.md):
 - [Lni mode](docs/lni.md) - a map as a folder of text files (objects as Lni, the rest as JSON) and back, for git
 - [Triggers and scripts](docs/triggers.md) - GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script
 
+What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
+
 ## Features
 
 ### MPQ Archives
