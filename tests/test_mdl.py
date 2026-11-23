@@ -372,3 +372,24 @@ class TestCommentMarkersInStrings(unittest.TestCase):
         again = load_mdl(save_mdl(model))
         self.assertEqual(again['attachments'][0]['path'], self.PATH)
         self.assertEqual(save_mdl(again), save_mdl(model))
+
+
+class TestNanAndInfinityInMdl(unittest.TestCase):
+    """Some real models carry a NaN or infinite float (16 in 10 corpus maps).
+    save_mdl writes them as nan and inf, and load_mdl then failed on its own
+    output: "invalid literal for int() with base 10: 'nan'"."""
+
+    def test_they_read_back(self):
+        import math
+        with open(_helpers.sample_path('sample.mdx'), 'rb') as handle:
+            model = load_mdx(handle.read())
+        model['extent']['minimum'] = [float('-inf'), 0.0, 1.5]
+        model['extent']['maximum'] = [float('inf'), float('nan'), 2.0]
+        text = save_mdl(model)
+        again = load_mdl(text)
+        self.assertEqual(again['extent']['minimum'], [float('-inf'), 0.0, 1.5])
+        self.assertEqual(again['extent']['maximum'][0], float('inf'))
+        self.assertTrue(math.isnan(again['extent']['maximum'][1]))
+        self.assertEqual(save_mdl(again), text)
+        # An infinity is kept exactly in the binary model too.
+        self.assertEqual(load_mdx(save_mdx(again))['extent']['maximum'][0], float('inf'))
