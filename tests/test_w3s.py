@@ -99,9 +99,33 @@ class TestSoundsRoundTrip(unittest.TestCase):
             sound = reread.get_data()['sounds'][0]
             # The five strings and the int that close a version-2 record
             # used to be read as one opaque 8-byte blob. They are fields.
-            self.assertEqual(sound['dialogue_unknown_1'], '')
-            self.assertEqual(sound['dialogue_unknown_2'], 0)
+            self.assertEqual(sound['listener_name'], '')
+            self.assertEqual(sound['asset_flags'], 0)
             self.assertNotIn('trailing_marker', sound)
+
+    def test_dialogue_fields_have_names(self):
+        # As a voiced campaign map fills them (U02Tichondrius30), with the
+        # new names, and with the old dialogue_unknown_N ones still accepted.
+        values = {'listener_name': 'd', 'asset_flags': 1, 'speaker_unit': 'Utic',
+                  'animation_label': 'U02Tichondrius30', 'animation_group': 'Map-Tichondrius',
+                  'animation_set_path': 'Sound/Dialogue/FaceAnimation/Undead02/'
+                                        'FacialAnimation/Tichondrius.animset'}
+        old = {f'dialogue_unknown_{i}': value for i, value in enumerate(values.values(), 1)}
+        for given in (values, old):
+            sound = {'name': 'gg_snd_U02Tichondrius30', 'file_path': 'x.wav',
+                     'dialogue_text_key': 14, 'dialogue_speaker_name_key': 13}
+            sound.update(given)
+            sf = SoundsFile()
+            sf._data = {'version': 3, 'sounds': [sound]}
+            with tempfile.TemporaryDirectory() as tmp:
+                out = os.path.join(tmp, 'v3.w3s')
+                sf.write(out)
+                reread = SoundsFile()
+                reread.read(out)
+                again = reread.get_data()['sounds'][0]
+            for name, value in values.items():
+                self.assertEqual(again[name], value, name)
+            self.assertFalse(any(key.startswith('dialogue_unknown') for key in again))
 
     def test_rejects_unsupported_version(self):
         with tempfile.TemporaryDirectory() as tmp:

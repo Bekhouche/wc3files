@@ -10,6 +10,18 @@ from wc3files.files.binary_file import fspath
 # fixture was available locally to independently confirm it - disclosed, not hidden.
 
 
+# The names the version-2 dialogue fields had before they were known. Data
+# that still uses them is written the same; they will go in a later release.
+_OLD_NAMES = {
+     'listener_name': 'dialogue_unknown_1',
+     'asset_flags': 'dialogue_unknown_2',
+     'speaker_unit': 'dialogue_unknown_3',
+     'animation_label': 'dialogue_unknown_4',
+     'animation_group': 'dialogue_unknown_5',
+     'animation_set_path': 'dialogue_unknown_6',
+}
+
+
 class SoundsFile(object):
      """
      Reader/writer for war3map.w3s (sound object definitions).
@@ -159,20 +171,24 @@ class SoundsFile(object):
                sound['dialogue_text_key'] = reader.read(BinaryDataType.INT, signed=True)
                sound['comments'] = self._read_str(reader)
                sound['dialogue_speaker_name_key'] = reader.read(BinaryDataType.INT, signed=True)
-               # Five more strings and an int close the version-2 record.
-               # These were read as a fixed 9-byte blob, which is exactly what
-               # they come to when every string is empty - true of 200 of the
-               # 209 sound files in the benchmark corpus. The nine that broke
-               # are campaign maps with voiced dialogue, where these carry a
-               # speaker code, a dialogue id, a category and the path of a
-               # facial-animation asset, and the record is far longer. What
-               # each one means is not established, so the names stay neutral.
-               sound['dialogue_unknown_1'] = self._read_str(reader)
-               sound['dialogue_unknown_2'] = reader.read(BinaryDataType.INT, signed=True)
-               sound['dialogue_unknown_3'] = self._read_str(reader)
-               sound['dialogue_unknown_4'] = self._read_str(reader)
-               sound['dialogue_unknown_5'] = self._read_str(reader)
-               sound['dialogue_unknown_6'] = self._read_str(reader)
+               # Five more strings and an int close the version-2 record, in
+               # the order of HiveWE's war3map.w3s page. They were named
+               # dialogue_unknown_1 to _6 while every real file had them
+               # empty; 660 sounds of 20 corpus maps (voiced campaign
+               # dialogue) now fill them, and the last four are plain:
+               #   speaker_unit        'Uany', 'Hleo', 'null': the unit that speaks
+               #   animation_label     'A2MU-T592-ANYA': the dialogue's label again
+               #   animation_group     'Map', 'Map-Tichondrius'
+               #   animation_set_path  'Sound/Dialogue/FaceAnimation/.../HeroAnya.animset'
+               # The first two follow HiveWE's names and are less certain:
+               # listener_name is '' or 'd', and asset_flags is 0 or 1 (HiveWE
+               # gives 3 bytes; the file holds a 32-bit value there).
+               sound['listener_name'] = self._read_str(reader)
+               sound['asset_flags'] = reader.read(BinaryDataType.INT, signed=True)
+               sound['speaker_unit'] = self._read_str(reader)
+               sound['animation_label'] = self._read_str(reader)
+               sound['animation_group'] = self._read_str(reader)
+               sound['animation_set_path'] = self._read_str(reader)
 
           if version >= 3:
                sound['trailing_marker'] = reader.read(BinaryDataType.INT, signed=True)
@@ -218,12 +234,13 @@ class SoundsFile(object):
                writer.write(BinaryDataType.INT, sound.get('dialogue_text_key', -1))
                self._write_str(writer, sound.get('comments', ''))
                writer.write(BinaryDataType.INT, sound.get('dialogue_speaker_name_key', -1))
-               self._write_str(writer, sound.get('dialogue_unknown_1', ''))
-               writer.write(BinaryDataType.INT, sound.get('dialogue_unknown_2', 0))
-               self._write_str(writer, sound.get('dialogue_unknown_3', ''))
-               self._write_str(writer, sound.get('dialogue_unknown_4', ''))
-               self._write_str(writer, sound.get('dialogue_unknown_5', ''))
-               self._write_str(writer, sound.get('dialogue_unknown_6', ''))
+               field = lambda name, default: sound.get(name, sound.get(_OLD_NAMES[name], default))
+               self._write_str(writer, field('listener_name', ''))
+               writer.write(BinaryDataType.INT, field('asset_flags', 0))
+               self._write_str(writer, field('speaker_unit', ''))
+               self._write_str(writer, field('animation_label', ''))
+               self._write_str(writer, field('animation_group', ''))
+               self._write_str(writer, field('animation_set_path', ''))
 
           if version >= 3:
                writer.write(BinaryDataType.INT, sound.get('trailing_marker', 1))
