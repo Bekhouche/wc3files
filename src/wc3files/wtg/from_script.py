@@ -79,9 +79,15 @@ _TRIGGER_PLUMBING = {
 class ScriptTriggers(object):
     """Reconstructs GUI triggers from a parsed JASS program."""
 
-    def __init__(self, trigger_data=None, trigger_text=None):
+    def __init__(self, trigger_data=None, trigger_text=None, object_ids=None):
+        """`object_ids` ({'unitcode': ids, 'techcode': ids}, see
+        object_ids_from_files) adds a map's custom objects to the game's own
+        when a rawcode decides between two GUI functions."""
         self.trigger_data = trigger_data or TriggerData.default()
         self._text = trigger_text
+        self._object_ids = {kind: set(standard_codes(kind)) for kind in _CODE_TABLES}
+        for kind, ids in (object_ids or {}).items():
+            self._object_ids.setdefault(kind, set()).update(ids)
         self._by_name = {}
         self._preset_by_code = None
         self._preset_by_code_and_type = None
@@ -454,7 +460,8 @@ class ScriptTriggers(object):
                     continue
 
             if call is not None and call.name in self._known:
-                out.append(self._gui_function(function_type, call.name, call.args))
+                name = self._by_rawcode(call, function_type) or call.name
+                out.append(self._gui_function(function_type, name, call.args))
                 continue
 
             # The editor emits a different name for some GUI functions than
@@ -490,6 +497,37 @@ class ScriptTriggers(object):
             # Anything after the last statement, up to `endfunction`.
             out.extend(self._comment_actions(previous_line, span[1]))
         return out
+
+    def _by_rawcode(self, call, function_type):
+        """The GUI function a call is, when several compile to it and only
+        the kind of a rawcode argument tells them apart, or None.
+
+        SetPlayerUnitMaxAllowed (a `unitcode`) and SetPlayerTechMaxAllowedSwap
+        (a `techcode`) both compile to `SetPlayerTechMaxAllowedSwap(rawcode,
+        n, player)`. The call was always rebuilt under that name (about 971
+        misses in a 50-map sample); the rawcode says which it was, when it is
+        a known unit or upgrade: the game's tables, and the map's own custom
+        objects when the caller gives them.
+        """
+        names = [call.name] + [name for name in self.trigger_data.gui_names(call.name)
+                               if name != call.name and self._known.get(name) == function_type]
+        if len(names) < 2:
+            return None
+        matches = []
+        for name in names:
+            types = self.trigger_data.arg_types(function_type, name)
+            fits = True
+            for index, kind in enumerate(types):
+                if kind not in self._object_ids or index >= len(call.args):
+                    continue
+                argument = call.args[index]
+                if type(argument).__name__ != 'Literal' or argument.kind != 'rawcode':
+                    fits = None
+                    break
+                fits = fits and argument.value in self._object_ids[kind]
+            if fits:
+                matches.append(name)
+        return matches[0] if len(matches) == 1 else None
 
     def _unwrap_condition(self, statement):
         """Recover the test inside the editor's condition wrapper.
@@ -1186,6 +1224,47 @@ class ScriptTriggers(object):
         return type(node).__name__
 
 
+# The game tables that list each kind of rawcode, by GUI type.
+_CODE_TABLES = {'unitcode': 'UnitData.slk', 'techcode': 'UpgradeData.slk'}
+_STANDARD_CODES = {}
+
+
+def standard_codes(kind):
+    """The rawcodes the bundled game table for `kind` lists (its first
+    column), e.g. every unit for 'unitcode'."""
+    if kind not in _STANDARD_CODES:
+        import os
+        import re
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            'w3o', 'gamedata', _CODE_TABLES[kind])
+        with open(path, encoding='utf-8', errors='replace') as handle:
+            cells = re.findall(r'^C;X1;Y(\d+);K"(\w{4})"', handle.read(), re.MULTILINE)
+        _STANDARD_CODES[kind] = frozenset(code for row, code in cells if row != '1')
+    return _STANDARD_CODES[kind]
+
+
+def object_ids_from_files(files):
+    """{'unitcode': ids, 'techcode': ids} for a map's custom units and
+    upgrades, from its war3map.w3u and war3map.w3q ({name: bytes})."""
+    import os
+    import tempfile
+    from ..w3o.object_file import ObjectFile
+    found = {'unitcode': set(), 'techcode': set()}
+    lower = {name.lower(): data for name, data in files.items() if data}
+    for ext, kind in (('w3u', 'unitcode'), ('w3q', 'techcode')):
+        data = lower.get('war3map.' + ext)
+        if not data:
+            continue
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, 'war3map.' + ext)
+            with open(path, 'wb') as handle:
+                handle.write(data)
+            objects = ObjectFile()
+            objects.read(path)
+            found[kind].update(objects.export_data()[ext].get('custom') or {})
+    return found
+
+
 # JassHelper compiles a vJass `hook X` into a wrapper `h__X` that calls the
 # hook and then X, and turns every call to X into a call to the wrapper.
 _HOOK_PREFIX = 'h__'
@@ -1229,9 +1308,13 @@ def _walk(value):
             stack.extend(getattr(item, field, None) for field in item._fields)
 
 
-def reconstruct_from_jass(source, trigger_data=None):
-    """Reconstruct GUI triggers from JASS source text or a parsed program."""
+def reconstruct_from_jass(source, trigger_data=None, object_ids=None):
+    """Reconstruct GUI triggers from JASS source text or a parsed program.
+
+    `object_ids` (see object_ids_from_files) names the map's custom units
+    and upgrades, so a rawcode can decide between GUI functions that compile
+    to the same call."""
     from ..scripts import parse_jass
 
     program = parse_jass(source) if isinstance(source, str) else source
-    return ScriptTriggers(trigger_data=trigger_data).reconstruct(program)
+    return ScriptTriggers(trigger_data=trigger_data, object_ids=object_ids).reconstruct(program)

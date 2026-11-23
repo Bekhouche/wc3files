@@ -846,3 +846,41 @@ endfunction
         # The program passed in is left as it was.
         names = [s.name for s in program.functions[-1].body if type(s).__name__ == 'CallStmt']
         self.assertIn('h__TriggerRegisterVariableEvent', names)
+
+
+class TestUnitOrTechByRawcode(unittest.TestCase):
+    """SetPlayerUnitMaxAllowed (a unitcode) and SetPlayerTechMaxAllowedSwap
+    (a techcode) compile to the same call, which was always rebuilt as the
+    second. 19,601 of the corpus's 25,235 such calls are the first."""
+
+    SCRIPT = '''globals
+trigger gg_trg_T = null
+endglobals
+function Trig_T_Actions takes nothing returns nothing
+call SetPlayerTechMaxAllowedSwap('hfoo', 3, Player(0))
+call SetPlayerTechMaxAllowedSwap('Rhme', 2, Player(0))
+call SetPlayerTechMaxAllowedSwap('h000', 1, Player(0))
+endfunction
+function InitTrig_T takes nothing returns nothing
+set gg_trg_T = CreateTrigger()
+call TriggerAddAction(gg_trg_T, function Trig_T_Actions)
+endfunction
+'''
+
+    def names(self, **kwargs):
+        result = reconstruct_from_jass(self.SCRIPT, **kwargs)
+        return [f['name'] for f in result['triggers'][0]['functions']]
+
+    def test_the_rawcode_decides(self):
+        # A footman is a unit, Iron Forged Swords an upgrade; h000 is not in
+        # the game's tables, so it keeps the name the script has.
+        self.assertEqual(self.names(), ['SetPlayerUnitMaxAllowed', 'SetPlayerTechMaxAllowedSwap',
+                                        'SetPlayerTechMaxAllowedSwap'])
+
+    def test_the_maps_custom_objects_count(self):
+        names = self.names(object_ids={'unitcode': {'h000'}})
+        self.assertEqual(names[2], 'SetPlayerUnitMaxAllowed')
+
+    def test_object_ids_from_a_maps_files(self):
+        from wc3files.wtg.from_script import object_ids_from_files
+        self.assertEqual(object_ids_from_files({}), {'unitcode': set(), 'techcode': set()})

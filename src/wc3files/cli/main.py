@@ -724,14 +724,20 @@ def _cmd_script_to_triggers(args):
     so what comes back is what the script still carries. `coverage` reports
     how much of it was recognised rather than leaving that to guesswork.
     """
-    from wc3files.wtg.from_script import reconstruct_from_jass
+    from wc3files.wtg.from_script import reconstruct_from_jass, object_ids_from_files
 
-    # newline='' for the same reason ScriptFile.read uses it: bare CR runs in
-    # real map scripts otherwise wreck every reported line number.
-    with open(args.input, encoding='utf-8', errors='replace',
-              newline='') as handle:
-        source = handle.read()
-    result = reconstruct_from_jass(source)
+    object_ids = None
+    if args.input.lower().endswith(_MAP_EXTENSIONS):
+        # A map gives its object data too: its custom units and upgrades
+        # tell SetPlayerUnitMaxAllowed from SetPlayerTechMaxAllowedSwap.
+        object_ids = object_ids_from_files(_open_map(args.input, args.deep).files)
+    with _member_or_file(args.input, ('war3map.j', 'scripts\\war3map.j'),
+                         args.deep) as (path, _label):
+        # newline='' for the same reason ScriptFile.read uses it: bare CR
+        # runs in real map scripts otherwise wreck every line number.
+        with open(path, encoding='utf-8', errors='replace', newline='') as handle:
+            source = handle.read()
+    result = reconstruct_from_jass(source, object_ids=object_ids)
 
     if args.json:
         _write_json(result, args.out)
@@ -2021,7 +2027,10 @@ def build_parser():
         'script-to-triggers',
         help=('Reconstruct GUI triggers, variables, regions, cameras and sounds '
               'from a map script. Partial by nature - reports its own coverage.'))
-    p_from_script.add_argument('input', help='war3map.j to read.')
+    p_from_script.add_argument('input', help=('war3map.j to read, or a .w3x/.w3m map, whose '
+                                              'war3map.j and object data are read.'))
+    p_from_script.add_argument('--deep', action='store_true',
+                               help='Read a protected map by scanning for its file names.')
     p_from_script.add_argument('--json', action='store_true',
                                help='Emit the full reconstruction as JSON.')
     p_from_script.add_argument('--out', help='Write JSON here instead of stdout.')

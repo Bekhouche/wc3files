@@ -300,7 +300,7 @@ including `trigger_text.describe_trigger`.
 
 ### How good is it
 
-Measured against ground truth rather than estimated: on 299 unprotected maps
+Measured against ground truth rather than estimated: on 302 unprotected maps
 that ship *both* a script and the real `war3map.wtg`, the triggers were
 rebuilt from the script alone and compared against what the editor had
 stored.
@@ -308,11 +308,12 @@ stored.
 | | recovered |
 |---|---|
 | triggers found | **98.6%** |
-| their events, conditions and actions | **93.3%** |
-| their parameters | **88.4%** |
+| their events, conditions and actions | **93.9%** |
+| their parameters | **88.3%** |
 | variables | **100%** |
 
-Every GUI trigger was recovered in 288 of the 299 maps.
+Every GUI trigger was recovered in 291 of the 302 maps. (The parameter share
+is of the functions that were matched, so it moves with them.)
 
 ### What it cannot recover, and why
 
@@ -332,8 +333,14 @@ rather than guessing:
   whichever the author actually picked.
 - **`SetPlayerUnitMaxAllowed` vs `SetPlayerTechMaxAllowedSwap`** - two
   different GUI functions compiling to the same call, one taking a unit
-  rawcode and the other an upgrade rawcode. Telling them apart needs the
-  map's object data, which this reader is not given.
+  rawcode and the other an upgrade rawcode. The rawcode decides: the game's
+  own unit and upgrade tables know the standard ones, and the map's custom
+  units and upgrades come from its object data (`object_ids=`, see
+  `object_ids_from_files`, or a map given to `script-to-triggers`). A rawcode
+  that is neither keeps the name the script has.
+- **vJass hooks** are seen through: JassHelper turns every call to a hooked
+  native `X` into a call to its wrapper `h__X`, and a call to such a wrapper
+  is read as a call to `X`.
 - **A comparison whose operand has no declared type** - a bare variable or
   arithmetic - stays raw script. Where the operand *is* typed, the name comes
   back exactly: `GetSpellAbilityId() == 'A000'` can only have been
@@ -358,6 +365,7 @@ underscore. The identifier is reported as-is rather than guessed back.
 ```bash
 wc3files trigger-text war3map.wtg               # the editor's own wording
 wc3files script-to-triggers war3map.j           # rebuild from a script
+wc3files script-to-triggers MyMap.w3x           # ... with the map's own objects
 wc3files script-to-triggers war3map.j --json    # structured output
 wc3files jass war3map.j                         # parse and print back
 ```
