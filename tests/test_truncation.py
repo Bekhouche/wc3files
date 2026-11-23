@@ -47,10 +47,29 @@ class TestTruncatedFilesAreRefused(unittest.TestCase):
                     path = os.path.join(tmp, 'cut' + os.path.splitext(sample)[1])
                     with open(path, 'wb') as handle:
                         handle.write(data[:cut])
-                    # struct.error too: MapDoodadsFile parses its bytes with
-                    # struct directly, and refuses that way.
-                    with self.assertRaises((ValueError, EOFError, struct.error)):
+                    # EOFError too, for ModelFile (#141). struct.error is
+                    # no longer accepted: MapDoodadsFile raised it (#140).
+                    with self.assertRaises((ValueError, EOFError)):
                         cls().read(path)
+
+    def test_doodads_cut_anywhere_or_damaged(self):
+        import random
+        rng = random.Random(140)
+        for sample in ('sample_doodads_v8_11.doo', 'sample_doodads_v13_11.doo'):
+            data = _helpers.read_bytes(_helpers.sample_path(sample))
+            cases = [data[:cut] for cut in range(len(data))]
+            for _ in range(200):
+                damaged = bytearray(data)
+                damaged[rng.randrange(len(data))] = rng.randrange(256)
+                cases.append(bytes(damaged))
+            for case in cases:
+                with self.subTest(sample=sample, size=len(case)):
+                    try:
+                        MapDoodadsFile().read(case)
+                    except ValueError:
+                        pass
+                    except Exception as exc:
+                        self.fail(f'{type(exc).__name__}: {exc}')
 
     def test_the_complete_samples_still_read(self):
         for cls, sample in READERS:
