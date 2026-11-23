@@ -229,6 +229,13 @@ class TestErrors(unittest.TestCase):
         self.assertIsNotNone(lua_vm.thread_stack_size)
         self.assertGreaterEqual(lua_vm.thread_stack_size, 64 * 1024 * 1024)
 
+    def test_coroutines_get_a_moderate_stack(self):
+        # On Windows the whole stack size is committed: 200 nested coroutines
+        # at the interpreter's 255 MB could not start (after #127).
+        from wc3files.scripts import lua_vm
+        self.assertEqual(run('local co = coroutine.wrap(function () return 1 end) return co()'), [1])
+        self.assertLessEqual(lua_vm.thread_stack_size, 16 * 1024 * 1024)
+
 
 class TestLibrary(unittest.TestCase):
 

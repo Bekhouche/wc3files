@@ -456,7 +456,7 @@ class Coroutine:
           vm.current_coroutine = self
           self._transfer = list(args)
           if self.thread is None:
-               self.thread = _start_thread(self._run)
+               self.thread = _start_thread(self._run, _COROUTINE_STACK_SIZES)
           else:
                self._resume.release()
           self._yielded.acquire()
@@ -505,15 +505,20 @@ RECURSION_LIMIT = 200000
 # up and ran on the default stack, which deep Lua recursion overflowed on
 # Python 3.9 and 3.10, where every Python call also uses the C stack.
 _STACK_SIZES = (STACK_SIZE, STACK_SIZE - 1024 * 1024, 128 * 1024 * 1024, 64 * 1024 * 1024)
+# Each coroutine runs on a thread too, and on Windows CPython commits the
+# whole stack size, not just its address space: 200 nested coroutines at
+# 255 MB asked for about 51 GB and could not start. They get a moderate stack
+# instead (more than the default they had before), so 200 commit about 3 GB.
+_COROUTINE_STACK_SIZES = (16 * 1024 * 1024, 8 * 1024 * 1024)
 # The size the last thread was started with, or None for the default.
 thread_stack_size = None
 
 
-def _start_thread(target):
+def _start_thread(target, sizes=_STACK_SIZES):
      global thread_stack_size
      old = threading.stack_size()
      thread_stack_size = None
-     for size in _STACK_SIZES:
+     for size in sizes:
           try:
                threading.stack_size(size)
           except (ValueError, RuntimeError):  # a platform limit: try smaller
