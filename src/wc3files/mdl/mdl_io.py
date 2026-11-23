@@ -7,7 +7,10 @@ import re
 
 from .mdx_io import empty_model
 
-_NUMBER = re.compile(r'^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$')
+_NUMBER = re.compile(r'^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$'
+                     r'|^[+-]?(?:nan|inf(?:inity)?)$', re.IGNORECASE)
+# What save_mdl writes for a NaN or an infinite float (Python's own spelling).
+_SPECIAL_FLOATS = ('nan', 'inf', 'infinity')
 
 
 _TOKEN = re.compile(
@@ -235,6 +238,11 @@ def _fmt_floats(values):
 def _parse_number(token):
     if token.endswith(','):
         token = token[:-1]
+    # A NaN or infinite float is written as nan, inf or -inf (some real
+    # models carry one, often in a portrait camera). Without this the token
+    # went to int() and the whole model failed to read back.
+    if token.lower().lstrip('+-') in _SPECIAL_FLOATS:
+        return float(token)
     if '.' in token or 'e' in token.lower():
         return float(token)
     return int(token)
