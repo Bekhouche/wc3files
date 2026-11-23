@@ -868,7 +868,8 @@ def load_map_script(path, deep=False):
      lower = path.lower()
      if lower.endswith(('.w3x', '.w3m')):
           from wc3files.w3x import read_map
-          archive = read_map(path, deep=deep)
+          archive = read_map(path, deep=deep, members=(
+               'war3map.lua', 'scripts\\war3map.lua', 'war3map.j', 'scripts\\war3map.j'))
           files = {name.lower(): data for name, data in (archive.files or {}).items()}
           for name in ('war3map.lua', 'scripts\\war3map.lua'):
                if files.get(name) is not None:
