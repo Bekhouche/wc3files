@@ -151,7 +151,7 @@ wc3files stands on the work of the Warcraft III modding community. The projects 
 
 - **Blizzard Entertainment**: `common.j`, `blizzard.j`, `common.ai`, and the SLK and TXT game tables under `w3o/gamedata/` are copies of the game's own files, used so that maps can be read without an installed game. Warcraft III and its data belong to Blizzard Entertainment.
 - **[War3Net](https://github.com/Drake53/War3Net)** by Drake53 (MIT): the bundled `TriggerData.txt`, itself derived from Blizzard's `UI/TriggerData.txt`.
-- **[Warcraft Image Lab](https://www.hiveworkshop.com/threads/warcraft-image-lab.333142/)** by LaZz: the 13 icon borders in `img/gamedata/borders/`, copied from it with LaZz's permission.
+- **[Warcraft Image Lab](https://www.hiveworkshop.com/threads/warcraft-image-lab.333142/)** by LaZz: the 13 icon borders in `img/gamedata/borders/`.
 - **blue & nagger**: the replay action and order names, generated from their `w3g_actions.txt` v1.01 (2006, w3g.deepnode.de).
 
 ### Ported code
