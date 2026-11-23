@@ -84,5 +84,54 @@ class TestBinaryFileShortReads(unittest.TestCase):
         self.assertTrue(issubclass(TruncatedDataError, ValueError))
 
 
+class TestReadDoesNotAskForTheOffset(unittest.TestCase):
+    """BinaryFile.read asked the file for its position before every read,
+    only for a message it rarely needed: about a third of the time of
+    reading a terrain or trigger file (#136). The offsets in the message
+    must stay right."""
+
+    class _Counting:
+        def __init__(self, inner):
+            self.inner, self.tells = inner, 0
+
+        def tell(self):
+            self.tells += 1
+            return self.inner.tell()
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+    def _reader(self, data, from_disk):
+        if not from_disk:
+            return BinaryFile(data)
+        handle, path = tempfile.mkstemp()
+        os.write(handle, data)
+        os.close(handle)
+        self.addCleanup(os.remove, path)
+        return BinaryFile(path)
+
+    def test_reads_do_not_call_tell(self):
+        for from_disk in (False, True):
+            with self.subTest(from_disk=from_disk):
+                with self._reader(bytes(4000), from_disk) as reader:
+                    reader.file = counting = self._Counting(reader.file)
+                    for _ in range(500):
+                        reader.read(BinaryDataType.INT, num=4)
+                        reader.read(BinaryDataType.BYTES, num=4)
+                    self.assertEqual(counting.tells, 0)
+
+    def test_short_read_reports_its_offsets(self):
+        for from_disk in (False, True):
+            with self.subTest(from_disk=from_disk):
+                with self._reader(bytes(10), from_disk) as reader:
+                    reader.read(BinaryDataType.INT, num=4)
+                    reader.read(BinaryDataType.INT, num=4)
+                    with self.assertRaises(TruncatedDataError) as caught:
+                        reader.read(BinaryDataType.INT, num=4)
+                self.assertEqual(
+                    str(caught.exception),
+                    'the data ends at offset 10: 4 bytes were needed at offset 8, 2 are left')
+
+
 if __name__ == '__main__':
     unittest.main()
