@@ -1,5 +1,5 @@
 import os
-from .data import *
+from .data import MpqFileType, MpqProtectionLevel
 from wc3files.files import BinaryFile
 from .cipher import MpqCipher
 from .optional import MpqOptionalData

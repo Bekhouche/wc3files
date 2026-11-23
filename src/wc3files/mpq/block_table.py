@@ -1,6 +1,7 @@
 import struct
 from ..data import BinaryDataType
-from .data import *
+from .data import (
+    MPQBlockTableEntry, MPQFileHeaderFields, MPQHashType, MPQKeyType, MpqUnpack)
 from .cipher import MpqCipher
 from .header import MpqHeader
 from .hash_table import MpqHashTable

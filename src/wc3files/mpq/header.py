@@ -2,7 +2,8 @@ import struct
 
 from loguru import logger
 from ..data import BinaryDataType
-from .data import *
+from .data import (
+    MPQFileHeaderExtendedFieldsFormatV2, MPQFileHeaderFields, MpqMagicType, MpqUnpack)
 
 class MpqHeader:
      """

@@ -1,7 +1,8 @@
 import bisect
 import struct
 from ..data import BinaryDataType
-from .data import *
+from .data import (
+    MPQFileDataType, MPQFileHeaderFields, MPQHashTableEntry, MPQHashType, MPQKeyType, MpqUnpack)
 from .cipher import MpqCipher
 from .header import MpqHeader
 

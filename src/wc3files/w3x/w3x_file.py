@@ -3,7 +3,10 @@ import re
 import struct
 from enum import Enum
 from loguru import logger
-from wc3files.data import *
+from wc3files.data.bin import BinaryDataType
+from wc3files.mpq.data import (
+     MPQBlockTableEntry, MPQFileDataType, MPQFileHeaderExtendedFieldsFormatV2,
+     MPQFileHeaderFields, MPQHashTableEntry, MPQHashType, MPQKeyType, MapFileType)
 from wc3files.files import BinaryFile
 from wc3files.w3o.object_file import ObjectFile
 from wc3files.mpq.writer import MpqWriter
