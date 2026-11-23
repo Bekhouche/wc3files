@@ -35,6 +35,7 @@ section to the new version and its date.
 - An unknown GUI function in `war3map.wtg` raises the new `TriggerDataError`, which is both a `KeyError` and a `ValueError`, and an invalid function type raises `ValueError` instead of `KeyError` (#144).
 - `RegionFile` and `PreviewIconsFile` read bytes, as the other readers do. `ObjectFile` uses `object_type=` for a path whose extension is not an object type, and its error says when `object_type=` is needed (#146).
 - The README no longer counts 28 subcommands (there are 35), and `docs/cli.md` shows `gamedata-extract`, `trigger-ui` and `optimize` (#147).
+- On Windows, a command whose output goes to a file or a pipe writes UTF-8, instead of stopping with a `charmap` codec error on text outside the code page. `PYTHONIOENCODING` is respected (#153).
 
 ## [0.4.0] - 2026-11-23
 
