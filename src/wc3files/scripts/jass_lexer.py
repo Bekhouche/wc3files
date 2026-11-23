@@ -41,6 +41,13 @@ _TOKEN_SPEC = [
 
 _MASTER_RE = re.compile('|'.join(f'(?P<{name}>{pattern})' for name, pattern in _TOKEN_SPEC))
 
+# What tokenize() walks with finditer: the tokens, then MISMATCH for any
+# other character, which is reported. Skipping whitespace inside the next
+# match instead was tried, and was slower: the prefix is tried before every
+# alternative.
+_SCAN_RE = re.compile('|'.join(f'(?P<{name}>{pattern})'
+                               for name, pattern in _TOKEN_SPEC + [('MISMATCH', r'.')]))
+
 _SKIP_KINDS = {'COMMENT', 'NEWLINE', 'WHITESPACE'}
 
 
@@ -75,38 +82,39 @@ def tokenize(source, keep_comments=False):
      is the only trace left of a trigger's Comment action, so reconstructing
      the editor's triggers needs them kept rather than dropped."""
      tokens = []
-     pos = 0
+     append = tokens.append
+     keywords = KEYWORDS
      line = 1
-     col = 1
-     length = len(source)
-
-     while pos < length:
-          match = _MASTER_RE.match(source, pos)
-          if not match:
-               raise JassLexError(f'Unexpected character {source[pos]!r}', line, col)
-
+     line_start = 0              # index of the first character of `line`
+     for match in _SCAN_RE.finditer(source):
           kind = match.lastgroup
+          if kind == 'WHITESPACE':
+               continue
+          if kind == 'NEWLINE':
+               line += 1
+               line_start = match.end()
+               continue
           value = match.group()
-
-          if kind == 'COMMENT' and keep_comments:
-               tokens.append(Token('COMMENT', value[2:].strip(), line, col))
-          elif kind not in _SKIP_KINDS:
-               if kind == 'IDENT' and value in KEYWORDS:
-                    tokens.append(Token('KEYWORD', value, line, col))
-               elif kind == 'STRING':
-                    tokens.append(Token('STRING', value[1:-1], line, col))
-               elif kind == 'RAWCODE':
-                    tokens.append(Token('RAWCODE', value[1:-1], line, col))
-               else:
-                    tokens.append(Token(kind, value, line, col))
-
-          newline_count = value.count('\n')
-          if newline_count:
-               line += newline_count
-               col = len(value) - value.rfind('\n')
+          start = match.start()
+          if kind == 'IDENT':
+               append(Token('KEYWORD' if value in keywords else 'IDENT', value,
+                            line, start - line_start + 1))
+          elif kind == 'COMMENT':
+               if keep_comments:
+                    append(Token('COMMENT', value[2:].strip(), line,
+                                 start - line_start + 1))
+          elif kind == 'STRING' or kind == 'RAWCODE':
+               append(Token(kind, value[1:-1], line, start - line_start + 1))
+               # A string can span lines.
+               newlines = value.count('\n')
+               if newlines:
+                    line += newlines
+                    line_start = start + value.rfind('\n') + 1
+          elif kind == 'MISMATCH':
+               raise JassLexError(f'Unexpected character {value!r}', line,
+                                  start - line_start + 1)
           else:
-               col += len(value)
-          pos = match.end()
-
+               append(Token(kind, value, line, start - line_start + 1))
+     col = len(source) - line_start + 1
      tokens.append(Token('EOF', '', line, col))
      return tokens
