@@ -23,6 +23,8 @@ For a folder that is text rather than binary, use [Lni mode](lni.md):
 `wc3files lni MyMap.w3x MyMap/` and `wc3files lni MyMap/ Out.w3x`.
 `wc3files slk` and `wc3files obj` convert a whole map's object data to the
 game's tables and back ([Slk and Obj modes](lni.md#5-slk-and-obj-modes)).
+`wc3files optimize MyMap.w3x Release.w3x` removes unused objects and
+editor-only files ([Optimizing a map](lni.md#6-optimizing-a-map)).
 
 `unpack` then `pack` is the whole edit cycle: unpack, change files on disk,
 pack. `pack` round-trips through the archive writer, so the result is a fresh
@@ -134,6 +136,14 @@ commands take `--json` to emit structured output instead of text.
 
 `script-to-triggers` is covered in [Triggers and scripts](triggers.md).
 
+```bash
+wc3files trigger-ui TriggerData.txt TriggerStrings.txt ui/   # editor files -> YDWE ui folder
+wc3files trigger-ui ui/ plugin1/ out/                        # ui folders, merged -> editor files
+```
+
+`trigger-ui` converts the editor's GUI function definitions to YDWE's `ui`
+folder and back; see [Triggers and scripts](triggers.md).
+
 ### vJass and Zinc
 
 ```bash
@@ -202,6 +212,15 @@ wc3files casc-export-gamedata "C:/Program Files (x86)/Warcraft III" out/
 
 Local only - these never contact Blizzard's CDN. `--locale` selects a locale,
 but only `enUS` is readable from a normal install; the others are encrypted.
+
+```bash
+wc3files gamedata-extract "C:/Games/Warcraft III 1.27" profiles/enUS-1.27.1
+wc3files --game-data profiles/enUS-1.27.1 jass war3map.j --check
+```
+
+`gamedata-extract` copies the game tables of another installed version into a
+profile, and `--game-data` makes any command use it; see [Game data for other
+versions](gamedata.md).
 
 ## UI and effect files
 

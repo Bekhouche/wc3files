@@ -26,7 +26,7 @@ Full documentation lives in [docs/](docs/README.md):
 - [Concepts](docs/concepts.md) - the rules that explain the API's shape
 - [Formats](docs/formats.md) - every format, its class, and how far support goes
 - [API reference](docs/api-reference.md) - every public class and method
-- [Command line](docs/cli.md) - the `wc3files` command and its 28 subcommands
+- [Command line](docs/cli.md) - the `wc3files` command and every subcommand
 - [vJass and Zinc](docs/vjass.md) - compiling vJass and Zinc to JASS, as JassHelper does
 - [External tools and Lua](docs/grimex.md) - running a map's ObjectMerger, FileImporter and other tool calls, and the Lua interpreter
 - [Game data for other versions](docs/gamedata.md) - profiles of 1.24, 1.27, 1.32... tables extracted from an install, used with `--game-data`
