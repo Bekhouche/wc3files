@@ -1,0 +1,133 @@
+# Changelog
+
+All notable changes to wc3files are listed here, newest first. The format
+follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
+version numbers follow [Semantic Versioning](https://semver.org/). Numbers
+in parentheses are GitHub issues.
+
+Each pull request adds its line under [Unreleased]. A release renames that
+section to the new version and its date.
+
+## [Unreleased]
+
+### Added
+
+- This changelog (#133).
+
+## [0.4.0] - 2026-11-23
+
+### Added
+
+- `python -m wc3files` runs the CLI (#73).
+- `jass --check`, `trigger-text` and `script-to-triggers` take a map as well as a single file (#74).
+- `dump` and `build` take the format from the file name when it is not given, and `units` names `war3mapUnits.doo` (#76).
+- DDS reads BC4 and BC5 (ATI1, ATI2), also behind a DX10 header (#88).
+- MDL reads and writes lights: their type, static values and animated tracks (#86).
+- `W3iFile.map_flag_names()` names every map flag, and `encode_flags` keeps bits it has no name for (#67).
+- The six unknown `war3map.w3s` dialogue fields have names: `listener_name`, `asset_flags`, `speaker_unit`, `animation_label`, `animation_group`, `animation_set_path`. The old names still read (#66).
+- GUI triggers rebuilt from a script tell `SetPlayerUnitMaxAllowed` from `SetPlayerTechMaxAllowedSwap` by the map's object data (`object_ids=`) (#81).
+- A `progress=` parameter on map reads. Progress bars need the new `progress` extra, `pip install wc3files[progress]` (#64).
+- The README credits the projects wc3files bundles data from or follows (#89, #91).
+- The test suite runs in GitHub Actions on Linux, Windows and macOS, Python 3.9 to 3.13, and the package is built and installed there (#72).
+
+### Changed
+
+- A map whose `(listfile)` is missing or leaves files out counts as protected. `unpack`, `lni`, `slk`, `obj`, `optimize` and `run-map` refuse it with `ProtectedMapError`, instead of writing an almost empty result and exiting with 0 (#62, #63).
+- tqdm is no longer a dependency, and the library prints no progress unless asked (#64).
+- MPQ decryption goes from 4.0 to 6.6 MB/s and encryption from 4.7 to 6.7 MB/s (#78). PKWare DCL decompression goes from 1.9 to 4.9 MB/s (#79).
+- The Lua printer adds only the parentheses it needs (#69).
+- The JASS and Lua parsers take 200 nested levels (#70).
+- MDL writes floats with as many digits as float32 needs. MDX to MDL to MDX gives the original bytes for 927 of 5,712 corpus models, up from 154 (#84). The rest is #110.
+- The README and the docs no longer describe reading protected maps (#122, #130).
+
+### Fixed
+
+- `W3xFile.encrypt` works again, and `W3xFile` uses the one shared MPQ cipher (#77).
+- A `(listfile)` that names only itself no longer makes a protected map read as empty (#62).
+- `MpqWriter` no longer adds an empty sector to a file whose size is a multiple of the sector size (#68).
+- A doodad or unit added by code gets the file's skin layout, so the file is not written with mixed records (#65).
+- `lni` writes a trigger name that is not valid UTF-8 (#83).
+- The MDL tokenizer no longer cuts a quoted string at `//` (#87).
+- MDL reads back the `nan` and `inf` it writes (#85).
+- Rebuilt `TriggerRegisterVariableEvent` passes the variable, not its name as a string (#80).
+- `run-map --max-steps` stops the run (#75).
+- The README examples use classes and methods that exist, and run as tests (#71).
+- The bundled game files keep their CRLF line endings on Linux and macOS (#124).
+- Deep Lua recursion no longer crashes Python 3.9 and 3.10 on Windows (#126), and nested Lua coroutines start there (#128).
+
+## [0.3.0] - 2026-11-22
+
+A fixes release: 21 issues found in a full check of the package against 1,025 real maps.
+
+### Added
+
+- `wc3files --version` (#37).
+- Every reader and writer accepts `pathlib.Path` and other path-like objects (#18).
+
+### Changed
+
+- MPQ hash lookups probe from the hash index, as the game does, instead of scanning the whole table. A lookup on the largest protected table in the corpus goes from 3.0 ms to 0.045 ms (#34).
+- `wc3files.files`, `wc3files.data`, `wc3files.mpq` and `wc3files.utils` are the real packages again, and each lists its exports in `__all__` (#35).
+- A truncated file raises `TruncatedDataError` instead of being read with zeros (#19).
+
+### Fixed
+
+- On Linux and macOS, `export()` writes members into folders instead of files named with a backslash (#21), and encrypted members stored in folders are read (#22).
+- Member names with characters above U+00FF are hashed as their bytes instead of raising `KeyError` (#23).
+- A DEEP read skips a block it cannot read instead of stopping (#39).
+- Empty files are kept on read (#33).
+- `build_from_files()` no longer keeps a stale `(attributes)` or `(signature)` (#24).
+- Object data: version-3 files without modifications (#26), a field set twice (#27), a field whose levels use different types (#28), an original entry with a non-zero new id (#29) and a table with two entries of the same id (#30) are written back exactly. All 3,706 corpus object files round-trip, up from 3,646.
+- A w3i that ends inside its trailing tables keeps the bytes that are left (#31).
+- In a WTS file, an empty entry no longer swallows the next one (#25).
+- Trigger files that use natives, BJ functions or `OperatorCompare*` conditions missing from TriggerData.txt are read (#32).
+- REAL values are little-endian on every platform (#36).
+
+### Security
+
+- Unpacking no longer writes outside the output folder. A member named like `..\..\file`, an absolute path or a drive name is rejected (#20).
+
+## [0.2.0] - 2026-11-22
+
+### Added
+
+- A vJass and Zinc compiler. `//! external` Grimex tools run through a pure-Python Lua interpreter, and `vjass --check` reports each finding at its vJass source line.
+- A Lua interpreter that runs a map script without the game. Its 5.3 mode passes 18 files of the Lua 5.3.4 test suite.
+- Whole-map modes: Lni (a map as a folder of text files and back), Slk and Obj.
+- A map optimizer: removes unused objects and editor-only files, squeezes models and computes text.
+- GUI trigger definitions convert to and from YDWE's ui folder.
+- Game tables can be read from a profile of another game version.
+- JASS and Lua findings carry their line, and Reforged `war3map.lua` is checked against the game API.
+- Image conversion, and the missing Grimex tools.
+- `ObjectFile.filter`: filter by object type, table and ids (#3).
+
+### Removed
+
+- pandas is no longer a dependency (#5). `import wc3files` goes from about 0.82 s to 0.28 s.
+- Dead code reported by pyflakes (#7).
+
+### Fixed
+
+- Every version-39 w3i is read, and misaligned parses are no longer kept.
+- Uncompressed MPQ sectors are read, and every MPQ compression method is decoded in Python.
+- Any MPQ format version is read as format 0, as the game does, without printing anything (#12).
+- MDX rewrites are byte-exact.
+- Unfinished replays are read.
+- `ObjectTable.filter(remove=...)` drops the listed ids instead of keeping them (#2).
+- The MPQ version-4 header fields are defined once, and completely (#4).
+- The two SYLK currency format keys no longer raise invalid-escape warnings (#1).
+- CLI commands exit with the status they return.
+
+## [0.1.0] - 2026-10-24
+
+First release. A pure-Python reader and writer for Warcraft III's file
+formats: MPQ archives and W3X/W3M/W3N maps, the map sub-files, object data
+with the game's own field schema, GUI and custom text triggers, JASS and Lua
+scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
+effect files, and the CASC storage of an installed game.
+
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Bekhouche/wc3files/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/Bekhouche/wc3files/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/Bekhouche/wc3files/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/Bekhouche/wc3files/tree/v0.1.0
