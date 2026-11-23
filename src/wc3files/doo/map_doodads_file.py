@@ -48,6 +48,7 @@ refused rather than returned, so this can report nothing wrong and be wrong.
 import struct
 
 from .skins import file_skins, writer_skins, record_skin
+from ..files.binary_file import TruncatedDataError
 
 MAGIC = b'W3do'
 
@@ -77,7 +78,16 @@ class MapDoodadsFile(object):
             with open(file_path, 'rb') as handle:
                 raw = handle.read()
 
-        self._data = self._read(raw)
+        try:
+            self._data = self._read(raw)
+        except (struct.error, IndexError) as exc:
+            # The parser reads the raw bytes with struct.unpack_from and
+            # indexing, so running off the end showed up as struct.error
+            # or IndexError instead of the TruncatedDataError every other
+            # map format raises.
+            raise TruncatedDataError(
+                f'war3map.doo: the data ends before the file is complete '
+                f'({len(raw)} bytes)') from exc
 
         if verify:
             rebuilt = self.to_bytes()
