@@ -35,6 +35,8 @@ order and there's no real file available to settle it, so it raises rather than 
 """
 import struct
 
+from wc3files.files.binary_file import TruncatedDataError
+
 from .dxt import decode_dxt_image
 from .jpeg_decoder import decode_planes, JpegError
 from .palette import quantize_median_cut
@@ -48,6 +50,11 @@ _BLP2_HEADER_FIXED = struct.Struct('<4sIBBBBII')  # magic, type, compression, al
 
 class BlpError(ValueError):
     pass
+
+
+class BlpTruncatedError(BlpError, TruncatedDataError):
+    """A BLP file that ends before its header or a mip it points to. Both a
+    BlpError and a TruncatedDataError, so either catches it."""
 
 
 class BlpFile:
@@ -71,6 +78,14 @@ class BlpFile:
         self._rgba_cache = {}
 
     def read(self, file_or_data):
+        try:
+            return self._read(file_or_data)
+        except (struct.error, IndexError) as exc:
+            # The header is unpacked straight from the bytes, so a file cut
+            # short raised struct.error rather than this format's error.
+            raise BlpTruncatedError(f'the BLP file ends before its header is complete: {exc}') from exc
+
+    def _read(self, file_or_data):
         if isinstance(file_or_data, (bytes, bytearray)):
             data = bytes(file_or_data)
         else:
