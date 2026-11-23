@@ -209,5 +209,54 @@ class TestRealIconFixture(unittest.TestCase):
         self.assertEqual(reread.get_rgba(0), requantized.get_rgba(0))
 
 
+def _dds(fourcc, blocks, width=4, height=4, dxgi=None):
+    """A one-mip DDS of `width` x `height` with the given block bytes."""
+    import struct
+    header = struct.pack('<4sI6I', b'DDS ', 124, 0x1007, height, width, 0, 0, 1)
+    header += bytes(44)
+    header += struct.pack('<II4sIIIII', 32, 0x4, b'DX10' if dxgi else fourcc, 0, 0, 0, 0, 0)
+    header += bytes(20)
+    if dxgi:
+        header += struct.pack('<5I', dxgi, 3, 0, 1, 0)
+    return header + blocks
+
+
+class TestBc4AndBc5(unittest.TestCase):
+    """Reforged stores normal maps as BC5 (ATI2); a map importing one could
+    not be decoded: "unsupported DDS FourCC: b'ATI2'"."""
+
+    # One channel block: endpoints 200 and 40, every index 0, so every pixel 200.
+    RED = bytes([200, 40]) + bytes(6)
+    # Index 1 everywhere picks the second endpoint, 128.
+    GREEN = bytes([255, 128]) + int('001' * 16, 2).to_bytes(6, 'little')
+
+    def decode(self, data):
+        from wc3files.img.dds_file import DdsFile
+        image = DdsFile()
+        image.read(data)
+        rgba = image.get_rgba(0)
+        return [tuple(rgba[i:i + 4]) for i in range(0, len(rgba), 4)]
+
+    def test_bc5(self):
+        for data in (_dds(b'ATI2', self.RED + self.GREEN), _dds(None, self.RED + self.GREEN, dxgi=83)):
+            pixels = self.decode(data)
+            self.assertEqual(len(pixels), 16)
+            r, g, b, a = pixels[0]
+            self.assertEqual((r, g, a), (200, 128, 255))
+            # A unit normal: x = 200/127.5 - 1, y = 128/127.5 - 1.
+            x, y = r / 127.5 - 1, g / 127.5 - 1
+            self.assertAlmostEqual((b / 127.5 - 1), (1 - x * x - y * y) ** 0.5, delta=0.01)
+
+    def test_bc4(self):
+        for data in (_dds(b'ATI1', self.RED), _dds(b'BC4U', self.RED), _dds(None, self.RED, dxgi=80)):
+            self.assertEqual(set(self.decode(data)), {(200, 200, 200, 255)})
+
+    def test_an_unsupported_dx10_format_is_named(self):
+        from wc3files.img.dds_file import DdsFile, DdsError
+        with self.assertRaises(DdsError) as caught:
+            DdsFile().read(_dds(None, bytes(16), dxgi=98))   # BC7
+        self.assertIn('DXGI format 98', str(caught.exception))
+
+
 if __name__ == '__main__':
     unittest.main()
