@@ -66,6 +66,8 @@ _INIT_PREFIX = 'InitTrig_'
 _COMPARISON_OPERATORS = frozenset({'==', '!=', '<', '<=', '>', '>='})
 _TRIGGER_VAR = re.compile(r'^gg_trg_')
 _UDG_PREFIX = 'udg_'
+# A parameter type that names a variable, which the script passes as a string.
+_VAR_AS_STRING = 'VarAsString_'
 
 # Calls in an InitTrig body that are structural rather than events.
 _TRIGGER_PLUMBING = {
@@ -98,6 +100,7 @@ class ScriptTriggers(object):
 
     def reconstruct(self, program):
         """Return `{'triggers': [...], 'coverage': ...}` for a parsed program."""
+        program = _without_hook_wrappers(program)
         self._by_name = {f.name: f for f in program.functions}
         # A GUI Comment action compiles to a plain `//` line and leaves
         # nothing else behind, so the parser keeps comments on the Program
@@ -106,6 +109,10 @@ class ScriptTriggers(object):
         self._map_init = self._map_init_triggers()
 
         variables = self._variables_from_globals(program)
+        # The script's own GUI variables, for parameters that name one by a
+        # string (see _parameter).
+        self._gui_globals = {
+            _UDG_PREFIX + v['name']: (v['type'].lower(), v['is_array']) for v in variables}
         regions, cameras, sounds = self._placed_objects(program)
 
         triggers = []
@@ -1015,6 +1022,9 @@ class ScriptTriggers(object):
             preset = self._preset_for(text, expected_type)
             if preset:
                 return self._param(PRESET, preset)
+            variable = self._variable_named_by(expression, expected_type)
+            if variable:
+                return self._param(VARIABLE, variable)
             return self._param(STRING, text)
 
         if kind == 'CallExpr':
@@ -1052,6 +1062,29 @@ class ScriptTriggers(object):
             }
 
         return self._param(STRING, self._source_of(expression))
+
+    def _variable_named_by(self, expression, expected_type):
+        """The GUI variable a string argument names, for a `VarAsString_*`
+        parameter, or None.
+
+        "Value Of Real Variable" compiles to TriggerRegisterVariableEvent
+        with the variable's name as a string ("udg_Damage"), but the editor
+        stores that parameter as a variable reference: type 1, `Damage`.
+        Only a string that names a non-array `udg_` global of the type the
+        parameter wants is turned into one; anything else (a string built
+        at run time, a name that is not a GUI variable) stays a string.
+        """
+        if not (expected_type and expected_type.startswith(_VAR_AS_STRING)):
+            return None
+        if expression.kind != 'string':
+            return None
+        info = (getattr(self, '_gui_globals', None) or {}).get(expression.value)
+        if info is None:
+            return None
+        variable_type, is_array = info
+        if is_array or variable_type != expected_type[len(_VAR_AS_STRING):].lower():
+            return None
+        return self._variable_name(expression.value)
 
     @staticmethod
     def _variable_name(name):
@@ -1151,6 +1184,49 @@ class ScriptTriggers(object):
         except Exception:
             pass
         return type(node).__name__
+
+
+# JassHelper compiles a vJass `hook X` into a wrapper `h__X` that calls the
+# hook and then X, and turns every call to X into a call to the wrapper.
+_HOOK_PREFIX = 'h__'
+
+
+def _without_hook_wrappers(program):
+    """`program` with each call to a JassHelper hook wrapper `h__X` turned
+    back into a call to `X`, on a copy. A map that hooks
+    TriggerRegisterVariableEvent (damage engines do) calls only
+    `h__TriggerRegisterVariableEvent`, so not one of its variable events was
+    rebuilt (1,405 of 1,553 in the corpus went missing that way)."""
+    wrappers = {}
+    for function in program.functions:
+        name = function.name
+        if name.startswith(_HOOK_PREFIX) and len(name) > len(_HOOK_PREFIX):
+            target = name[len(_HOOK_PREFIX):]
+            if any(getattr(node, 'name', None) == target for node in _walk(function.body)):
+                wrappers[name] = target
+    if not wrappers:
+        return program
+    import copy
+    program = copy.deepcopy(program)
+    for function in program.functions:
+        if function.name in wrappers:
+            continue
+        for node in _walk(function.body):
+            if type(node).__name__ in ('CallStmt', 'CallExpr') and node.name in wrappers:
+                node.name = wrappers[node.name]
+    return program
+
+
+def _walk(value):
+    """Every IR node in `value` (a node or a list of them), depth first."""
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, (list, tuple)):
+            stack.extend(item)
+        elif hasattr(item, '_fields'):
+            yield item
+            stack.extend(getattr(item, field, None) for field in item._fields)
 
 
 def reconstruct_from_jass(source, trigger_data=None):
