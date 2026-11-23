@@ -2061,6 +2061,9 @@ def main(argv=None):
         from wc3files import gamedata
         gamedata.use(args.game_data)
 
+    # The package keeps its log quiet (wc3files/__init__.py); the command
+    # line shows warnings, and everything with --verbose.
+    logger.enable('wc3files')
     if not args.verbose:
         logger.remove()
         logger.add(sys.stderr, level='WARNING')
