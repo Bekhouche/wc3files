@@ -3,7 +3,8 @@ name: tests
 # The suite on every pull request and on main: Linux, Windows and macOS, the
 # oldest and newest Python the package declares on all three, and the ones
 # between on Linux. Two v0.3.0 bugs (#21, #22) were Linux-only and could not
-# show up when the suite only ran on Windows.
+# show up when the suite only ran on Windows. Linux is pinned to Ubuntu
+# 24.04, which still provides Python 3.9 (ubuntu-latest, 26.04, does not).
 
 on:
   push:
@@ -17,14 +18,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-24.04, windows-latest, macos-latest]
         python: ['3.9', '3.13']
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             python: '3.10'
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             python: '3.11'
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             python: '3.12'
     steps:
       - uses: actions/checkout@v4
