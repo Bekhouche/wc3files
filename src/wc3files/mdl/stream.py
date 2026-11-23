@@ -1,6 +1,8 @@
 import io
 import struct
 
+from wc3files.files.binary_file import TruncatedDataError
+
 
 class FixedString(str):
     """Text from a fixed-length field, remembering the bytes it came from.
@@ -64,7 +66,9 @@ class BinaryStream:
     def read_bytes(self, n):
         value = self._buf.read(n)
         if len(value) != n:
-            raise EOFError(f'Expected {n} bytes, got {len(value)}')
+            # TruncatedDataError is an EOFError, as this was, and a
+            # ValueError, as every other format's short read is.
+            raise TruncatedDataError(f'Expected {n} bytes, got {len(value)}')
         return value
 
     def write_bytes(self, value):
