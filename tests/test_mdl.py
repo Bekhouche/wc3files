@@ -418,3 +418,43 @@ class TestMdlFloatPrecision(unittest.TestCase):
         self.assertEqual(_fmt_num(0.5), '0.5')
         self.assertEqual(_fmt_num(0.341176), '0.341176')
         self.assertEqual(_fmt_num(3.0), '3')
+
+
+class TestMdlLights(unittest.TestCase):
+    """Lights as Reforged's own MDL files write them. The reader read
+    `static AttenuationStart 80` as 0 and an animated `Intensity 6 { ... }`
+    as a static 6, and the writer wrote only static values, so a light's
+    animation was lost both ways."""
+
+    LIGHT = (
+        'Light "Key_Light" {\n'
+        '\tDirectional,\n'
+        '\tstatic AttenuationStart 80,\n'
+        '\tstatic AttenuationEnd 200,\n'
+        '\tIntensity 3 {\n\t\tLinear,\n\t\t0: 0.7,\n\t\t500: 0.75,\n\t\t1000: 0.9,\n\t}\n'
+        '\tColor 2 {\n\t\tLinear,\n\t\t0: { 0.1, 0.2, 0.3 },\n\t\t1000: { 0.4, 0.5, 0.6 },\n\t}\n'
+        '\tstatic AmbIntensity 0.5,\n'
+        '\tstatic AmbColor { 1, 1, 1 },\n'
+        '}\n')
+
+    def model(self):
+        with open(_helpers.sample_path('sample.mdl'), encoding='utf-8') as handle:
+            return load_mdl(handle.read() + self.LIGHT)
+
+    def test_a_reforged_light_reads(self):
+        light = self.model()['lights'][0]
+        self.assertEqual(light['type'], 1)
+        self.assertEqual((light['attenuationStart'], light['attenuationEnd']), (80.0, 200.0))
+        self.assertEqual(light['ambientIntensity'], 0.5)
+        self.assertEqual([key['value'] for key in light['tracks']['KLAI']['keys']], [0.7, 0.75, 0.9])
+        self.assertEqual(len(light['tracks']['KLAC']['keys']), 2)
+
+    def test_it_survives_mdl_and_mdx(self):
+        model = self.model()
+        text = save_mdl(model)
+        again = load_mdl(text)
+        self.assertEqual(again['lights'][0]['type'], 1)
+        self.assertEqual(set(again['lights'][0]['tracks']), {'KLAI', 'KLAC'})
+        self.assertEqual(save_mdl(again), text)
+        binary = save_mdx(again)
+        self.assertEqual(save_mdx(load_mdl(save_mdl(load_mdx(binary)))), binary)

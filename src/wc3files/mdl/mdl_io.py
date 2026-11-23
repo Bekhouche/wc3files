@@ -1027,24 +1027,26 @@ def _parse_light(tokens):
     }
     while tokens.peek() != '}':
         key = tokens.next()
-        if key == 'Omnidirectional':
-            light['type'] = 0
-        elif key == 'Directional':
-            light['type'] = 1
-        elif key == 'Ambient':
-            light['type'] = 2
-        elif key == 'AttenuationStart':
-            light['attenuationStart'] = float(_parse_number(tokens.next()))
-        elif key == 'AttenuationEnd':
-            light['attenuationEnd'] = float(_parse_number(tokens.next()))
-        elif key == 'Intensity':
-            light['intensity'] = float(_parse_number(tokens.next()))
-        elif key == 'Color':
-            light['color'] = _read_vector(tokens)
-        elif key == 'AmbIntensity':
-            light['ambientIntensity'] = float(_parse_number(tokens.next()))
-        elif key == 'AmbColor':
-            light['ambientColor'] = _read_vector(tokens)
+        if key == 'static':
+            # `static AttenuationStart 80,`, as Reforged's own MDL files
+            # write a field that could be animated but is not. It used to
+            # fall through to the node parser, and the value read as 0.
+            key = tokens.next()
+        if key in _LIGHT_TYPES:
+            light['type'] = _LIGHT_TYPES[key]
+        elif key in _LIGHT_FIELDS:
+            tag, kind, field = _LIGHT_FIELDS[key]
+            if _is_animated_track(tokens):
+                # `Intensity 6 { Linear, 3367: 0.7, ... }`: a track of 6
+                # keys, which used to be read as a static intensity of 6.
+                tokens.next()
+                light['tracks'][tag] = _parse_track_block(tokens, kind)
+            elif field is None:
+                tokens.next()
+            elif kind == 'f32x3':
+                light[field] = _read_vector(tokens)
+            else:
+                light[field] = float(_parse_number(tokens.next()))
         elif key == 'ShadowIntensity':
             light['shadowIntensity'] = float(_parse_number(tokens.next()))
         else:
@@ -1058,6 +1060,20 @@ def _parse_light(tokens):
             tokens.next()
     tokens.expect('}')
     return light
+
+
+_LIGHT_TYPES = {'Omnidirectional': 0, 'Directional': 1, 'Ambient': 2}
+# MDL name -> (MDX track tag, value kind, static field). Visibility has no
+# static field.
+_LIGHT_FIELDS = {
+    'AttenuationStart': ('KLAS', 'f32', 'attenuationStart'),
+    'AttenuationEnd': ('KLAE', 'f32', 'attenuationEnd'),
+    'Intensity': ('KLAI', 'f32', 'intensity'),
+    'Color': ('KLAC', 'f32x3', 'color'),
+    'AmbIntensity': ('KLBI', 'f32', 'ambientIntensity'),
+    'AmbColor': ('KLBC', 'f32x3', 'ambientColor'),
+    'Visibility': ('KLAV', 'f32', None),
+}
 
 
 def _parse_attachment(tokens):
@@ -1661,12 +1677,20 @@ def _write_light_lines(light):
     lines.extend(_write_node_lines(node))
     type_name = {0: 'Omnidirectional', 1: 'Directional', 2: 'Ambient'}.get(light.get('type', 0), 'Omnidirectional')
     lines.append(f'\t{type_name},')
-    lines.append(f'\tAttenuationStart {_fmt_num(light.get("attenuationStart", 0.0))},')
-    lines.append(f'\tAttenuationEnd {_fmt_num(light.get("attenuationEnd", 0.0))},')
-    lines.append(f'\tIntensity {_fmt_num(light.get("intensity", 0.0))},')
-    lines.append(f'\tColor {{ {_fmt_floats(light.get("color") or [1, 1, 1])} }},')
-    lines.append(f'\tAmbIntensity {_fmt_num(light.get("ambientIntensity", 0.0))},')
-    lines.append(f'\tAmbColor {{ {_fmt_floats(light.get("ambientColor") or [0, 0, 0])} }},')
+    # A field with a track is written as the track. It used to be written as
+    # its static value only, so every animated light lost its animation.
+    tracks = light.get('tracks') or {}
+    defaults = {'attenuationStart': 0.0, 'attenuationEnd': 0.0, 'intensity': 0.0,
+                'color': [1, 1, 1], 'ambientIntensity': 0.0, 'ambientColor': [0, 0, 0]}
+    for name, (tag, kind, field) in _LIGHT_FIELDS.items():
+        if tag in tracks:
+            lines.extend(_write_track_lines(name, tracks[tag], kind))
+        elif field is None:
+            continue
+        elif kind == 'f32x3':
+            lines.append(f'\t{name} {{ {_fmt_floats(light.get(field) or defaults[field])} }},')
+        else:
+            lines.append(f'\t{name} {_fmt_num(light.get(field, defaults[field]))},')
     if 'shadowIntensity' in light:
         lines.append(f'\tShadowIntensity {_fmt_num(light["shadowIntensity"])},')
     lines.append('}')
