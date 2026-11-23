@@ -60,5 +60,46 @@ class TestTerrainRoundTrip(unittest.TestCase):
                 TerrainFile().read(bad)
 
 
+class TestGridInOnePass(unittest.TestCase):
+    """The tile grid is read and written as one block, not field by field:
+    five reads per tile point made w3e the slowest map format (#137)."""
+
+    def _count(self, method):
+        from wc3files.files import BinaryFile
+        calls = []
+        original = getattr(BinaryFile, method)
+
+        def counting(self, *args, **kwargs):
+            calls.append(1)
+            return original(self, *args, **kwargs)
+        setattr(BinaryFile, method, counting)
+        self.addCleanup(setattr, BinaryFile, method, original)
+        return calls
+
+    def test_read_and_write_calls_do_not_grow_with_the_grid(self):
+        import copy
+        terrain = TerrainFile()
+        terrain.read(_helpers.sample_path('sample.w3e'))
+        data = terrain.get_data()
+        data['width'] = data['height'] = 30
+        data['tiles'] = [copy.deepcopy(data['tiles'][i % 4]) for i in range(900)]
+        path = os.path.join(tempfile.mkdtemp(), 'war3map.w3e')
+        writes = self._count('write')
+        terrain.write(path)
+        self.assertLess(len(writes), 50)
+        reads = self._count('read')
+        again = TerrainFile()
+        again.read(path)
+        self.assertLess(len(reads), 50)
+        self.assertEqual(again.get_data(), data)
+
+    def test_out_of_range_height_still_raises(self):
+        terrain = TerrainFile()
+        terrain.read(_helpers.sample_path('sample.w3e'))
+        terrain.get_data()['tiles'][0]['ground_height'] = 70000
+        with self.assertRaises(Exception):
+            terrain.write(os.path.join(tempfile.mkdtemp(), 'war3map.w3e'))
+
+
 if __name__ == '__main__':
     unittest.main()
