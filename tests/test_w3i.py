@@ -37,6 +37,26 @@ class TestW3iRoundTrip(unittest.TestCase):
         self.assertTrue(decoded['use_custom_forces'])
         self.assertFalse(decoded['fixed_player_force_settings'])
 
+    def test_high_flag_bits_are_named(self):
+        # Bits above the first 13 were dropped by decode_flags; real maps set
+        # them (0x8000 in 701 corpus maps, custom ability skins in 13).
+        flags = 0x40000 | 0x80000 | 0x8000 | 0x400000 | 0x4
+        decoded = W3iFile.decode_flags(flags)
+        self.assertEqual(len(decoded), 32)
+        self.assertTrue(decoded['custom_ability_skins'])
+        self.assertTrue(decoded['default_zoom_override'])
+        self.assertTrue(decoded['bit_15'])
+        self.assertTrue(decoded['bit_22'])
+        self.assertTrue(decoded['melee_map'])
+        self.assertFalse(decoded['minimum_zoom_override'])
+        self.assertEqual(W3iFile.encode_flags(decoded), flags)
+
+    def test_encode_keeps_the_bits_it_is_not_given(self):
+        flags = 0x40000 | 0x8000 | 0x4
+        self.assertEqual(W3iFile.encode_flags({'melee_map': False}, base=flags), flags & ~0x4)
+        self.assertEqual(W3iFile.encode_flags({'custom_ability_skins': False}, base=flags),
+                         flags & ~0x40000)
+
     def test_rejects_unsupported_version(self):
         data = dict(self.w3i.get_data())
         data['file_version'] = 999
