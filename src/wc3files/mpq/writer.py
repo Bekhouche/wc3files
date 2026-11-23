@@ -1,7 +1,8 @@
 import random
 import struct
 import zlib
-from .data import *
+from .data import (
+    MPQBlockTableEntry, MPQFileDataType, MPQHashTableEntry, MPQHashType, MPQKeyType, MpqMagicType, MpqProtectionLevel, MpqUnpack)
 from .cipher import MpqCipher
 from . import protection as protection_module
 from .attributes import pack_attributes

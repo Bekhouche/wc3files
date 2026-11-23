@@ -1,5 +1,5 @@
 from ..data import BinaryDataType
-from .data import *
+from .data import MpqMagicType
 
 class MpqOptionalData:
      """

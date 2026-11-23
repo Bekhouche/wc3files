@@ -56,7 +56,7 @@ class BinaryFile:
         self.open()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, *exc_info):
         self.close()
 
     def size(self):

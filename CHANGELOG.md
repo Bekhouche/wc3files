@@ -22,6 +22,7 @@ section to the new version and its date.
 - `TerrainFile` reads and writes the tile grid in one pass. war3map.w3e reads at 10.3 MB/s, up from 2.7, and writes at 11.0 MB/s, up from 3.2 (#137).
 - The JASS lexer walks the source with `finditer` and takes columns from the line start. It gives the same tokens on all 703 corpus scripts, 32% faster, and `ScriptFile.read` parses JASS at 3.1 MB/s, up from 2.7 (#138).
 - `jass --check`, `trigger-text`, `script-to-triggers` and `run-map` read only the members they use from a map, and `script-to-triggers` reads it once instead of twice. On a 350 MB map, `script-to-triggers` goes from 6.0 to 2.0 s (#139).
+- The MPQ modules and `W3xFile` import their names explicitly instead of with `from .data import *`, a dead branch and unused parameters are gone, and CI runs pyflakes over `src/` (#148).
 
 - The package no longer prints log lines unless the application enables them with `logger.enable('wc3files')`. Reading an SLK table printed an INFO line to stderr. The command line still shows warnings (#145).
 

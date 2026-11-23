@@ -1,7 +1,7 @@
 import os
 import re
 from .progress import track
-from .data import *
+from .data import MPQFileDataType, MPQHashType
 from .cipher import MpqCipher, plain_name
 from .sectors import read_block
 from .header import MpqHeader

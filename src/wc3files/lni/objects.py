@@ -370,11 +370,8 @@ def _parse(text):
                continue
           if reader.at('['):
                end = text.find(']', reader.pos)
-               if False:
-                    pass
-               else:
-                    name = text[reader.pos + 1:end]
-                    reader.pos = end + 1
+               name = text[reader.pos + 1:end]
+               reader.pos = end + 1
                current = (name, [])
                sections.append(current)
                continue

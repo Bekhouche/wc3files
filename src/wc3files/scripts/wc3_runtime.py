@@ -609,7 +609,7 @@ def _special_natives(rt):
                rt.call(fn)
           rt.event['trigger'] = saved
      n['TriggerExecute'] = trigger_execute
-     n['TriggerExecuteWait'] = lambda t, wait: trigger_execute(t)
+     n['TriggerExecuteWait'] = lambda t, _wait: trigger_execute(t)
      n['GetTriggeringTrigger'] = lambda: rt.event.get('trigger')
      n['GetTriggerExecCount'] = lambda t: t.data.get('runs', 0) if isinstance(t, GameHandle) else 0
      n['TriggerSleepAction'] = sleep
@@ -791,7 +791,7 @@ def _special_natives(rt):
      n['SetUnitX'] = set_unit_field('x', _num)
      n['SetUnitY'] = set_unit_field('y', _num)
      n['SetUnitFacing'] = set_unit_field('face', _num)
-     n['SetUnitOwner'] = lambda u, p, change: u.data.__setitem__('owner', p) \
+     n['SetUnitOwner'] = lambda u, p, _change: u.data.__setitem__('owner', p) \
           if isinstance(u, GameHandle) else None
 
      def set_position(u, x, y):

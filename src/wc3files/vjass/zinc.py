@@ -202,7 +202,7 @@ class ZincTranslator(object):
 
     # ------------------------------------------------------------------ globals
 
-    def variable_list(self, allow_sizes=True):
+    def variable_list(self):
         """`a`, `a = 1`, `a[]`, `a[10]`, `a[10][20]`, comma separated."""
         items = []
         while True:
