@@ -1,3 +1,10 @@
+# A library does not print log lines unless the application asks: loguru
+# prints to stderr by default, so reading one SLK table printed an INFO line.
+# `from loguru import logger; logger.enable('wc3files')` turns them back on.
+from loguru import logger as _logger
+_logger.disable('wc3files')
+del _logger
+
 # Deliberate re-exports: this package's namespace is the whole public API,
 # gathered from each format package. pyflakes reports every star import as
 # unused; a literal __all__ would have to list every public name of the modules

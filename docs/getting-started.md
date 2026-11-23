@@ -125,6 +125,21 @@ with [Concepts](concepts.md#refusing-beats-guessing), and check the parser's
 own docstring - they document the layouts they accept and the cases they
 deliberately refuse.
 
+## Log messages
+
+The package logs with [loguru](https://github.com/Delgan/loguru), and keeps
+that log off unless you ask for it. To see it, enable it after importing
+wc3files:
+
+```python
+import wc3files
+from loguru import logger
+
+logger.enable('wc3files')
+```
+
+The `wc3files` command shows warnings, and everything with `--verbose`.
+
 ## Next
 
 - [Concepts](concepts.md) - the handful of rules that explain the rest
