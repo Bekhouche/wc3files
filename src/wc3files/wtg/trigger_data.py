@@ -17,6 +17,17 @@ _DEFAULT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'gameda
 
 
 
+class TriggerDataError(KeyError, ValueError):
+     """A trigger file names a GUI function TriggerData.txt does not declare.
+
+     A KeyError, as it always was, and a ValueError, as every other error of
+     a file that cannot be read is, so `except ValueError` catches it too."""
+
+     def __str__(self):
+          # KeyError's own str() quotes the message.
+          return str(self.args[0]) if self.args else ''
+
+
 def _fallback_arg_count(section, name):
      """The argument count of a GUI function TriggerData.txt does not declare,
      when it can still be known (see TriggerData.arg_count), or None."""
@@ -163,7 +174,10 @@ class TriggerData(object):
           return self._comparison_by_type.get(gui_type, '')
 
      def arg_count(self, function_type, name):
-          section = _SECTION_BY_FUNCTION_TYPE[function_type]
+          section = _SECTION_BY_FUNCTION_TYPE.get(function_type)
+          if section is None:
+               # Only 0-3 exist; anything else is a damaged trigger file.
+               raise ValueError(f'invalid GUI function type {function_type} for {name!r}')
           try:
                return self._arg_counts[section][name]
           except KeyError:
@@ -188,7 +202,7 @@ class TriggerData(object):
           count = _fallback_arg_count(section, name)
           if count is not None:
                return count
-          raise KeyError(
+          raise TriggerDataError(
                f"Unknown {section[7:].lower()} function: {name!r}. The "
                f"bundled TriggerData.txt does not declare it, nor does "
                f"stock Warcraft III's, and it is not a native or BJ function "
