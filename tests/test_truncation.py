@@ -47,17 +47,42 @@ class TestTruncatedFilesAreRefused(unittest.TestCase):
                     path = os.path.join(tmp, 'cut' + os.path.splitext(sample)[1])
                     with open(path, 'wb') as handle:
                         handle.write(data[:cut])
-                    # EOFError too, for ModelFile (#141). struct.error is
-                    # no longer accepted: MapDoodadsFile raised it (#140).
-                    with self.assertRaises((ValueError, EOFError)):
+                    # ValueError only (TruncatedDataError is one). This
+                    # accepted struct.error for MapDoodadsFile (#140) and
+                    # EOFError for ModelFile (#141).
+                    with self.assertRaises(ValueError):
                         cls().read(path)
+
+    def test_model_cut_anywhere_or_damaged(self):
+        import random
+        rng = random.Random(141)
+        data = _helpers.read_bytes(_helpers.sample_path('sample.mdx'))
+        cases = [data[:cut] for cut in range(0, len(data), 7)]
+        for _ in range(200):
+            damaged = bytearray(data)
+            damaged[rng.randrange(len(data))] = rng.randrange(256)
+            cases.append(bytes(damaged))
+        for case in cases:
+            with self.subTest(size=len(case)), tempfile.TemporaryDirectory() as tmp:
+                path = os.path.join(tmp, 'cut.mdx')
+                with open(path, 'wb') as handle:
+                    handle.write(case)
+                try:
+                    ModelFile().read(path)
+                except ValueError:
+                    pass
+                except Exception as exc:
+                    self.fail(f'{type(exc).__name__}: {exc}')
 
     def test_doodads_cut_anywhere_or_damaged(self):
         import random
         rng = random.Random(140)
         for sample in ('sample_doodads_v8_11.doo', 'sample_doodads_v13_11.doo'):
             data = _helpers.read_bytes(_helpers.sample_path(sample))
-            cases = [data[:cut] for cut in range(len(data))]
+            # Every length of the header, then about 120 cuts through the
+            # records: cutting at every byte of the 45 KB sample took 43 s.
+            cuts = set(range(min(64, len(data)))) | set(range(0, len(data), max(1, len(data) // 120)))
+            cases = [data[:cut] for cut in sorted(cuts)]
             for _ in range(200):
                 damaged = bytearray(data)
                 damaged[rng.randrange(len(data))] = rng.randrange(256)
