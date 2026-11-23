@@ -209,5 +209,45 @@ class TestIncompleteListfile(unittest.TestCase):
         self.assertEqual(w3x.unlisted_blocks, 0)
 
 
+
+
+class TestReferenceNamesAreLazy(unittest.TestCase):
+    """W3xFile() and MpqFiles() read the 332,532 reference names only when a
+    DEEP read needs them, and once per process (#135)."""
+
+    def setUp(self):
+        import wc3files.mpq.files as files
+        self.files = files
+        self.saved = files._REFERENCE_NAMES
+        files._REFERENCE_NAMES = None
+
+    def tearDown(self):
+        self.files._REFERENCE_NAMES = self.saved
+
+    def test_construction_does_not_load_them(self):
+        from wc3files import W3xFile
+        from wc3files.mpq.files import MpqFiles
+        W3xFile()
+        MpqFiles()
+        self.assertIsNone(self.files._REFERENCE_NAMES)
+
+    def test_loaded_once_and_sorted(self):
+        from wc3files import W3xFile
+        first = W3xFile().default_files
+        loaded = self.files._REFERENCE_NAMES
+        self.assertIsNotNone(loaded)
+        W3xFile().default_files
+        self.assertIs(self.files._REFERENCE_NAMES, loaded)
+        self.assertEqual(first, sorted(first))
+        self.assertIn('war3map.j', first)
+
+    def test_default_files_can_still_be_set(self):
+        from wc3files import W3xFile
+        archive = W3xFile()
+        archive.default_files = ['war3map.j']
+        self.assertEqual(archive.default_files, ['war3map.j'])
+        self.assertIsNone(self.files._REFERENCE_NAMES)
+
+
 if __name__ == '__main__':
     unittest.main()

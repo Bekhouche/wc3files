@@ -76,7 +76,50 @@ _REFERENCE_PATTERN = re.compile(
 )
 
 
+_REFERENCE_NAMES = None
+
+
+def reference_names():
+    """The known map member names of data/reference, sorted, read once.
+
+    332,532 lines: reading them took about 0.2 s, and it used to happen in
+    every MpqFiles() and W3xFile(), although only a DEEP scan uses them."""
+    global _REFERENCE_NAMES
+    if _REFERENCE_NAMES is None:
+        folder = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                              'data', 'reference')
+        names = set()
+        for file_name in ('Warcraft III.txt', 'Warcraft III Maps.txt'):
+            with open(os.path.join(folder, file_name), encoding='utf8') as handle:
+                names.update(line.strip() for line in handle)
+        _REFERENCE_NAMES = tuple(sorted(names))
+    return _REFERENCE_NAMES
+
+
+class _DefaultFiles:
+    """`default_files`, loaded on first use rather than in __init__. It can
+    still be assigned, as before."""
+
+    def __init__(self, load):
+        self.load = load
+
+    def __set_name__(self, owner, name):
+        self.attr = '_' + name
+
+    def __get__(self, obj, owner=None):
+        if obj is None:
+            return self
+        value = obj.__dict__.get(self.attr)
+        if value is None:
+            value = obj.__dict__[self.attr] = self.load()
+        return value
+
+    def __set__(self, obj, value):
+        obj.__dict__[self.attr] = value
+
+
 class MpqFiles:
+    default_files = _DefaultFiles(lambda: list(reference_names()))
     """
     Class for Block Table
     """
@@ -85,7 +128,6 @@ class MpqFiles:
         """Initialize by clearing any stored MPQ data."""
         self.clear()
         self.mpq_cipher = MpqCipher()
-        self.default_files = self.get_filelist()
         self.mpq_hash_table = MpqHashTable()
         self.mpq_block_table = MpqBlockTable()
         self.mpq_archive_header = MpqHeader()
@@ -253,13 +295,7 @@ class MpqFiles:
 
     @staticmethod
     def get_filelist():
-        files = []
-        reference_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'data', 'reference')
-        for file_path in ['Warcraft III.txt', 'Warcraft III Maps.txt']:
-            with open(os.path.join(reference_path, file_path), mode='r', encoding='utf8') as file:
-                files += [file.strip() for file in file.readlines()]
-        files = sorted(list(set(files)))
-        return files
+        return list(reference_names())
     
     @staticmethod
     def find_val_from_dict(data, extensions):
