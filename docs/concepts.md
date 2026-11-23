@@ -105,23 +105,13 @@ Two things follow:
 ## Archives without a listfile
 
 An MPQ stores filenames as hashes, not as text, plus an internal `(listfile)`
-member naming them. Published maps often strip that member, so names have to
-be recovered by hashing candidates and seeing what matches. `W3xFile.read()`
-takes a mode for this:
-
-```python
-from wc3files import W3xFile, W3xReadMode
-
-archive = W3xFile()
-archive.read('MyMap.w3x', mode=W3xReadMode.DEEP)
-```
+member naming them. `W3xFile.read()` takes a mode:
 
 | mode | what it does |
 |---|---|
 | `SIMPLE` | header and tables only |
 | `LISTFILE` | use the archive's own `(listfile)` - the default |
-| `DEEP` | also try known names and names referenced from files it finds |
 
-A member whose name cannot be recovered is still *in* the archive and still
+A member the listfile does not name is still *in* the archive and still
 readable by hash; it just has no name to list. That is a property of the
 format, not a limitation of the reader.

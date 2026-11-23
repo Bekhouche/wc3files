@@ -513,9 +513,7 @@ def read_map(path, deep=False, progress=None):
      if archive.protected and not deep:
           raise ProtectedMapError(
                f'{fspath(path)} is protected: {protection_reason(archive)}. '
-               f'Reading it as it is would lose those files. Pass --deep '
-               f'(deep=True) to recover them by scanning for names; the '
-               f'result is a recovery, not the map\'s own file list.')
+               f'Reading it as it is would lose those files.')
      return archive
 
 

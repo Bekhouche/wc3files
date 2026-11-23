@@ -39,7 +39,7 @@ Low-level MPQ access, if you need it: `read_header()`, `read_hash_table()`,
 `read_block_table()`, `get_hash_table_entry()`, `hash()`,
 `initialize_crypt_table()`, `decompress()`, `encrypt()`, `decrypt()`.
 
-`mode` is a `W3xReadMode`: `SIMPLE`, `LISTFILE` (default) or `DEEP` - see
+`mode` is a `W3xReadMode`: `SIMPLE` or `LISTFILE` (default) - see
 [Concepts](concepts.md#archives-without-a-listfile).
 
 ### `MpqFile`, `MpqWriter`
