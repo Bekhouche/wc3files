@@ -16,8 +16,7 @@ pip install wc3files
 A conda-forge package is in review and not published yet.
 
 Python 3.9 or newer. Pure Python - no compiler, and no StormLib or game
-install needed. The only dependency is loguru. `pip install wc3files[progress]`
-adds tqdm, for progress bars while `--deep` scans a protected map.
+install needed. The only dependency is loguru.
 
 ## Documentation
 
@@ -91,9 +90,6 @@ script = archive.files["war3map.j"]
 archive.files["war3map.j"] = script + b"// edited with wc3files\r\n"
 archive.build_from_files(archive.files, "MyMap.edited.w3x")
 ```
-
-A map without a full `(listfile)` reads with `archive.protected` set; pass
-`mode=W3xReadMode.DEEP` to recover its files by scanning for their names.
 
 ### Working with MPQ archives
 
