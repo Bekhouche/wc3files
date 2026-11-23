@@ -500,12 +500,26 @@ STACK_SIZE = 256 * 1024 * 1024
 RECURSION_LIMIT = 200000
 
 
+# Sizes to try, largest first. Windows rejects 256 MB itself ("size not
+# valid", on every Python version) but takes 255 MB; the old code then gave
+# up and ran on the default stack, which deep Lua recursion overflowed on
+# Python 3.9 and 3.10, where every Python call also uses the C stack.
+_STACK_SIZES = (STACK_SIZE, STACK_SIZE - 1024 * 1024, 128 * 1024 * 1024, 64 * 1024 * 1024)
+# The size the last thread was started with, or None for the default.
+thread_stack_size = None
+
+
 def _start_thread(target):
+     global thread_stack_size
      old = threading.stack_size()
-     try:
-          threading.stack_size(STACK_SIZE)
-     except (ValueError, RuntimeError):  # pragma: no cover - platform limit
-          pass
+     thread_stack_size = None
+     for size in _STACK_SIZES:
+          try:
+               threading.stack_size(size)
+          except (ValueError, RuntimeError):  # a platform limit: try smaller
+               continue
+          thread_stack_size = size
+          break
      try:
           thread = threading.Thread(target=target, daemon=True)
           thread.start()

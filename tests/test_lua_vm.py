@@ -221,6 +221,14 @@ class TestErrors(unittest.TestCase):
         self.assertEqual(run_with_stack(run, 'local function f() return 1 + f() end '
                                              'return pcall(f)')[0], False)
 
+    def test_the_thread_gets_a_large_stack(self):
+        # Windows rejects 256 MB, and the thread then ran on the default
+        # stack: on Python 3.9 and 3.10 the test above crashed the process.
+        from wc3files.scripts import lua_vm
+        run_with_stack(lambda: None)
+        self.assertIsNotNone(lua_vm.thread_stack_size)
+        self.assertGreaterEqual(lua_vm.thread_stack_size, 64 * 1024 * 1024)
+
 
 class TestLibrary(unittest.TestCase):
 
