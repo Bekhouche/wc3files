@@ -4,6 +4,7 @@ Covers the common Warcraft III Art Tools MDL blocks used by map-imported models.
 """
 
 import re
+import struct
 
 from .mdx_io import empty_model
 
@@ -224,10 +225,28 @@ def _escape(value):
     return (value or '').replace('\\', '\\\\').replace('"', '\\"')
 
 
+_F32 = struct.Struct('<f')
+
+
 def _fmt_num(value):
+    """A float as the shortest of 7, 8 or 9 significant digits that reads back
+    to the same float32, which every MDL float becomes in an MDX.
+
+    Seven digits alone, as this used to write, is not always enough: 263.29132
+    came back as 263.29129, so MDX to MDL to MDX changed almost every model.
+    Seven is tried first, so values that need no more print as before."""
     if isinstance(value, float):
-        text = f'{value:.7g}'
-        return text
+        if value != value or value in (float('inf'), float('-inf')):
+            return f'{value:.7g}'          # nan, inf, -inf
+        try:
+            target = _F32.pack(value)
+        except OverflowError:
+            return repr(value)
+        for digits in (7, 8):
+            text = f'{value:.{digits}g}'
+            if _F32.pack(float(text)) == target:
+                return text
+        return f'{value:.9g}'
     return str(value)
 
 

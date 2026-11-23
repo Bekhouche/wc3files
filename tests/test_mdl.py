@@ -393,3 +393,28 @@ class TestNanAndInfinityInMdl(unittest.TestCase):
         self.assertEqual(save_mdl(again), text)
         # An infinity is kept exactly in the binary model too.
         self.assertEqual(load_mdx(save_mdx(again))['extent']['maximum'][0], float('inf'))
+
+
+class TestMdlFloatPrecision(unittest.TestCase):
+    """MDL wrote floats with 7 significant digits. A float32 needs up to 9,
+    so MDX -> MDL -> MDX changed almost every real model (263.29132 came
+    back as 263.29129)."""
+
+    def test_mdx_through_mdl_is_exact(self):
+        import struct
+        f32 = lambda x: struct.unpack('<f', struct.pack('<f', x))[0]
+        with open(_helpers.sample_path('sample.mdx'), 'rb') as handle:
+            model = load_mdx(handle.read())
+        model['extent']['minimum'] = [f32(-261.061279296875), f32(-277.02838134765625),
+                                      f32(-0.003250477835536003)]
+        model['extent']['maximum'] = [f32(263.29132080078125), f32(18.17574691772461),
+                                      f32(382.4608459472656)]
+        model['extent']['boundsRadius'] = f32(0.1)
+        original = save_mdx(model)
+        self.assertEqual(save_mdx(load_mdl(save_mdl(model))), original)
+
+    def test_short_values_print_as_before(self):
+        from wc3files.mdl.mdl_io import _fmt_num
+        self.assertEqual(_fmt_num(0.5), '0.5')
+        self.assertEqual(_fmt_num(0.341176), '0.341176')
+        self.assertEqual(_fmt_num(3.0), '3')
