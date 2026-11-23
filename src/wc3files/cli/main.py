@@ -2053,7 +2053,33 @@ def build_parser():
     return parser
 
 
+def _utf8_output():
+    """Write UTF-8 to stdout and stderr when they are a file or a pipe.
+
+    Python writes those in the locale's code page on Windows (cp1252 and the
+    like), and map text is often Chinese, Korean or Russian: `trigger-text
+    MyMap.w3x > out.txt` stopped halfway with a 'charmap' codec error. A
+    console takes Unicode already and is left alone. surrogateescape gives
+    back the bytes of a name that was not valid UTF-8 to begin with. An
+    encoding set with PYTHONIOENCODING is kept."""
+    if os.environ.get('PYTHONIOENCODING'):
+        return
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, 'reconfigure', None)
+        if reconfigure is None:
+            continue
+        try:
+            if stream.isatty():
+                continue
+            if (stream.encoding or '').lower().replace('-', '') == 'utf8':
+                continue
+            reconfigure(encoding='utf-8', errors='surrogateescape')
+        except (OSError, ValueError):
+            pass
+
+
 def main(argv=None):
+    _utf8_output()
     parser = build_parser()
     args = parser.parse_args(argv)
 
