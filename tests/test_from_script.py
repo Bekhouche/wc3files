@@ -778,3 +778,71 @@ class TestRendersThroughTriggerText(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestVariableEventParameter(unittest.TestCase):
+    """"Value Of Real Variable" compiles to TriggerRegisterVariableEvent with
+    the variable's name as a string. The editor stores that parameter as a
+    variable (type 1, without udg_), as real .wtg files show; it was rebuilt
+    as the string "udg_Damage"."""
+
+    SCRIPT = '''globals
+real udg_Damage = 0
+real array udg_Hits
+integer udg_Count = 0
+trigger gg_trg_T = null
+endglobals
+function Trig_T_Actions takes nothing returns nothing
+call DisplayTextToForce(GetPlayersAll(), "x")
+endfunction
+function InitTrig_T takes nothing returns nothing
+set gg_trg_T = CreateTrigger()
+call TriggerRegisterVariableEvent(gg_trg_T, "udg_Damage", EQUAL, 1.00)
+call TriggerRegisterVariableEvent(gg_trg_T, "udg_Count", EQUAL, 1.00)
+call TriggerRegisterVariableEvent(gg_trg_T, "udg_Hits", EQUAL, 1.00)
+call TriggerRegisterVariableEvent(gg_trg_T, "udg_Missing", EQUAL, 1.00)
+call TriggerAddAction(gg_trg_T, function Trig_T_Actions)
+endfunction
+'''
+
+    def test_the_variable_comes_back_as_a_variable(self):
+        events = reconstruct_from_jass(self.SCRIPT)['triggers'][0]['functions'][:4]
+        firsts = [(e['parameters'][0]['type'], e['parameters'][0]['value']) for e in events]
+        self.assertEqual(firsts[0], (1, 'Damage'))
+        # Not a real, an array, and not a global at all: left as strings.
+        self.assertEqual(firsts[1:], [(3, 'udg_Count'), (3, 'udg_Hits'), (3, 'udg_Missing')])
+
+
+class TestHookWrappers(unittest.TestCase):
+    """JassHelper compiles a vJass `hook TriggerRegisterVariableEvent` (as
+    damage engines use) into a wrapper `h__TriggerRegisterVariableEvent`,
+    and every call goes through it. No such event was rebuilt."""
+
+    SCRIPT = '''globals
+real udg_DamageEvent = 0
+trigger gg_trg_T = null
+endglobals
+function h__TriggerRegisterVariableEvent takes trigger a0, string a1, limitop a2, real a3 returns event
+return TriggerRegisterVariableEvent(a0, a1, a2, a3)
+endfunction
+function Trig_T_Actions takes nothing returns nothing
+call DisplayTextToForce(GetPlayersAll(), "hit")
+endfunction
+function InitTrig_T takes nothing returns nothing
+set gg_trg_T = CreateTrigger()
+call h__TriggerRegisterVariableEvent(gg_trg_T, "udg_DamageEvent", EQUAL, 1.00)
+call TriggerAddAction(gg_trg_T, function Trig_T_Actions)
+endfunction
+'''
+
+    def test_a_hooked_event_is_rebuilt(self):
+        from wc3files.scripts import parse_jass
+        program = parse_jass(self.SCRIPT)
+        result = reconstruct_from_jass(program)
+        event = result['triggers'][0]['functions'][0]
+        self.assertEqual(event['name'], 'TriggerRegisterVariableEvent')
+        self.assertEqual((event['parameters'][0]['type'], event['parameters'][0]['value']),
+                         (1, 'DamageEvent'))
+        # The program passed in is left as it was.
+        names = [s.name for s in program.functions[-1].body if type(s).__name__ == 'CallStmt']
+        self.assertIn('h__TriggerRegisterVariableEvent', names)
