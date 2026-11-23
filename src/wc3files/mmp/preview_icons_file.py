@@ -28,9 +28,11 @@ class PreviewIconsFile:
 
      def read(self, file_path: str):
           file_path = fspath(file_path)
-          file_type = file_path.split('.')[-1].lower()
-          if file_type not in [item.value for item in PreviewIconFileType]:
-               raise ValueError(f"Invalid preview icon file type: {file_type}")
+          # A path is checked by its extension; bytes are read as they are.
+          if isinstance(file_path, str):
+               file_type = file_path.split('.')[-1].lower()
+               if file_type not in [item.value for item in PreviewIconFileType]:
+                    raise ValueError(f"Invalid preview icon file type: {file_type}")
 
           with BinaryFile(file_path, 'read') as reader:
                self.version = reader.read(BinaryDataType.INT)

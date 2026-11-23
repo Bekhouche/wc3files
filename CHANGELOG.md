@@ -32,6 +32,7 @@ section to the new version and its date.
 - A BLP or DDS image cut short raises the new `BlpTruncatedError` or `DdsTruncatedError` instead of `struct.error`. Each is both the format's error and a `TruncatedDataError` (#142).
 - A damaged zlib or bzip2 MPQ sector raises `MpqCompressionError`, with the zlib or bzip2 error as its cause, instead of `zlib.error` or `OSError` (#143).
 - An unknown GUI function in `war3map.wtg` raises the new `TriggerDataError`, which is both a `KeyError` and a `ValueError`, and an invalid function type raises `ValueError` instead of `KeyError` (#144).
+- `RegionFile` and `PreviewIconsFile` read bytes, as the other readers do. `ObjectFile` uses `object_type=` for a path whose extension is not an object type, and its error says when `object_type=` is needed (#146).
 
 ## [0.4.0] - 2026-11-23
 
