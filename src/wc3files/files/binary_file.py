@@ -10,6 +10,10 @@ def fspath(value):
     return os.fspath(value) if isinstance(value, os.PathLike) else value
 
 
+# Files up to this size are read into memory when opened for reading.
+_IN_MEMORY_LIMIT = 64 << 20
+
+
 class TruncatedDataError(EOFError, ValueError):
     """The data ends before a value that was asked for is complete.
 
@@ -67,6 +71,13 @@ class BinaryFile:
             if not self.is_binary_data:
                 if os.path.exists(self.file_path):
                     self.file = io.open(self.file_path, 'rb')
+                    # A map member or game file is read whole into memory,
+                    # where read() and tell() are much cheaper than on a
+                    # buffered file. A large archive stays on disk, since a
+                    # map can be hundreds of MB and only parts are read.
+                    if os.fstat(self.file.fileno()).st_size <= _IN_MEMORY_LIMIT:
+                        with self.file:
+                            self.file = io.BytesIO(self.file.read())
                 else:
                     raise FileNotFoundError(f"File not found: {self.file_path}")
             else:
@@ -157,9 +168,12 @@ class BinaryFile:
         # came back as 0, BYTES came back short, and a truncated file read
         # "successfully" in six formats. A parser that really can stop early
         # checks remaining() first instead.
-        start = self.tell()
         data = self.file.read(num)
         if len(data) != num:
+            # The offset is only worked out for the message: asking for it
+            # before every read was about a third of the time of reading a
+            # terrain or a trigger file.
+            start = self.file.tell() - len(data)
             raise TruncatedDataError(
                 f"the data ends at offset {start + len(data)}: {num} bytes were "
                 f"needed at offset {start}, {len(data)} are left")
