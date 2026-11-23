@@ -31,11 +31,12 @@ class RegionFile:
         ValueError: If the file extension is not a valid region file type.
         """
         file_path = fspath(file_path)
-        file_type = file_path.split('.')[-1].lower()
-
-        # Check if the file type is valid for a region file
-        if file_type not in [item.value for item in RegionFileType]:
-            raise ValueError(f"Invalid region file type: {file_type}")
+        # A path is checked by its extension; bytes, as from W3xFile.files,
+        # are read as they are, like every other reader.
+        if isinstance(file_path, str):
+            file_type = file_path.split('.')[-1].lower()
+            if file_type not in [item.value for item in RegionFileType]:
+                raise ValueError(f"Invalid region file type: {file_type}")
 
         # Read the file using BinaryFile reader
         with BinaryFile(file_path, 'read') as reader:

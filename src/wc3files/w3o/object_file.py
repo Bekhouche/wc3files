@@ -506,19 +506,27 @@ class ObjectFile(object):
 
      def read(self, file_path, object_type=None, skin='auto'):
           file_path = fspath(file_path)
+          types = [item.value for item in ObjectFileType]
+          if isinstance(object_type, ObjectFileType):
+               object_type = object_type.value
           if isinstance(file_path, str):
-               object_type = file_path.split('.')[-1].lower()
-               if object_type in [item.value for item in ObjectFileType]:
-                    pass
-               else:
-                    raise ValueError("Invalid file type")
-          elif isinstance(file_path, bytes):
-               if object_type in [item.value for item in ObjectFileType]:
-                    pass
-               else:
-                    raise ValueError("Invalid file type")
+               # The extension names the type; object_type= is used for a
+               # path whose extension does not, such as a temporary file.
+               extension = file_path.split('.')[-1].lower()
+               if extension in types:
+                    object_type = extension
+               elif object_type not in types:
+                    raise ValueError(
+                         f"Invalid file type: {file_path!r} does not end in an object "
+                         f"data extension ({', '.join(types)}); pass object_type=")
+          elif isinstance(file_path, (bytes, bytearray)):
+               file_path = bytes(file_path)
+               if object_type not in types:
+                    raise ValueError(
+                         f"Invalid file type: object data read from bytes needs "
+                         f"object_type=, one of {', '.join(types)}")
           else:
-               raise ValueError("Invalid file type")
+               raise ValueError("Invalid file type: pass a path or bytes")
 
           with BinaryFile(file_path, 'read') as reader:
                if ObjectFileType(object_type) == ObjectFileType.File:
