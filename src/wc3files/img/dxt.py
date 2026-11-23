@@ -33,7 +33,10 @@ def decode_dxt3_block(data, offset):
     return [(r, g, b, alphas[i]) for i, (r, g, b, _a) in enumerate(colors)]
 
 
-def decode_dxt5_block(data, offset):
+def _decode_channel_block(data, offset):
+    """The 16 values of an 8-byte single-channel block: two endpoints and
+    sixteen 3-bit indices. DXT5 stores its alpha this way, and BC4 and BC5
+    store each of their channels the same way."""
     a0, a1 = data[offset], data[offset + 1]
     alpha_idx = int.from_bytes(data[offset + 2:offset + 8], 'little')
     if a0 > a1:
@@ -44,13 +47,49 @@ def decode_dxt5_block(data, offset):
         lut = [a0, a1,
                (4 * a0 + 1 * a1) // 5, (3 * a0 + 2 * a1) // 5, (2 * a0 + 3 * a1) // 5,
                (1 * a0 + 4 * a1) // 5, 0, 255]
-    alphas = [lut[(alpha_idx >> (3 * i)) & 0x7] for i in range(16)]
+    return [lut[(alpha_idx >> (3 * i)) & 0x7] for i in range(16)]
+
+
+def decode_dxt5_block(data, offset):
+    alphas = _decode_channel_block(data, offset)
     colors = _decode_color_block(data, offset + 8, always_four_color=True)
     return [(r, g, b, alphas[i]) for i, (r, g, b, _a) in enumerate(colors)]
 
 
+def decode_bc4_block(data, offset):
+    """BC4 (ATI1): one channel, shown as grey."""
+    return [(v, v, v, 255) for v in _decode_channel_block(data, offset)]
+
+
+def _normal_blue(red, green):
+    """The z of a unit normal whose x and y are `red` and `green` (0..255
+    for -1..1), back in 0..255. BC5 holds only x and y."""
+    x, y = red / 127.5 - 1.0, green / 127.5 - 1.0
+    z = max(0.0, 1.0 - x * x - y * y) ** 0.5
+    return min(255, int(round((z + 1.0) * 127.5)))
+
+
+def decode_bc5_block(data, offset):
+    """BC5 (ATI2): red and green channels, each a BC4 block. Reforged stores
+    normal maps this way; blue is rebuilt from the unit-normal constraint, as
+    the game's shaders do, and alpha is opaque."""
+    reds = _decode_channel_block(data, offset)
+    greens = _decode_channel_block(data, offset + 8)
+    return [(r, g, _normal_blue(r, g), 255) for r, g in zip(reds, greens)]
+
+
 _DECODERS = {b'DXT1': (8, decode_dxt1_block), b'DXT3': (16, decode_dxt3_block),
-             b'DXT5': (16, decode_dxt5_block)}
+             b'DXT5': (16, decode_dxt5_block),
+             b'BC4U': (8, decode_bc4_block), b'ATI1': (8, decode_bc4_block),
+             b'BC5U': (16, decode_bc5_block), b'ATI2': (16, decode_bc5_block)}
+
+
+def block_size(fourcc):
+    """Bytes per 4x4 block of a compressed format."""
+    return _DECODERS[_LAYOUT_ALIASES.get(fourcc, fourcc)][0]
+
+
+_LAYOUT_ALIASES = {b'DXT2': b'DXT3', b'DXT4': b'DXT5'}
 
 
 def _rgb888_to_rgb565(r, g, b):

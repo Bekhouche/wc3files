@@ -1,11 +1,17 @@
-"""DDS reader - the classic DXT1-DXT5 (BC1-BC3) family plus uncompressed-RGB(A).
+"""DDS reader - the classic DXT1-DXT5 (BC1-BC3) family, BC4 and BC5, plus
+uncompressed-RGB(A).
 
-Classic (DX9-header) DDS only - a DX10 extended header (indicated by fourCC 'DX10',
-used for the modern BC6H/BC7 successors, or texture arrays) is rejected explicitly
-rather than mis-read: no real WC3 fixture in this repo uses one, BC6H is an HDR-only
-format WC3 has no use for, and BC7 - while a real, higher-quality-than-DXT5 LDR format
-- would need its own from-scratch block codec (a different, more elaborate bitstream
-than any BC1-3 block) that no real WC3 asset in this repo's fixture set exercises.
+BC4 (`ATI1`/`BC4U`) and BC5 (`ATI2`/`BC5U`) store one and two channels as
+DXT5-style alpha blocks. Reforged stores its normal maps as BC5: a map that
+imported `city_roundtiles_Normal.dds` could not be decoded before. BC4 decodes
+to grey; BC5 to red and green, with blue rebuilt from the unit-normal
+constraint and alpha opaque (see img/dxt.py).
+
+A DX10 extended header (fourCC 'DX10') is read for the formats above, by its
+DXGI format: BC1 to BC5, unsigned. Anything else under it (BC6H, BC7, signed
+BC4/BC5, texture arrays) is rejected explicitly rather than mis-read: BC6H is an
+HDR-only format WC3 has no use for, and BC7 would need its own block codec that
+no real WC3 asset in this repo's fixture set exercises.
 
 DXT2/DXT4 (the premultiplied-alpha siblings of DXT3/DXT5, "virtually obsolete" per
 Microsoft's own docs) share DXT3's/DXT5's exact block bitstream - only the alpha
@@ -19,7 +25,7 @@ gradients, DXT1 for no/binary alpha at the smallest size.
 """
 import struct
 
-from .dxt import decode_dxt_image, encode_dxt_image
+from .dxt import block_size, decode_dxt_image, encode_dxt_image
 from .png_writer import write_png
 from .transform import resize_box
 
@@ -27,7 +33,14 @@ _DDPF_ALPHAPIXELS = 0x1
 _DDPF_FOURCC = 0x4
 _DDPF_RGB = 0x40
 
-_SUPPORTED_FOURCC = (b'DXT1', b'DXT2', b'DXT3', b'DXT4', b'DXT5')
+_SUPPORTED_FOURCC = (b'DXT1', b'DXT2', b'DXT3', b'DXT4', b'DXT5',
+                     b'ATI1', b'BC4U', b'ATI2', b'BC5U')
+# DXGI formats of a DX10 header, for the block formats this reads (UNORM and
+# its sRGB twin, which differ only in how the colours are meant to be shown).
+_DXGI_FORMATS = {70: b'DXT1', 71: b'DXT1', 72: b'DXT1', 73: b'DXT3', 74: b'DXT3', 75: b'DXT3',
+                 76: b'DXT5', 77: b'DXT5', 78: b'DXT5', 79: b'BC4U', 80: b'BC4U',
+                 82: b'BC5U', 83: b'BC5U'}
+_DX10_HEADER_SIZE = 20
 _PREMULTIPLIED_FOURCC = (b'DXT2', b'DXT4')
 _BLOCK_LAYOUT = {b'DXT2': b'DXT3', b'DXT4': b'DXT5'}  # same bitstream as their un-premultiplied sibling
 
@@ -84,12 +97,19 @@ class DdsFile:
         self.width, self.height = width, height
         mip_count = max(1, mip_count)
 
+        off = 4 + 124
         if pf_flags & _DDPF_FOURCC:
             if fourcc == b'DX10':
-                raise DdsError('DX10 extended-header DDS files are not supported')
+                dxgi_format, _dimension, _misc, array_size = struct.unpack_from('<4I', data, off)
+                if dxgi_format not in _DXGI_FORMATS or array_size > 1:
+                    raise DdsError(
+                        f'unsupported DX10 DDS: DXGI format {dxgi_format}, array size '
+                        f'{array_size} (BC1 to BC5, unsigned, single textures are supported)')
+                fourcc = _DXGI_FORMATS[dxgi_format]
+                off += _DX10_HEADER_SIZE
             if fourcc not in _SUPPORTED_FOURCC:
-                raise DdsError(f'unsupported DDS FourCC: {fourcc!r} (only DXT1/DXT2/DXT3/'
-                                'DXT4/DXT5 and uncompressed RGB are supported)')
+                raise DdsError(f'unsupported DDS FourCC: {fourcc!r} (only DXT1 to DXT5, '
+                                'BC4/ATI1, BC5/ATI2 and uncompressed RGB are supported)')
             self.fourcc = fourcc
         elif pf_flags & _DDPF_RGB:
             self._rgb_mode = {
@@ -101,12 +121,10 @@ class DdsFile:
                             'uncompressed RGB)')
 
         self._data = data
-        off = 4 + 124
         w, h = width, height
         for _level in range(mip_count):
             if self.fourcc:
-                block_size = 8 if self.fourcc == b'DXT1' else 16
-                size = -(-w // 4) * -(-h // 4) * block_size
+                size = -(-w // 4) * -(-h // 4) * block_size(self.fourcc)
             else:
                 size = w * h * (self._rgb_mode['bit_count'] // 8)
             self._mip_info.append((off, size, w, h))
