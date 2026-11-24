@@ -23,6 +23,7 @@ section to the new version and its date.
 - The CLI help and error messages no longer send users to TODO.md, which is not in the sdist or the wheel. They say what is needed, or link to `docs/cli.md`, which has new sections on checking object data, override tables and base game data. A `war3map.w3i` version 39 error asks for the map to be reported. The `img-to-png` summary lists every image format it reads (#169).
 - `docs/lni.md` gives current Lni round-trip figures. It said 2 object files were refused, which #30 fixed in 0.3.0 (#175).
 - The build prints no warnings: the deprecated license classifier is gone (`license='MIT'` already said it), and the data folders are listed as namespace packages. CI fails the package job on a build warning (#171).
+- Python 3.14 is declared and tested: CI runs it on Linux, Windows and macOS as the newest version, and builds the package with it (#170).
 
 ## [0.5.0] - 2026-11-24
 
