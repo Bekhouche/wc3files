@@ -83,6 +83,52 @@ literal game-loadable default-table overrides, in both directions. Not
 everything can move (icons, models, tooltips and some editor-only fields stay
 behind), and what cannot is kept rather than silently dropped.
 
+### Checking object data
+
+`obj-to-slk --validate` reports fields that break the bundled Blizzard
+metadata (and still writes the tables); `build obj --validate` refuses to
+write instead. Both check the map's own values, not the base game's:
+
+- numeric range (`minVal`, `maxVal`) and sign for `int`, `real` and `unreal`
+  fields, and a number where text is stored or the other way round;
+- emptiness, except for list fields (an empty ability or build list is a
+  normal edit);
+- for the fields with a fixed set of values (race, armor type, attack type,
+  unit class, targets, ...), each value of a comma-separated list against
+  that set.
+
+Fields the metadata does not know, and free-form fields such as rawcodes and
+paths, are not checked. A finding has one of two severities: `note` for a
+value below a minimum of 0 (often a deliberate negative effect), `issue` for
+everything else. `--validate` on `build` stops only on `issue`. Even an
+`issue` can be intentional: `maxVal` is the World Editor's slider limit, not
+something the game enforces, and maps often pass it on purpose.
+
+### Override tables
+
+`obj-to-override` writes the technique some maps use to have no
+`war3map.w3u`, `w3t`, `w3h` or `w3q` at all: the fields go into literal-path
+copies of the game's own tables (`Units\UnitData.slk`, `Units\UnitBalance.slk`,
+...), split across the right file by the metadata. What has no such table
+(icons, models, tooltips and a few World Editor fields) stays in a smaller
+`war3map.<ext>` next to them, and the command lists those fields.
+
+`override-to-obj` rebuilds a normal object file from such tables. Three
+things cannot always be recovered with certainty, and each is reported rather
+than guessed silently: a column name shared by several fields (Abilities'
+`Data` is shared by hundreds), a custom object with no hint of the object it
+was copied from, and a field whose binary storage type the corpus did not
+show.
+
+### Base game data
+
+`obj-to-slk --with-base-data` merges each row onto the bundled base game's
+row for the same object (or, for a custom object, the object it was copied
+from), so the tables show full stats and default strings, with the map's own
+values on top. A base table does not always name a field as the override
+does: an ability's base row has `DataA1` where the override has `Data1`.
+Both are kept side by side rather than merged into one column.
+
 ## Images and icons
 
 ```bash
