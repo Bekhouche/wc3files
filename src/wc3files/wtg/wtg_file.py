@@ -57,6 +57,11 @@ class MapTriggersFile(object):
      def get_data(self):
           return self._data
 
+     def import_data(self, data):
+          """Replace the file's data with `data`, in the shape get_data() returns."""
+          self._data = data
+          return self
+
      # Item kinds in the format-7 unified item list.
      ITEM_ROOT = 1
      ITEM_CATEGORY = 4

@@ -1,12 +1,11 @@
 """
 Per-format dump (binary -> JSON) / build (JSON -> binary) adapters for the CLI.
 
-Every wc3files file-format class exposes read()/write() plus either
-get_data()/`._data =` or export_data()/import_data() to move data in and out as a plain
-dict - but the exact pair, and a couple of format-specific quirks (JSON object keys are
-always strings, so anything keyed by int needs converting back on build), differ per
-class. Each entry below normalizes that into a common (path -> dict) / (dict -> path)
-shape the CLI can drive generically.
+Every wc3files file-format class exposes read()/write() plus get_data()/import_data()
+to move data in and out (#174). What differs per class is how that data maps to JSON:
+JSON object keys are always strings, so anything keyed by int needs converting back on
+build, and bytes are carried as base64. Each entry below normalizes that into a common
+(path -> dict) / (dict -> path) shape the CLI can drive generically.
 """
 import base64
 import copy
@@ -34,7 +33,7 @@ def _get_data_attr(instance):
 
 
 def _set_data_attr(instance, data):
-    instance._data = data
+    instance.import_data(data)
 
 
 def _wts_set_data(instance, data):
@@ -63,7 +62,7 @@ def _wtg_set_data(instance, data):
     data = dict(data)
     if isinstance(data.get('item_counts'), dict):
         data['item_counts'] = {int(k): v for k, v in data['item_counts'].items()}
-    instance._data = data
+    instance.import_data(data)
 
 
 def _obj_set_data(instance, data):
@@ -113,7 +112,7 @@ def _w3s_set_data(instance, data):
     for sound in data.get('sounds') or ():
         if isinstance(sound.get('cone_orientation'), list):
             sound['cone_orientation'] = tuple(sound['cone_orientation'])
-    instance._data = data
+    instance.import_data(data)
 
 
 def _wpm_get_data(instance):
@@ -128,7 +127,7 @@ def _wpm_set_data(instance, data):
     data = dict(data)
     if isinstance(data.get('cells'), str):
         data['cells'] = _unb64(data['cells'])
-    instance._data = data
+    instance.import_data(data)
 
 
 def _shd_get_data(instance):
@@ -141,7 +140,7 @@ def _shd_set_data(instance, data):
     data = dict(data)
     if isinstance(data.get('cells'), str):
         data['cells'] = _unb64(data['cells'])
-    instance._data = data
+    instance.import_data(data)
 
 
 def _shd_read(instance, path, options):

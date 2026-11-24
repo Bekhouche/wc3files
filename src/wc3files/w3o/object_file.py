@@ -408,9 +408,13 @@ class ObjectFile(object):
 
      def import_data(self, data):
           self._data = data
+          return self
 
      def export_data(self):
           return self._data
+
+     # The name every File class has; export_data() stays (#174).
+     get_data = export_data
 
      # ---- mutation hooks ---------------------------------------------------------
      # A wc3files-native equivalent of w3x2lni's plugin architecture: that mechanism

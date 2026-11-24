@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Added
+
+- Every map, model, table and script file class has `get_data()` and `import_data(data)`, which returns the handler. `RegionFile` and `PreviewIconsFile` had neither, eleven classes had no `import_data()`, and seven had only `export_data()`, which stays as the same method. The CLI no longer sets their private `_data` (#174).
+
 ## [0.5.0] - 2026-11-24
 
 ### Added

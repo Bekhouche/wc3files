@@ -59,6 +59,16 @@ class PreviewIconsFile:
      def get_icons(self) -> Dict[int, PreviewIcon]:
           return self._data
 
+     def get_data(self):
+          """The icons, as {index: PreviewIcon}; the same dict get_icons() returns."""
+          return self._data
+
+     def import_data(self, data):
+          """Replace the icons with `data`, a {index: PreviewIcon} dict."""
+          self._data = dict(data)
+          self.number = len(self._data)
+          return self
+
      def add_icon(self, index: int, icon: PreviewIcon):
           self._data[index] = icon
           self.number = len(self._data)

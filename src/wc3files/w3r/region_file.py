@@ -83,6 +83,16 @@ class RegionFile:
         """
         return self._data
 
+    def get_data(self):
+        """The regions, as {index: Region}; the same dict get_regions() returns."""
+        return self._data
+
+    def import_data(self, data):
+        """Replace the regions with `data`, a {index: Region} dict."""
+        self._data = dict(data)
+        self.number = len(self._data)
+        return self
+
     def add_region(self, index: int, region: Region):
         """
         Add a region to the RegionFile.

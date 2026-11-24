@@ -95,6 +95,7 @@ All of these share the same shape:
 handler = SomeFile()
 handler.read(file_path)
 data = handler.get_data()
+handler.import_data(data)   # returns handler
 handler.write(file_path)
 handler.clear()
 ```
@@ -103,7 +104,7 @@ handler.clear()
 |---|---|
 | `W3iFile` | `apply_strings(wts)`, `decode_flags`/`encode_flags`, `decode_force_flags`/`encode_force_flags`, `decode_player_mask`/`encode_player_mask` |
 | `TerrainFile` | - |
-| `MapDoodadsFile` | `import_data(data)`, `to_bytes()` |
+| `MapDoodadsFile` | `to_bytes()` |
 | `MapUnitsFile` | - |
 | `RegionFile` | `get_regions() -> {int: Region}`, `add_region(index, region)`, `remove_region(index)` |
 | `CameraFile` | - |
