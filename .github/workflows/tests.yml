@@ -46,9 +46,13 @@ jobs:
         with:
           python-version: '3.13'
       - name: Build
+        # A warning from setuptools fails the job, so a deprecated setting
+        # is fixed when it appears rather than printed on every build (#171).
         run: |
           python -m pip install build twine
-          python -m build
+          set -o pipefail
+          python -m build 2>&1 | tee build.log
+          if grep -E "WARNING|Warning:" build.log; then exit 1; fi
       - name: Check
         run: python -m twine check dist/*
       - name: Install the wheel and import it
