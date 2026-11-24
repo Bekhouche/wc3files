@@ -7,6 +7,7 @@ from ..data import BinaryDataType
 from .data import ReplayRace
 from wc3files.utils import nulltermstr, fixedlengthstr, b2i, blizdecomp, blizcomp
 from . import blocks as _blocks
+from wc3files.files.binary_file import TruncatedDataError
 
 # Constants for magic numbers found in the binary format.
 PLAYER_RECORD_MARKER = 0x16
@@ -297,6 +298,7 @@ class ReplayCompressedData:
         Raises:
             ValueError: If the decompressed size does not match the expected size.
         """
+        block_offset = reader.tell()
         # Read the compressed block size (2 bytes)
         compressed_size = reader.read(BinaryDataType.INT, 2)
 
@@ -322,7 +324,7 @@ class ReplayCompressedData:
         # replays a rebuild came out 5-7% smaller every time. Holding the
         # original records lets write() reproduce an unedited replay exactly.
         if len(compressed_data) != compressed_size:
-            raise EOFError('the block is cut short by the end of the file')
+            raise TruncatedDataError('the block is cut short by the end of the file')
         self._raw_blocks.append({
             'compressed': bytes(compressed_data),
             'uncompressed_size': uncompressed_size,
@@ -331,7 +333,13 @@ class ReplayCompressedData:
 
         # Decompress using zlib.
         decompressor = zlib.decompressobj()
-        decompressed = decompressor.decompress(compressed_data, uncompressed_size)
+        try:
+            decompressed = decompressor.decompress(compressed_data, uncompressed_size)
+        except zlib.error as exc:
+            # A damaged block is bad input like any other (#166), not a zlib
+            # failure for the caller to know about.
+            raise _blocks.ReplayBlockError(
+                f'damaged replay data block at offset {block_offset}: {exc}') from exc
 
         if len(decompressed) != uncompressed_size:
             raise ValueError(
