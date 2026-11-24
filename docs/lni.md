@@ -85,10 +85,12 @@ under `map/`. So a folder always rebuilds the map's files:
   editor wrote the levels of a field is not kept (w3x2lni does not keep it
   either).
 
-On the 3,306 object files of the 361-map benchmark corpus, 3,304 convert to
-Lni and back with the same data; the other 2 are files the object reader
-refuses (two entries share one object id). On sample maps of the corpus,
-every file came back.
+Converting the 361 maps of the benchmark corpus to Lni and back: 19 are
+refused because they are protected (a protected map is never converted, see
+[the CLI page](cli.md)). Of the other 342, 81 come back byte for byte, and in
+the rest only object files differ (711 files). A sample of 90 of those holds
+the same objects, fields and values as the original; only `seq`, the order of
+the levels, changed. No object file is refused.
 
 ## 4. Differences from w3x2lni
 
