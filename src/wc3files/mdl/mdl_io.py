@@ -264,6 +264,12 @@ def _parse_number(token):
         return float(token)
     if '.' in token or 'e' in token.lower():
         return float(token)
+    # The writer prints a negative zero float as -0. int('-0') is 0, which
+    # lost the sign, so MDX -> MDL -> MDX changed the float's bits (#168).
+    # Every caller converts the result with int() or float(), and int(-0.0)
+    # is 0, so an integer field reads the same as before.
+    if token == '-0':
+        return -0.0
     return int(token)
 
 
