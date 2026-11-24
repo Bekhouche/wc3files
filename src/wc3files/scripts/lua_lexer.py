@@ -64,7 +64,7 @@ class Token:
           return f'Token({self.kind}, {self.value!r}, {self.line}:{self.col})'
 
 
-class LuaLexError(Exception):
+class LuaLexError(ValueError):
      """`lua_message`, when set, is the error as Lua words it (with its
      `near` part); the interpreter reports that one."""
 
