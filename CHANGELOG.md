@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-24
+
 ### Added
 
 - This changelog (#133).
@@ -23,7 +25,6 @@ section to the new version and its date.
 - The JASS lexer walks the source with `finditer` and takes columns from the line start. It gives the same tokens on all 703 corpus scripts, 32% faster, and `ScriptFile.read` parses JASS at 3.1 MB/s, up from 2.7 (#138).
 - `jass --check`, `trigger-text`, `script-to-triggers` and `run-map` read only the members they use from a map, and `script-to-triggers` reads it once instead of twice. On a 350 MB map, `script-to-triggers` goes from 6.0 to 2.0 s (#139).
 - The MPQ modules and `W3xFile` import their names explicitly instead of with `from .data import *`, a dead branch and unused parameters are gone, and CI runs pyflakes over `src/` (#148).
-
 - The package no longer prints log lines unless the application enables them with `logger.enable('wc3files')`. Reading an SLK table printed an INFO line to stderr. The command line still shows warnings (#145).
 
 ### Fixed
@@ -149,7 +150,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Bekhouche/wc3files/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Bekhouche/wc3files/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Bekhouche/wc3files/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Bekhouche/wc3files/compare/v0.1.0...v0.2.0
