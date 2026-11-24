@@ -581,64 +581,76 @@ class ObjectFile(object):
           # legitimately do not carry the field. Pass True or False to choose
           # explicitly.
           file_path = fspath(file_path)
-          self._call_hooks('write')
           object_type = file_path.split('.')[-1].lower()
-          if object_type in [item.value for item in ObjectFileType]:
-               if validate:
-                    self._raise_if_invalid(object_type)
-               with BinaryFile(file_path, 'write', ) as writer:
-                    if ObjectFileType(object_type) == ObjectFileType.File:
-                         writer.write(BinaryDataType.INT, 1)
-                         for object_type_ in self._data.keys():
-                              if self._data[object_type_] != None:
-                                   writer.write(BinaryDataType.INT, 1)
-                                   writer.write(BinaryDataType.INT, 3)
-
-                                   original = ObjectTable(ObjectFileType(object_type_), 'original', skin=skin)
-                                   repeats = self._repeats.get(object_type_, {})
-                                   duplicates = self._duplicates.get(object_type_, {})
-                                   original.load(self._data[object_type_]['original'],
-                                                 self._original_new_ids.get(object_type_),
-                                                 repeats.get('original'), duplicates.get('original'))
-                                   original.write(writer)
-
-                                   custom = ObjectTable(ObjectFileType(object_type_), 'custom', skin=skin)
-                                   custom.load(self._data[object_type_]['custom'],
-                                               repeats=repeats.get('custom'),
-                                               duplicates=duplicates.get('custom'))
-                                   custom.write(writer)
-                              else:
-                                   writer.write(BinaryDataType.INT, 0)
-
-                    else:
-                         # Put back what the file declared. Emitting a fixed
-                         # version 3 over a real version-2 file changed its
-                         # first four bytes, and forcing the reserved field on
-                         # added eight bytes to every entry on top of that.
-                         effective_skin = (self._skin_used
-                                           if skin == 'as-read'
-                                           else skin)
-                         if effective_skin is None:
-                              effective_skin = True
-                         writer.write(BinaryDataType.INT,
-                                      self._version if self._version is not None else 3)
-
-                         original = ObjectTable(ObjectFileType(object_type), 'original', skin=effective_skin)
-                         repeats = self._repeats.get(object_type, {})
-                         duplicates = self._duplicates.get(object_type, {})
-                         original.load(self._data[object_type]['original'],
-                                       self._original_new_ids.get(object_type),
-                                       repeats.get('original'), duplicates.get('original'))
-                         original.write(writer)
-
-                         custom = ObjectTable(ObjectFileType(object_type), 'custom', skin=effective_skin)
-                         custom.load(self._data[object_type]['custom'],
-                                     repeats=repeats.get('custom'),
-                                     duplicates=duplicates.get('custom'))
-                         custom.write(writer)
-          else:
+          if object_type not in [item.value for item in ObjectFileType]:
                raise ValueError("Invalid file type")
-          
+          data = self.to_bytes(object_type, skin=skin, validate=validate)
+          with open(file_path, 'wb') as handle:
+               handle.write(data)
+
+     def to_bytes(self, object_type=None, skin='as-read', validate=False):
+          """The file's bytes, as write() saves them. `object_type` is the file
+          type (an ObjectFileType or its extension, such as 'w3u'); it defaults
+          to the type that was read, or to a war3map.w3o holding every type when
+          nothing was read. `skin` and `validate` are as for write()."""
+          if object_type is None:
+               object_type = self.get_object_type()
+          object_type = ObjectFileType(object_type).value
+          self._call_hooks('write')
+          if validate:
+               self._raise_if_invalid(object_type)
+          with BinaryFile(b'', 'write') as writer:
+               if ObjectFileType(object_type) == ObjectFileType.File:
+                    writer.write(BinaryDataType.INT, 1)
+                    for object_type_ in self._data.keys():
+                         if self._data[object_type_] != None:
+                              writer.write(BinaryDataType.INT, 1)
+                              writer.write(BinaryDataType.INT, 3)
+
+                              original = ObjectTable(ObjectFileType(object_type_), 'original', skin=skin)
+                              repeats = self._repeats.get(object_type_, {})
+                              duplicates = self._duplicates.get(object_type_, {})
+                              original.load(self._data[object_type_]['original'],
+                                            self._original_new_ids.get(object_type_),
+                                            repeats.get('original'), duplicates.get('original'))
+                              original.write(writer)
+
+                              custom = ObjectTable(ObjectFileType(object_type_), 'custom', skin=skin)
+                              custom.load(self._data[object_type_]['custom'],
+                                          repeats=repeats.get('custom'),
+                                          duplicates=duplicates.get('custom'))
+                              custom.write(writer)
+                         else:
+                              writer.write(BinaryDataType.INT, 0)
+
+               else:
+                    # Put back what the file declared. Emitting a fixed
+                    # version 3 over a real version-2 file changed its
+                    # first four bytes, and forcing the reserved field on
+                    # added eight bytes to every entry on top of that.
+                    effective_skin = (self._skin_used
+                                      if skin == 'as-read'
+                                      else skin)
+                    if effective_skin is None:
+                         effective_skin = True
+                    writer.write(BinaryDataType.INT,
+                                 self._version if self._version is not None else 3)
+
+                    original = ObjectTable(ObjectFileType(object_type), 'original', skin=effective_skin)
+                    repeats = self._repeats.get(object_type, {})
+                    duplicates = self._duplicates.get(object_type, {})
+                    original.load(self._data[object_type]['original'],
+                                  self._original_new_ids.get(object_type),
+                                  repeats.get('original'), duplicates.get('original'))
+                    original.write(writer)
+
+                    custom = ObjectTable(ObjectFileType(object_type), 'custom', skin=effective_skin)
+                    custom.load(self._data[object_type]['custom'],
+                                repeats=repeats.get('custom'),
+                                duplicates=duplicates.get('custom'))
+                    custom.write(writer)
+          return writer.value
+
      def filter(self, object_type=ObjectFileType.File, table=('original', 'custom'),
                 keep=None, remove=None):
           """Keeps only the object ids in `keep` (when given), then drops the

@@ -36,8 +36,15 @@ class ImpFile(object):
 
      def write(self, file_path):
           file_path = fspath(file_path)
-          with BinaryFile(file_path, 'write') as writer:
+          data = self.to_bytes()
+          with open(file_path, 'wb') as handle:
+               handle.write(data)
+
+     def to_bytes(self):
+          """The file's bytes, as write() saves them."""
+          with BinaryFile(b'', 'write') as writer:
                self._write(writer, self._data)
+          return writer.value
 
      def get_data(self):
           return self._data

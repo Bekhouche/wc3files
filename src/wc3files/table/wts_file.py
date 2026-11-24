@@ -32,13 +32,16 @@ class WtsFile(object):
           self._data = {int(string_id): value for string_id, value in self.ENTRY_PATTERN.findall(text)}
 
      def write(self, file_path):
+          data = self.to_bytes()
+          with open(file_path, 'wb') as f:
+               f.write(data)
+
+     def to_bytes(self):
+          """The file's bytes, as write() saves them."""
           # Matches the format real WC3 tools emit: UTF-8 with a BOM, CRLF line endings,
           # and a blank line between entries.
           blocks = [f'STRING {string_id}\r\n{{\r\n{value}\r\n}}\r\n' for string_id, value in self._data.items()]
-          text = '\r\n'.join(blocks)
-
-          with open(file_path, 'wb') as f:
-               f.write(text.encode('utf-8-sig'))
+          return '\r\n'.join(blocks).encode('utf-8-sig')
 
      def import_data(self, data):
           self._data = data

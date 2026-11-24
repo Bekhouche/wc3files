@@ -97,14 +97,22 @@ handler.read(file_path)
 data = handler.get_data()
 handler.import_data(data)   # returns handler
 handler.write(file_path)
+blob = handler.to_bytes()   # the bytes write() saves, for W3xFile.files
 handler.clear()
 ```
+
+`read()` takes a path or bytes, and `to_bytes()` gives bytes back, so a member
+of a map can be parsed, changed and put back into `W3xFile.files` without a
+temporary file. `ObjectFile.to_bytes(object_type=None, skin='as-read',
+validate=False)` takes the type that was read unless one is given, and
+`ScriptFile.to_bytes(validate=False)` writes Lua for a Lua chunk and JASS
+otherwise.
 
 | Class | Extra methods |
 |---|---|
 | `W3iFile` | `apply_strings(wts)`, `decode_flags`/`encode_flags`, `decode_force_flags`/`encode_force_flags`, `decode_player_mask`/`encode_player_mask` |
 | `TerrainFile` | - |
-| `MapDoodadsFile` | `to_bytes()` |
+| `MapDoodadsFile` | - |
 | `MapUnitsFile` | - |
 | `RegionFile` | `get_regions() -> {int: Region}`, `add_region(index, region)`, `remove_region(index)` |
 | `CameraFile` | - |

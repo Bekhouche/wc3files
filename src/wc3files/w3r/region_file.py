@@ -66,13 +66,20 @@ class RegionFile:
         if file_type not in [item.value for item in RegionFileType]:
             raise ValueError(f"Invalid region file type: {file_type}")
 
-        # Write to the file using BinaryFile writer
-        with BinaryFile(file_path, 'write') as writer:
+
+        data = self.to_bytes()
+        with open(file_path, 'wb') as handle:
+            handle.write(data)
+
+    def to_bytes(self):
+        """The file's bytes, as write() saves them."""
+        with BinaryFile(b'', 'write') as writer:
             writer.write(BinaryDataType.INT, self.version)
             writer.write(BinaryDataType.INT, len(self._data))
             
             for region in self._data.values():
                 writer.write_batch(region.get_data(self.version))
+        return writer.value
 
     def get_regions(self) -> Dict[int, Region]:
         """

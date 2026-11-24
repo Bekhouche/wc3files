@@ -92,6 +92,11 @@ class BinaryFile:
 
     def close(self):
         if self.file is not None and not self.file.closed:
+            # An in-memory write keeps its bytes, so a writer can be used as
+            # `with BinaryFile(b'', 'write') as w: ...` and read w.value after
+            # (#173).
+            if self.mode == 'write' and self.is_binary_data:
+                self.value = self.file.getvalue()
             self.file.close()
 
     def tell(self):

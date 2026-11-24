@@ -49,12 +49,19 @@ class PreviewIconsFile:
           if file_type not in [item.value for item in PreviewIconFileType]:
                raise ValueError(f"Invalid preview icon file type: {file_type}")
 
-          with BinaryFile(file_path, 'write') as writer:
+          data = self.to_bytes()
+          with open(file_path, 'wb') as handle:
+               handle.write(data)
+
+     def to_bytes(self):
+          """The file's bytes, as write() saves them."""
+          with BinaryFile(b'', 'write') as writer:
                writer.write(BinaryDataType.INT, self.version)
                writer.write(BinaryDataType.INT, len(self._data))
 
                for icon in self._data.values():
                     writer.write_batch(icon.get_data())
+          return writer.value
 
      def get_icons(self) -> Dict[int, PreviewIcon]:
           return self._data
