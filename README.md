@@ -32,6 +32,7 @@ Full documentation lives in [docs/](docs/README.md):
 - [Game data for other versions](docs/gamedata.md) - profiles of 1.24, 1.27, 1.32... tables extracted from an install, used with `--game-data`
 - [Lni mode](docs/lni.md) - a map as a folder of text files (objects as Lni, the rest as JSON) and back, for git
 - [Triggers and scripts](docs/triggers.md) - GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script
+- [MCP server](docs/mcp.md) - `wc3files-mcp`, which lets an AI assistant such as Claude read your maps, models and replays
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -64,6 +65,10 @@ What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 - Compile vJass and Zinc to plain JASS, as JassHelper does, without the World Editor
 - Compile a single script, a set of library files, or the `war3map.j` of a whole map
 - `wc3files vjass war3map.j -o compiled.j`, or `VJassCompiler().compile_file(...)` from Python
+
+### MCP server
+- `pip install "wc3files[mcp]"`, then `wc3files-mcp --root D:/Maps`: read-only tools for an AI assistant such as Claude (map info, members, object data, trigger text, script checks, models, replays)
+- Opens only files under the given folders, and refuses protected maps
 
 ### External tools and Lua
 - Run the `//! external` calls and Lua `//! externalblock` blocks of a vJass map (ObjectMerger, FileImporter, FileExporter, ConstantMerger), as the World Editor does when saving

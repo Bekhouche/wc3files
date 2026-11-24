@@ -45,9 +45,12 @@ setup(
         # Progress bars for the minutes-long scan of a protected map
         # (wc3files.mpq.progress). Without it the scan runs silently.
         'progress': ['tqdm'],
+        # The MCP server, wc3files-mcp (wc3files.mcp, #179).
+        'mcp': ['mcp>=2.3,<3'],
     },
     entry_points={
-        'console_scripts': ['wc3files=wc3files.cli.main:main'],
+        'console_scripts': ['wc3files=wc3files.cli.main:main',
+                            'wc3files-mcp=wc3files.mcp:main'],
     },
     author='Salah Eddine Bekhouche',
     author_email='bekhouchesalah@gmail.com',
@@ -64,8 +67,8 @@ setup(
     # did not exist; both the file and this declaration close that gap.
     license='MIT',
     license_files=['LICENSE'],
-    # 3.9 reached its end of life in October 2025 (#178), and the `mcp`
-    # package the planned MCP server needs requires 3.10 (#179).
+    # 3.9 reached its end of life in October 2025 (#178), and the MCP
+    # server's `mcp` package needs 3.10 (#179).
     python_requires='>=3.10',
     classifiers=[
         'Development Status :: 4 - Beta',
