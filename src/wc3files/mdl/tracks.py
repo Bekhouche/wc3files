@@ -1,5 +1,7 @@
 """Keyframe track codecs shared by MDX nodes and animated objects."""
 
+import struct
+
 from .stream import BinaryStream
 
 TRACK_VALUE_SIZE = {
@@ -76,18 +78,6 @@ TRACK_VALUE_SIZE = {
 }
 
 
-def _read_value(stream, kind):
-    if kind == 'u32':
-        return stream.read_u32()
-    if kind == 'f32':
-        return stream.read_f32()
-    if kind == 'f32x3':
-        return stream.read_float_array(3)
-    if kind == 'f32x4':
-        return stream.read_float_array(4)
-    raise ValueError(f'Unknown track value kind: {kind}')
-
-
 def _write_value(stream, kind, value):
     if kind == 'u32':
         stream.write_u32(int(value))
@@ -97,6 +87,51 @@ def _write_value(stream, kind, value):
         stream.write_float_array(value)
     else:
         raise ValueError(f'Unknown track value kind: {kind}')
+
+
+# struct code and value width of each track value kind.
+_KEY_LAYOUT = {'u32': ('I', 1), 'f32': ('f', 1), 'f32x3': ('3f', 3), 'f32x4': ('4f', 4)}
+_KEY_STRUCTS = {}
+
+
+def _key_struct(kind, tangents):
+    key = (kind, tangents)
+    found = _KEY_STRUCTS.get(key)
+    if found is None:
+        code, _ = _KEY_LAYOUT[kind]
+        found = _KEY_STRUCTS[key] = struct.Struct('<i' + code * (3 if tangents else 1))
+    return found
+
+
+def _read_keys(stream, kind, count, tangents):
+    """The `count` keys of one track, read in one pass (#176): one read for
+    the whole track and one unpack per key, instead of a read per frame,
+    value and tangent. The keys are the same as before: an int frame, a
+    float or int value (a list for f32x3 and f32x4), and inTan and outTan
+    when the track interpolates with tangents."""
+    if kind not in _KEY_LAYOUT:
+        raise ValueError(f'Unknown track value kind: {kind}')
+    layout = _key_struct(kind, tangents)
+    raw = stream.read_bytes(layout.size * count)
+    width = _KEY_LAYOUT[kind][1]
+    keys = []
+    append = keys.append
+    if width == 1:
+        if tangents:
+            for frame, value, in_tan, out_tan in layout.iter_unpack(raw):
+                append({'frame': frame, 'value': value, 'inTan': in_tan, 'outTan': out_tan})
+        else:
+            for frame, value in layout.iter_unpack(raw):
+                append({'frame': frame, 'value': value})
+    elif tangents:
+        a, b = 1 + width, 1 + 2 * width
+        for v in layout.iter_unpack(raw):
+            append({'frame': v[0], 'value': list(v[1:a]),
+                    'inTan': list(v[a:b]), 'outTan': list(v[b:])})
+    else:
+        for v in layout.iter_unpack(raw):
+            append({'frame': v[0], 'value': list(v[1:])})
+    return keys
 
 
 def read_tracks(stream, end=None):
@@ -115,15 +150,7 @@ def read_tracks(stream, end=None):
         count = stream.read_u32()
         interpolation = stream.read_u32()
         global_seq = stream.read_u32()
-        keys = []
-        for _ in range(count):
-            frame = stream.read_i32()
-            value = _read_value(stream, kind)
-            key = {'frame': frame, 'value': value}
-            if interpolation > 1:
-                key['inTan'] = _read_value(stream, kind)
-                key['outTan'] = _read_value(stream, kind)
-            keys.append(key)
+        keys = _read_keys(stream, kind, count, interpolation > 1)
         tracks[tag] = {
             'interpolationType': interpolation,
             'globalSequenceId': global_seq,

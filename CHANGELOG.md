@@ -15,6 +15,10 @@ section to the new version and its date.
 - Every map, model, table and script file class has `get_data()` and `import_data(data)`, which returns the handler. `RegionFile` and `PreviewIconsFile` had neither, eleven classes had no `import_data()`, and seven had only `export_data()`, which stays as the same method. The CLI no longer sets their private `_data` (#174).
 - Every map sub-file class has `to_bytes()`, so a parsed member can be changed and put back into `W3xFile.files` without a temporary file; `write()` saves what `to_bytes()` returns. Only `MapDoodadsFile` had it (#173).
 
+### Changed
+
+- MDX keyframe tracks are read in one pass per track, with one unpack per key. Over every fifth corpus model (1,144 models, 164 MB, read from memory), MDX reads at 46.5 MB/s, up from 25.6, with the same data for all 5,716 models (#176).
+
 ### Fixed
 
 - A replay with a damaged data block raises `ReplayBlockError`, a `ValueError`, with the zlib error as its cause, instead of `zlib.error`. A block cut short raises `TruncatedDataError` instead of a plain `EOFError` (#166).
