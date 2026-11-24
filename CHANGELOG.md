@@ -21,6 +21,7 @@ section to the new version and its date.
 - `JassLexError`, `JassParseError`, `LuaLexError` and `LuaParseError` are `ValueError` subclasses, as the other readers' errors are, so `except ValueError` around `ScriptFile.read` catches a script with a syntax error (#167).
 - MDL reads `-0` as a negative zero float, so MDX to MDL to MDX keeps the sign of zero. On every tenth corpus model (571), MDL to MDL is a fixed point for 523, up from 441, and MDX to MDL to MDX is exact for 117, up from 102 (#168).
 - The CLI help and error messages no longer send users to TODO.md, which is not in the sdist or the wheel. They say what is needed, or link to `docs/cli.md`, which has new sections on checking object data, override tables and base game data. A `war3map.w3i` version 39 error asks for the map to be reported. The `img-to-png` summary lists every image format it reads (#169).
+- `docs/lni.md` gives current Lni round-trip figures. It said 2 object files were refused, which #30 fixed in 0.3.0 (#175).
 
 ## [0.5.0] - 2026-11-24
 
