@@ -64,7 +64,7 @@ class Token:
           return f'Token({self.kind}, {self.value!r}, {self.line}:{self.col})'
 
 
-class JassLexError(Exception):
+class JassLexError(ValueError):
      def __init__(self, message, line, col):
           super().__init__(f'{message} at line {line}, column {col}')
           self.line = line

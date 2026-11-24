@@ -14,7 +14,7 @@ from . import ir
 from .nesting import MAX_LEVELS, room_for
 
 
-class LuaParseError(Exception):
+class LuaParseError(ValueError):
      def __init__(self, message, token):
           super().__init__(f'{message}, got {token.kind} {token.value!r} '
                             f'at line {token.line}, column {token.col}')

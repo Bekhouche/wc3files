@@ -2115,13 +2115,11 @@ def main(argv=None):
               file=sys.stderr)
         return 1
     except (ValueError, FileNotFoundError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    except Exception as exc:
         # A script that will not parse is an ordinary outcome, not a crash:
         # plenty of real map scripts are vJass, which this package
-        # preprocesses but does not compile. Report it as an error with the
-        # likely cause rather than a traceback.
+        # preprocesses but does not compile. Report it with the likely cause.
+        # The script errors are ValueErrors (#167), so they are told apart
+        # here rather than in a branch of their own.
         from wc3files.scripts import JassLexError, JassParseError
         from wc3files.scripts import LuaLexError, LuaParseError
         if isinstance(exc, (JassLexError, JassParseError, LuaLexError,
@@ -2132,7 +2130,8 @@ def main(argv=None):
                   f"wc3files vjass {args.input} -o compiled.j",
                   file=sys.stderr)
             return 1
-        raise
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     return status if isinstance(status, int) else 0
 
 
