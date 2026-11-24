@@ -100,6 +100,23 @@ class ScriptFile:
           if ext not in (item.value for item in ScriptFileType):
                raise ValueError(f'Invalid script file type: {ext}')
 
+          self._check(validate)
+          lua = ext == ScriptFileType.LUA.value
+          text = print_lua(self._data) if lua else print_jass(self._data)
+          with open(file_path, 'w', encoding='utf-8', newline='\n') as fh:
+               fh.write(text)
+          self._file_type = ScriptFileType.LUA if lua else ScriptFileType.JASS
+          return self
+
+     def to_bytes(self, validate=False):
+          """The script as UTF-8 text with LF line ends, the bytes write() saves:
+          Lua for an ir.Chunk, JASS for an ir.Program. With validate=True, a
+          script with an 'issue' finding raises ValueError instead."""
+          self._check(validate)
+          printer = print_lua if isinstance(self._data, ir.Chunk) else print_jass
+          return printer(self._data).encode('utf-8')
+
+     def _check(self, validate):
           if validate:
                issues = [f for f in self.validate() if f['severity'] == 'issue']
                if issues:
@@ -107,18 +124,6 @@ class ScriptFile:
                          (f"line {f['line']}: " if f.get('line') else '') + f['message']
                          for f in issues)
                     raise ValueError(f'Script failed validation: {messages}')
-
-          if ext == ScriptFileType.LUA.value:
-               text = print_lua(self._data)
-               with open(file_path, 'w', encoding='utf-8', newline='\n') as fh:
-                    fh.write(text)
-               self._file_type = ScriptFileType.LUA
-               return self
-
-          text = print_jass(self._data)
-          with open(file_path, 'w', encoding='utf-8', newline='\n') as fh:
-               fh.write(text)
-          self._file_type = ScriptFileType.JASS
           return self
 
      def validate(self, natives=None):

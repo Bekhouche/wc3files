@@ -80,14 +80,20 @@ checked-in sample files, so they stay correct.
 ### Working with a map
 
 ```python
-from wc3files import W3xFile
+from wc3files import W3xFile, W3iFile
 
 # Read a map: every member it lists, by name, as bytes.
 archive = W3xFile()
 archive.read("MyMap.w3x")
 print(sorted(archive.files))
 
-# Change a member, and build the map again.
+# Parse a member, change it, and put it back, all in memory.
+info = W3iFile()
+info.read(archive.files["war3map.w3i"])
+info.get_data()["map_name"] = "My edited map"
+archive.files["war3map.w3i"] = info.to_bytes()
+
+# Raw bytes can be changed too. Then build the map again.
 script = archive.files["war3map.j"]
 archive.files["war3map.j"] = script + b"// edited with wc3files\r\n"
 archive.build_from_files(archive.files, "MyMap.edited.w3x")
