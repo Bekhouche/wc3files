@@ -1,6 +1,6 @@
 import os
 import re
-from setuptools import setup, find_packages
+from setuptools import setup, find_namespace_packages
 
 current = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(current, 'README.md'), encoding='utf-8') as f:
@@ -17,7 +17,12 @@ setup(
     name='wc3files',
     version=version,
     package_dir={'': 'src'},
-    packages=find_packages(where='src'),
+    # The data folders (gamedata/, reference/) hold no __init__.py, so
+    # find_packages() left them out and setuptools warned about each one on
+    # every build (#171). As namespace packages they are listed, and their
+    # files still come from package_data below.
+    packages=find_namespace_packages(where='src', include=['wc3files', 'wc3files.*'],
+                                     exclude=['*.__pycache__']),
     package_data={'wc3files.data': ['reference/*.txt'],
                    'wc3files.wtg': ['gamedata/*.txt'],
                    'wc3files.w3o': ['gamedata/*.slk', 'gamedata/*.txt', 'gamedata/*.json',
@@ -65,7 +70,6 @@ setup(
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
-        'License :: OSI Approved :: MIT License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.9',
