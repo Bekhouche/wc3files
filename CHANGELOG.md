@@ -18,6 +18,7 @@ section to the new version and its date.
 ### Changed
 
 - MDX keyframe tracks are read in one pass per track, with one unpack per key. Over every fifth corpus model (1,144 models, 164 MB, read from memory), MDX reads at 46.5 MB/s, up from 25.6, with the same data for all 5,716 models (#176).
+- MDL vectors, float lists and keyframe tracks are read from the token list directly, and the tokenizer drops comments in its regular expression. Over every fifth corpus model as MDL (1,142 models, 459 MB), MDL reads at 9.4 MB/s, up from 5.9, with the same data for every model (#177).
 
 ### Removed
 
