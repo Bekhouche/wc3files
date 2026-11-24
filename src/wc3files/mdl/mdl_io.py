@@ -15,10 +15,13 @@ _SPECIAL_FLOATS = ('nan', 'inf', 'infinity')
 
 
 _TOKEN = re.compile(
-    r'"[^"]*"'                  # a string, which may itself contain //
-    r'|//[^\n]*'                # a comment, to the end of the line
+    r'("[^"]*"'                 # a string, which may itself contain //
     r'|[{},]'
-    r'|(?:(?!//)[^\s{},"])+')   # anything else, up to a comment
+    r'|(?:(?!//)[^\s{},"])+)'   # anything else, up to a comment
+    r'|//[^\n]*')               # a comment, to the end of the line
+# A comment is outside the group, so findall gives '' for it, and the
+# tokenizer drops those with filter() instead of testing every token (#177).
+# A string still matches first, so a // inside one stays part of it.
 
 
 class MdlTokenizer:
@@ -27,8 +30,7 @@ class MdlTokenizer:
         # inside a string stays part of it. They used to be cut from each
         # line before tokenizing: an attachment path holding a URL lost its
         # closing quote, and the parser read on into the next block.
-        self._tokens = [token for token in _TOKEN.findall(text)
-                        if not token.startswith('//')]
+        self._tokens = list(filter(None, _TOKEN.findall(text)))
         self._i = 0
 
     def peek(self):
@@ -291,20 +293,39 @@ def _skip_block(tokens):
 
 
 def _read_vector(tokens):
-    tokens.expect('{')
+    """`{ a, b, c }` as a list of floats.
+
+    It walks the token list directly rather than through peek() and next(),
+    which were most of the time of reading an MDL (#177). float(token) is
+    float(_parse_number(token)) for every token here: a token never holds a
+    comma, and float() reads nan, inf and -0 as _parse_number does."""
+    toks = tokens._tokens
+    n = len(toks)
+    i = tokens._i
+    if i >= n:
+        raise ValueError('Unexpected end of MDL')
+    if toks[i] != '{':
+        tokens._i = i + 1
+        raise ValueError(f"Expected '{{', got {toks[i]!r}")
+    i += 1
     values = []
     while True:
-        token = tokens.next()
+        if i >= n:
+            tokens._i = i
+            raise ValueError('Unexpected end of MDL')
+        token = toks[i]
+        i += 1
         if token == '}':
             break
         if token == ',':
             continue
-        values.append(float(_parse_number(token)))
-        if tokens.peek() == ',':
-            tokens.next()
-        if tokens.peek() == '}':
-            tokens.next()
+        values.append(float(token))
+        if i < n and toks[i] == ',':
+            i += 1
+        if i < n and toks[i] == '}':
+            i += 1
             break
+    tokens._i = i
     return values
 
 
@@ -586,44 +607,62 @@ def _parse_track_block(tokens, kind):
             global_seq = int(_parse_number(tokens.next()))
     tokens.expect('{')
     keys = []
-    while tokens.peek() != '}':
-        token = tokens.next()
-        if token in ('DontInterp', 'Linear', 'Hermite', 'Bezier'):
-            interpolation = {
-                'DontInterp': 0, 'Linear': 1, 'Hermite': 2, 'Bezier': 3,
-            }[token]
-            if tokens.peek() == ',':
-                tokens.next()
+    # The keys are read from the token list directly, as _read_vector does
+    # (#177); each step is the one the peek()/next() version took.
+    toks = tokens._tokens
+    n = len(toks)
+    i = tokens._i
+    while True:
+        if i >= n:
+            tokens._i = i
+            raise ValueError('Unexpected end of MDL')
+        token = toks[i]
+        if token == '}':
+            break
+        i += 1
+        if token in _INTERPOLATION:
+            interpolation = _INTERPOLATION[token]
+            if i < n and toks[i] == ',':
+                i += 1
             continue
         if token == 'GlobalSeqId':
-            global_seq = int(_parse_number(tokens.next()))
-            if tokens.peek() == ',':
-                tokens.next()
+            if i >= n:
+                tokens._i = i
+                raise ValueError('Unexpected end of MDL')
+            global_seq = int(_parse_number(toks[i]))
+            i += 1
+            if i < n and toks[i] == ',':
+                i += 1
             continue
 
         if token.endswith(':'):
             frame = int(token[:-1])
         else:
             frame = int(_parse_number(token))
-            if tokens.peek() == ':':
-                tokens.next()
+            if i < n and toks[i] == ':':
+                i += 1
+        tokens._i = i
         value = _parse_track_value(tokens, kind)
+        i = tokens._i
         key = {'frame': frame, 'value': value}
         # Art Tools writes:  frame: value, InTan ..., OutTan ...
-        if tokens.peek() == ',':
-            tokens.next()
-        while tokens.peek() in ('InTan', 'OutTan'):
-            tan_key = tokens.next()
+        if i < n and toks[i] == ',':
+            i += 1
+        while i < n and toks[i] in ('InTan', 'OutTan'):
+            tan_key = toks[i]
+            tokens._i = i + 1
             tan_val = _parse_track_value(tokens, kind)
+            i = tokens._i
             if tan_key == 'InTan':
                 key['inTan'] = tan_val
             else:
                 key['outTan'] = tan_val
-            if tokens.peek() == ',':
-                tokens.next()
+            if i < n and toks[i] == ',':
+                i += 1
         keys.append(key)
-        if tokens.peek() == ',':
-            tokens.next()
+        if i < n and toks[i] == ',':
+            i += 1
+    tokens._i = i
     tokens.expect('}')
     if any('inTan' in k for k in keys) and interpolation <= 1:
         interpolation = 2
@@ -634,11 +673,15 @@ def _parse_track_block(tokens, kind):
     }
 
 
+_INTERPOLATION = {'DontInterp': 0, 'Linear': 1, 'Hermite': 2, 'Bezier': 3}
+
+
 def _parse_track_value(tokens, kind):
+    if kind == 'f32':
+        # float(token) is float(_parse_number(token)); see _read_vector.
+        return float(tokens.next())
     if kind == 'u32':
         return int(_parse_number(tokens.next()))
-    if kind == 'f32':
-        return float(_parse_number(tokens.next()))
     if kind in ('f32x3', 'f32x4'):
         return _read_vector(tokens)
     raise ValueError(kind)
@@ -675,18 +718,24 @@ def _parse_texture_anims(tokens):
 def _parse_float_list_block(tokens):
     tokens.expect('{')
     values = []
-    while tokens.peek() != '}':
-        token = tokens.next()
-        if token in ('{', '}'):
+    toks = tokens._tokens
+    n = len(toks)
+    i = tokens._i
+    while True:
+        if i >= n:
+            tokens._i = i
+            raise ValueError('Unexpected end of MDL')
+        token = toks[i]
+        if token == '}':
+            break
+        i += 1
+        # vectors written as { a, b, c }, are read as a flat list
+        if token == '{' or token == ',':
             continue
-        if token == ',':
-            continue
-        # vectors written as { a, b, c },
-        if token.startswith('{') or False:
-            pass
-        values.append(float(_parse_number(token)))
-        if tokens.peek() == ',':
-            tokens.next()
+        values.append(float(token))
+        if i < n and toks[i] == ',':
+            i += 1
+    tokens._i = i
     tokens.expect('}')
     return values
 
@@ -694,14 +743,25 @@ def _parse_float_list_block(tokens):
 def _parse_vector_list_block(tokens, width):
     tokens.expect('{')
     values = []
-    while tokens.peek() != '}':
-        if tokens.peek() == '{':
+    toks = tokens._tokens
+    n = len(toks)
+    while True:
+        i = tokens._i
+        if i >= n:
+            raise ValueError('Unexpected end of MDL')
+        token = toks[i]
+        if token == '}':
+            break
+        if token == '{':
             values.extend(_read_vector(tokens))
+            i = tokens._i
         else:
             # flat list
-            values.append(float(_parse_number(tokens.next())))
-        if tokens.peek() == ',':
-            tokens.next()
+            values.append(float(token))
+            i += 1
+        if i < n and toks[i] == ',':
+            i += 1
+        tokens._i = i
     tokens.expect('}')
     # If flattened incorrectly, still return what we have.
     return values
