@@ -42,9 +42,13 @@ class WtsFile(object):
 
      def import_data(self, data):
           self._data = data
+          return self
 
      def export_data(self):
           return self._data
+
+     # The name every File class has; export_data() stays (#174).
+     get_data = export_data
 
      def get(self, string_id):
           if isinstance(string_id, str):

@@ -15,10 +15,12 @@ handler.write(path)
 ```
 
 `get_data()` returns plain dicts, lists, ints, floats and strings - no custom
-node classes to learn, and `json.dumps` works on most of it. Where a format
-has a better word for its contents the getter says so: `get_regions()`,
-`get_triggers()`, `get_icons()`. Formats meant to be rewritten add
-`import_data()` and `export_data()`.
+node classes to learn, and `json.dumps` works on most of it. `import_data(data)`
+takes the same shape back and returns the handler, so a file can be built from
+data that came from elsewhere. Every map, model, table and script file has
+both. Where a format has a better word for its contents there is also a named
+getter: `get_regions()`, `get_triggers()`, `get_icons()`; and the classes that
+had `export_data()` keep it, as the same method as `get_data()`.
 
 The constructor takes no path. `read()` does.
 

@@ -58,6 +58,11 @@ class MapUnitsFile(object):
      def get_data(self):
           return self._data
 
+     def import_data(self, data):
+          """Replace the file's data with `data`, in the shape get_data() returns."""
+          self._data = data
+          return self
+
      # ---- low-level binary helpers ---------------------------------------------------
 
      @staticmethod

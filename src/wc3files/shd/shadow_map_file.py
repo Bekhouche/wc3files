@@ -66,6 +66,11 @@ class ShadowMapFile(object):
      def get_data(self):
           return self._data
 
+     def import_data(self, data):
+          """Replace the file's data with `data`, in the shape get_data() returns."""
+          self._data = data
+          return self
+
      @staticmethod
      def is_shadowed(byte_value):
           """Real fixtures only ever use 0x00/0xFF, but treat any nonzero byte as

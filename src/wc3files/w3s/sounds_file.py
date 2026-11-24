@@ -85,6 +85,11 @@ class SoundsFile(object):
      def get_data(self):
           return self._data
 
+     def import_data(self, data):
+          """Replace the file's data with `data`, in the shape get_data() returns."""
+          self._data = data
+          return self
+
      @classmethod
      def decode_flags(cls, flags):
           return {name: bool(flags & bit) for bit, name in SOUND_FLAG_BITS.items()}

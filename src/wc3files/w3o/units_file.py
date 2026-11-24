@@ -53,6 +53,15 @@ class UnitsFile(object):
      def export_data(self):
           return {'slk': self.slk, 'profile': self.profile}
 
+     # The name every File class has; export_data() stays (#174).
+     get_data = export_data
+
+     def import_data(self, data):
+          """Replace the tables with `data`, in the shape get_data() returns."""
+          self.slk = dict(data.get('slk') or {})
+          self.profile = dict(data.get('profile') or {})
+          return self
+
      def asset_paths(self):
           """Collect model/icon/sound paths referenced by profile fields and SLK cells."""
           from wc3files.w3x.w3x_file import W3xFile

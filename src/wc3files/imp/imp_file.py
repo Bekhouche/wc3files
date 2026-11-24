@@ -42,6 +42,11 @@ class ImpFile(object):
      def get_data(self):
           return self._data
 
+     def import_data(self, data):
+          """Replace the file's data with `data`, in the shape get_data() returns."""
+          self._data = data
+          return self
+
      @staticmethod
      def _read_i32(reader):
           return struct.unpack('<i', reader.read(BinaryDataType.BYTES, num=4))[0]

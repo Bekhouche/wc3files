@@ -234,6 +234,11 @@ class W3iFile(object):
      def get_data(self):
           return self._data
 
+     def import_data(self, data):
+          """Replace the file's data with `data`, in the shape get_data() returns."""
+          self._data = data
+          return self
+
      def apply_strings(self, wts):
           # Resolve "TRIGSTR_XXXXX" placeholders across every string field using a WtsFile
           # (or a war3map.wts path/bytes, which is read into one on the fly). Mirrors

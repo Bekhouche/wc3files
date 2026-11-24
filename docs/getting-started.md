@@ -24,10 +24,10 @@ data = handler.get_data()   # plain dicts and lists
 handler.write(other_path)   # serialise
 ```
 
-Some formats name the accessor for what they hold - `get_regions()`,
-`get_triggers()`, `get_icons()` - and the editable ones add
-`import_data()`/`export_data()`. The constructor never takes a path; `read()`
-does.
+`import_data(data)` takes data of the same shape back, so a file can be
+changed or built from scratch and then written. Some formats also name the
+accessor for what they hold - `get_regions()`, `get_triggers()`, `get_icons()`.
+The constructor never takes a path; `read()` does.
 
 ## Workflow 1: look inside a map
 

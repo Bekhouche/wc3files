@@ -355,6 +355,9 @@ class SlkFile:
         logger.info(f"Exporting data with {len(self._data)} entries.")
         return self._data
 
+    # The name every File class has; export_data() stays (#174).
+    get_data = export_data
+
     def __repr__(self) -> str:
         """
         Returns a string representation of the SlkFile object.

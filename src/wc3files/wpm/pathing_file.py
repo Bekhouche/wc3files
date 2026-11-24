@@ -73,6 +73,11 @@ class PathingFile(object):
      def get_data(self):
           return self._data
 
+     def import_data(self, data):
+          """Replace the file's data with `data`, in the shape get_data() returns."""
+          self._data = data
+          return self
+
      @classmethod
      def decode_flags(cls, byte_value):
           return {name: bool(byte_value & bit) for bit, name in cls.FLAG_BITS.items()}

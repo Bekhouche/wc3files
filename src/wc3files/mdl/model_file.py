@@ -30,6 +30,9 @@ class ModelFile:
         data['unknownChunks'] = unknowns
         return data
 
+    # The name every File class has; export_data() stays (#174).
+    get_data = export_data
+
     def import_data(self, data):
         model = copy.deepcopy(data)
         unknowns = []
