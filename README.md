@@ -15,7 +15,7 @@ pip install wc3files
 
 A conda-forge package is in review and not published yet.
 
-Python 3.9 or newer. Pure Python - no compiler, and no StormLib or game
+Python 3.10 or newer. Pure Python - no compiler, and no StormLib or game
 install needed. The only dependency is loguru.
 
 ## Documentation

@@ -19,6 +19,10 @@ section to the new version and its date.
 
 - MDX keyframe tracks are read in one pass per track, with one unpack per key. Over every fifth corpus model (1,144 models, 164 MB, read from memory), MDX reads at 46.5 MB/s, up from 25.6, with the same data for all 5,716 models (#176).
 
+### Removed
+
+- Python 3.9, which reached its end of life in October 2025. The package needs 3.10 or newer, and CI tests 3.10 as the oldest version on Linux, Windows and macOS (#178).
+
 ### Fixed
 
 - A replay with a damaged data block raises `ReplayBlockError`, a `ValueError`, with the zlib error as its cause, instead of `zlib.error`. A block cut short raises `TruncatedDataError` instead of a plain `EOFError` (#166).
