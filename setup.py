@@ -64,15 +64,14 @@ setup(
     # did not exist; both the file and this declaration close that gap.
     license='MIT',
     license_files=['LICENSE'],
-    # The package has run under 3.9 through 3.14 and uses no 3.10-only
-    # syntax, but it does use a 3.9 dict merge, so 3.9 is the floor.
-    python_requires='>=3.9',
+    # 3.9 reached its end of life in October 2025 (#178), and the `mcp`
+    # package the planned MCP server needs requires 3.10 (#179).
+    python_requires='>=3.10',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.9',
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
