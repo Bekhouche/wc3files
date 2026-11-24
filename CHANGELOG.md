@@ -20,6 +20,7 @@ section to the new version and its date.
 - A replay with a damaged data block raises `ReplayBlockError`, a `ValueError`, with the zlib error as its cause, instead of `zlib.error`. A block cut short raises `TruncatedDataError` instead of a plain `EOFError` (#166).
 - `JassLexError`, `JassParseError`, `LuaLexError` and `LuaParseError` are `ValueError` subclasses, as the other readers' errors are, so `except ValueError` around `ScriptFile.read` catches a script with a syntax error (#167).
 - MDL reads `-0` as a negative zero float, so MDX to MDL to MDX keeps the sign of zero. On every tenth corpus model (571), MDL to MDL is a fixed point for 523, up from 441, and MDX to MDL to MDX is exact for 117, up from 102 (#168).
+- The CLI help and error messages no longer send users to TODO.md, which is not in the sdist or the wheel. They say what is needed, or link to `docs/cli.md`, which has new sections on checking object data, override tables and base game data. A `war3map.w3i` version 39 error asks for the map to be reported. The `img-to-png` summary lists every image format it reads (#169).
 
 ## [0.5.0] - 2026-11-24
 

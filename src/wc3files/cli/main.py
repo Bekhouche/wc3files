@@ -35,6 +35,10 @@ class _BytesEncoder(json.JSONEncoder):
         return super().default(obj)
 
 
+
+# Pages that explain what the help can only summarise (#169).
+_DOCS = 'https://github.com/Bekhouche/wc3files/blob/main/docs/cli.md'
+
 def _bytes_decode_hook(obj):
     if set(obj) == {BYTES_TAG}:
         return base64.b64decode(obj[BYTES_TAG])
@@ -1091,9 +1095,9 @@ def _cmd_obj_to_slk(args):
         reports = obj.validate()
         if reports:
             print(f"{len(reports)} field(s) don't match the bundled Blizzard metadata schema "
-                  f"(see TODO.md's validator entry for exact scope - 'note' = usually "
-                  f"intentional, e.g. a value below a declared minVal of 0; 'issue' = "
-                  f"more likely a real problem, e.g. an unrecognized enum value):", file=sys.stderr)
+                  f"('note' = usually intentional, e.g. a value below a declared minVal "
+                  f"of 0; 'issue' = more likely a real problem, e.g. an unrecognized enum "
+                  f"value; what is checked: {_DOCS}#checking-object-data):", file=sys.stderr)
             for r in reports:
                 level = f" (level {r['level']})" if r['level'] is not None else ""
                 for issue in r['issues']:
@@ -1159,7 +1163,8 @@ def _cmd_obj_to_override(args):
     remainder_path = os.path.join(args.output_dir, f'war3map.{object_type.value}')
     remainder_obj.write(remainder_path)
     print(f"Wrote {remainder_path} ({remainder_count} object(s) still need this - "
-          f"see TODO.md's override-table entry for why): {sorted(stuck_field_names)}")
+          f"icons, models, tooltips and some editor-only fields have no override "
+          f"table): {sorted(stuck_field_names)}")
 
 
 def _cmd_override_to_obj(args):
@@ -1197,7 +1202,7 @@ def _cmd_override_to_obj(args):
                         ('unrecognized_columns', 'column(s) with no known field mapping (dropped)'),
                         ('unparseable_values', 'cell(s) with an unparseable numeric value (dropped)')]:
         if report[key]:
-            print(f"  {len(report[key])} {label} - see TODO.md's override-table entry for what this means",
+            print(f"  {len(report[key])} {label} - see {_DOCS}#override-tables",
                   file=sys.stderr)
 
 
@@ -1515,14 +1520,15 @@ def build_parser():
         "Merge each row onto its real base-game object's (or, for custom objects, its "
         "template's) full default stats AND default display strings (Name/Tip/Ubertip/"
         "Hotkey/...) from the bundled Blizzard base data tables, instead of showing only "
-        "the map's own diff. Off by default since it noticeably widens every row - see "
-        "TODO.md's base-data-merge and base-strings entries for the known caveats."))
+        "the map's own diff. Off by default since it noticeably widens every row. A base "
+        "table's column can sit beside the override's own name for the same field "
+        "(DataA1 next to Data1); see " + _DOCS + "#base-game-data."))
     p_obj_slk.add_argument('--validate', action='store_true', help=(
         "Report (to stderr, non-blocking) fields whose value violates the bundled Blizzard "
         "metadata's declared range/emptiness constraints. Only checks numeric range/sign and "
-        "emptiness for reliably-typed fields - see TODO.md's validator entry for exact scope "
-        "and known false-positive sources (e.g. values intentionally pushed past the World "
-        "Editor UI's own slider limits)."))
+        "emptiness for reliably-typed fields, and enum values. A finding can be intentional: "
+        "maxVal is the World Editor's slider limit, which maps often pass on purpose. See "
+        + _DOCS + "#checking-object-data."))
     p_obj_slk.set_defaults(func=_cmd_obj_to_slk)
 
     p_obj_override = subparsers.add_parser('obj-to-override', help=(
@@ -1530,7 +1536,7 @@ def build_parser():
         "(Units\\UnitData.slk, Units\\UnitBalance.slk, ...) plus whatever genuinely can't "
         "move there (icons/models/tooltips and a few other World-Editor-UI-only fields - "
         "never silently dropped). This is the real technique some maps use to end up with "
-        "no war3map.w3u/w3t/w3h/w3q at all - see TODO.md's override-table entry."))
+        "no war3map.w3u/w3t/w3h/w3q at all. See " + _DOCS + "#override-tables."))
     p_obj_override.add_argument('input', help='Path to the object file to read.')
     p_obj_override.add_argument('output_dir', help=(
         "Directory to write into - tables land at their literal in-game relative path "
@@ -1542,9 +1548,9 @@ def build_parser():
         "Reverse of obj-to-override: read a directory of literal-path override tables "
         "(Units\\UnitData.slk, ...) plus an optional remainder war3map.<ext>, and rebuild a "
         "normal object file - i.e. undo the technique so a map converted this way can be "
-        "inspected/edited normally again. See TODO.md's override-table entry for exactly "
-        "what is and isn't recoverable with certainty (ambiguous shared field names, "
-        "custom objects with no remaining template hint, unconfirmed binary storage types)."))
+        "inspected/edited normally again. Not everything is recoverable with certainty "
+        "(ambiguous shared field names, custom objects with no remaining template hint, "
+        "unconfirmed binary storage types); each is reported. See " + _DOCS + "#override-tables."))
     p_override_to_obj.add_argument('category', choices=[t.value for t in ObjectFileType if t != ObjectFileType.File],
                                     help='Object category to rebuild (matches the output file extension).')
     p_override_to_obj.add_argument('input_dir', help=(
@@ -1557,9 +1563,10 @@ def build_parser():
     p_override_to_obj.set_defaults(func=_cmd_override_to_obj)
 
     p_img_png = subparsers.add_parser('img-to-png', help=(
-        "Decode a .blp (BLP1, Warcraft III's native icon/texture format) or .dds "
-        "(DXT1/DXT3/DXT5) file to a .png - format is auto-detected from the file's own "
-        "magic bytes, not its extension. Always decodes mip level 0 (full resolution)."))
+        "Decode an image (.blp, .dds, .tga, .bmp, .tiff or .png) to a .png - the format "
+        "is detected from the file's own magic bytes, not its extension. DDS covers DXT1 "
+        "to DXT5, BC4, BC5 and uncompressed images. Always decodes mip level 0 (full "
+        "resolution)."))
     p_img_png.add_argument('input', help='Path to the .blp or .dds file to read.')
     p_img_png.add_argument('output', help='Path to write the decoded .png to.')
     p_img_png.set_defaults(func=_cmd_img_to_png)
@@ -1711,7 +1718,7 @@ def build_parser():
     p_build.add_argument('--validate', action='store_true', help=(
         "obj format only (silently ignored for every other format): check every field "
         "against the bundled Blizzard metadata schema before writing, and raise instead of "
-        "writing if anything fails. See TODO.md's validator entry for exact scope."))
+        "writing if anything fails. See " + _DOCS + "#checking-object-data."))
     p_build.set_defaults(func=_cmd_build)
 
     casc_help = ('Read an installed Blizzard game (CASC storage) - the modern '

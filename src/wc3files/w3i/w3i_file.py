@@ -124,7 +124,7 @@ class W3iFile(object):
                          f"war3map.w3i version 39: this file does not match "
                          f"the layout this package derived for version 39 "
                          f"({type(exc).__name__}). Version 39 is "
-                         f"undocumented; see TODO.md.")
+                         f"undocumented; please report the map at https://github.com/Bekhouche/wc3files/issues.")
                     continue
                except ValueError as exc:
                     failure = failure or exc
@@ -137,7 +137,7 @@ class W3iFile(object):
                     "war3map.w3i version 39: neither player-record layout gives "
                     "plausible players (a start-position flag that is not a small "
                     "number, or a name that is not text). Version 39 is undocumented; "
-                    "see TODO.md.")
+                    "please report the map at https://github.com/Bekhouche/wc3files/issues.")
           if len(candidates) == 2:
                editor = candidates[0][1].get('editor_version', 0)
                wanted = editor >= self.V39_HUD_SKIN_EDITOR
@@ -209,7 +209,7 @@ class W3iFile(object):
                     f"war3map.w3i version 39: this file does not match the "
                     f"layout this package derived for version 39 "
                     f"({type(exc).__name__}: {exc}). Version 39 is "
-                    f"undocumented; see TODO.md."
+                    f"undocumented; please report the map at https://github.com/Bekhouche/wc3files/issues."
                ) from None
           finally:
                try:
@@ -223,7 +223,8 @@ class W3iFile(object):
                     f"{len(rebuilt)} bytes against the original's "
                     f"{len(original)}, so the parse is not trustworthy and is "
                     f"refused rather than returned. Version 39 is "
-                    f"undocumented and only partly worked out; see TODO.md."
+                    f"undocumented and only partly worked out; please report the "
+                    f"map at https://github.com/Bekhouche/wc3files/issues."
                )
 
      def write(self, file_path):
