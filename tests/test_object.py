@@ -125,6 +125,57 @@ class TestObjectMetadataPipeline(unittest.TestCase):
         self.assertEqual(wes.resolve(42), 42)
 
 
+def _blizzard_ability():
+    """A custom Blizzard (AHbz) as real files store it: the name, a field
+    without levels, at level 0; DataA (Hbz1) at levels 1 and 2 with its data
+    slot as pointer."""
+    handler = ObjectFile()
+    handler.set_object_type(ObjectFileType('w3a'))
+    handler.import_data({'w3a': {'original': {}, 'custom': {'A000': {
+        'ID': 'AHbz',
+        'anam': {'value': {0: 'Big Blizzard'}, 'type': 3, 'ptr': {0: 0}},
+        'Hbz1': {'value': {1: 7, 2: 9}, 'type': 0, 'ptr': {1: 1, 2: 1}}}}}})
+    return handler
+
+
+class TestLevelColumns(unittest.TestCase):
+    """#277: level n of a field is named {name}{n}, as in Blizzard's own
+    AbilityData.slk (DataA1 for level 1), and a field without levels has no
+    suffix. They were named one too high: Name1, DataA2 for level 1."""
+
+    def test_slk_columns(self):
+        row = _blizzard_ability().to_slk('w3a')['custom']['A000']
+        self.assertEqual(row['Name'], 'Big Blizzard')
+        self.assertEqual((row['DataA1'], row['DataA2']), (7, 9))
+        self.assertNotIn('Name1', row)
+        self.assertNotIn('DataA3', row)
+
+    def test_override_tables_keep_the_levels(self):
+        handler = _blizzard_ability()
+        tables, remainder = handler.to_override_tables()
+        # The override row holds the base row of AbilityData.slk too, so the
+        # levels set here are told by their values: 7 and 9 on DataA1, DataA2.
+        row = next(t['A000'] for t in tables.values() if 'A000' in t and 'DataA1' in t['A000'])
+        self.assertEqual((row['DataA1'], row['DataA2']), (7, 9))
+        rebuilt, _report = ObjectFile.from_override_tables(ObjectFileType('w3a'), tables, remainder)
+        entry = rebuilt.export_data()['w3a']['custom']['A000']
+        self.assertEqual(entry['Hbz1']['value'], {1: 7, 2: 9})
+        name = entry['anam']['value']
+        self.assertEqual(name if not isinstance(name, dict) else name[0], 'Big Blizzard')
+
+    def test_item_fields_come_from_the_unit_rows_marked_for_items(self):
+        # #283: an item's name, tooltip and icon are unit rows marked useItem.
+        fields = ObjectMetaData.default().fields(ObjectFileType.Items)
+        for code in ('unam', 'utip', 'iabi', 'igol'):
+            self.assertIn(code, fields)
+        self.assertNotIn('uhpm', fields)            # unit hit points are not an item field
+        handler = ObjectFile()
+        handler.set_object_type(ObjectFileType('w3t'))
+        handler.import_data({'w3t': {'original': {}, 'custom': {
+            'I000': {'ID': 'ratc', 'unam': {'value': 'Claws of Tests', 'type': 3}}}}})
+        self.assertEqual(handler.to_slk('w3t')['custom']['I000']['Name'], 'Claws of Tests')
+
+
 class TestJsonFile(unittest.TestCase):
     """Regression coverage for two real bugs found during a capability audit
     (see TODO.md): JsonFile() crashed on construction (referenced a

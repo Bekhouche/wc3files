@@ -5,7 +5,7 @@ import os
 from ..data import BinaryDataType
 from .data import ObjectFileType
 
-from .object_metadata import ObjectMetaData, field_display_name
+from .object_metadata import ObjectMetaData, field_display_name, level_column
 from .object_base_data import BaseObjectData
 
 # ObjectMetaData's semantic 'type' string does NOT reliably predict the binary MOD_TYPE code
@@ -300,7 +300,7 @@ def _parse_column(column_name, reverse_index, obj_id, fields, level_indexed, cod
         if level_indexed:
             _, digits = _strip_level_suffix(base_part, reverse_index)
             if digits:
-                return mod_id, int(digits) - 1, False
+                return mod_id, int(digits), False
         return mod_id, None, False
 
     candidates = reverse_index.get(column_name)
@@ -313,7 +313,7 @@ def _parse_column(column_name, reverse_index, obj_id, fields, level_indexed, cod
         if digits:
             candidates = reverse_index.get(base_name)
             mod_id, ambiguous = _resolve_mod_id(candidates, obj_id, fields, code)
-            return mod_id, int(digits) - 1, ambiguous
+            return mod_id, int(digits), ambiguous
 
     return None, None, False
 
@@ -402,7 +402,8 @@ def build_override_tables(object_type, table_data, metadata=None, base_data=None
                 value = mod.get('value')
                 if isinstance(value, dict):
                     for level in sorted(value.keys()):
-                        entries.append((mod_id, target_path, f'{base_name}{level + 1}', value[level]))
+                        entries.append((mod_id, target_path,
+                                        level_column(base_name, field_def, level), value[level]))
                 else:
                     entries.append((mod_id, target_path, base_name, value))
 

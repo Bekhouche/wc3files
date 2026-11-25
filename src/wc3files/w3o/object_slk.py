@@ -1,5 +1,5 @@
 from .data import ObjectFileType
-from .object_metadata import ObjectMetaData, field_display_name
+from .object_metadata import ObjectMetaData, field_display_name, level_column
 
 
 def _column_name(existing_row, base_name, mod_id):
@@ -57,7 +57,8 @@ def object_table_to_slk(object_type, table_data, metadata=None, base_data=None):
                 value = mod.get('value')
                 if isinstance(value, dict):
                     for level in sorted(value.keys()):
-                        col = _column_name(override, f'{base_name}{level + 1}', mod_id)
+                        col = _column_name(override, level_column(base_name, field_def, level),
+                                           mod_id)
                         override[col] = value[level]
                 else:
                     col = _column_name(override, base_name, mod_id)

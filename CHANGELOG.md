@@ -10,6 +10,11 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Fixed
+
+- Ability, doodad and upgrade levels are named as Blizzard's tables name them: level n of a field is `{name}{n}` (`DataA1` for level 1) and a field without levels has no suffix (`Name`). `to_slk`, `object_data`, the SLK export and the override tables named every level one too high (`DataA2`, `Name1`). Over 342 corpus maps, fields with levels are stored from level 1 and fields without levels at level 0. The override tables now drop an upgrade or ability value that only restates the base default, as they already did for units: on 60 corpus maps, the 1,746 values affected all equal their default (#277).
+- Items take their name, tooltip, icon and the other shared fields from the unit metadata rows marked `useItem`, so `object_data` names an item's name `Name` rather than `unam` (#283).
+
 ## [0.6.4] - 2026-11-25
 
 ### Added
