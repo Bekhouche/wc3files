@@ -139,10 +139,40 @@ class ModelInfoResult(TypedDict):
 
 
 class ReplayPlayer(TypedDict):
-    id: int | None
+    slot: Annotated[int, Field(description='Slot in the lobby, from 0.')]
+    player_id: Annotated[int | None, Field(description='Id chat and leaves use; null for a computer.')]
+    name: Annotated[str | None, Field(description='Battle tag or name; Computer (strength) for an AI.')]
+    computer: bool
+    team: Annotated[int, Field(description='Team number from 0.')]
+    observer: Annotated[bool, Field(description='Team 24 in a 24-slot game, team 12 in a 12-slot one.')]
+    color: Annotated[int, Field(description='Player colour from 0 (red).')]
+    color_name: str | None
+    race: Annotated[str | None, Field(description='human, orc, night elf, undead or random.')]
+    race_selectable: bool
+    handicap: Annotated[int, Field(description='Handicap in percent.')]
+    host: bool
+
+
+class ReplayLeave(TypedDict):
+    time_ms: Annotated[int, Field(description='When, from the start of the game.')]
+    player_id: int | None
     name: str | None
-    race: str | None
-    host: bool | None
+    slot: int | None
+    reason: Annotated[str | None, Field(description=(
+        'remote (closed by another game) or local (by the one that saved the replay).'))]
+    reason_code: int | None
+    result_code: Annotated[int | None, Field(description=(
+        'Raw result code. Its meaning depends on the reason and on whether it is the last '
+        'leave; use w3mmd for winners.'))]
+
+
+class ReplayChat(TypedDict):
+    time_ms: int
+    player_id: int | None
+    name: str | None
+    to: Annotated[str | None, Field(description='all, allies, observers, player (see to_slot) or lobby.')]
+    to_slot: int | None
+    text: str
 
 
 class W3mmdResult(TypedDict):
@@ -156,11 +186,19 @@ class ReplayInfoResult(TypedDict):
     game_name: str | None
     map: Annotated[str | None, Field(description='Path of the map the game was played on.')]
     host: str | None
-    length_ms: Annotated[int | None, Field(description='Length of the game in milliseconds.')]
+    length_ms: Annotated[int | None, Field(description='Length of the game in milliseconds, from the header.')]
+    time_slots_ms: Annotated[int, Field(description=(
+        'The recorded time slots in milliseconds, which chat and leave times count on; it can '
+        'run past length_ms.'))]
+    unfinished: Annotated[bool, Field(description='The game never wrote the header (a crash).')]
     version: Annotated[int | None, Field(description='Game version number, such as 10100 or 10200 for Reforged replays.')]
     build: int | None
     reforged: bool | None
-    players: list[ReplayPlayer]
+    slots: Annotated[int, Field(description='Lobby slots, such as 12 or 24.')]
+    select_mode: str | int | None
+    players: Annotated[list[ReplayPlayer], Field(description='Used slots, in slot order.')]
+    leaves: list[ReplayLeave]
+    chat: NotRequired[Annotated[list[ReplayChat], Field(description='Not given with chat false.')]]
     w3mmd: NotRequired[Annotated[W3mmdResult, Field(
         description='Given only when the map records W3MMD results.')]]
 

@@ -106,7 +106,7 @@ mcp-publisher publish
 | `trigger_text(path, name, names_only)` | GUI triggers as the World Editor shows them; `names_only` lists the trigger names first, which is the way to start on a large map |
 | `check_script(path)` | JASS or Lua findings for the map's script, as `wc3files jass --check` reports them |
 | `model_info(path, member)` | A model's name, format, version, geoset count, sequences with their start and end frames, and textures with their replaceable ids; `member` names a model inside a map |
-| `replay_info(path)` | A replay's game name, map, length, version and players, and its W3MMD winners and losers when it records them |
+| `replay_info(path, chat, max_chars)` | What happened in a replay: game name, map, host and length, players with team, colour, race and handicap, who left and when, the chat with timestamps (`chat` false leaves it out), and the W3MMD winners and losers when the map records them |
 | `map_overview(path)` | What a map holds in one call: info, script, terrain size and tileset, and the number of placed units, doodads, regions, cameras, sounds, imports, strings, triggers and custom objects |
 | `placed_objects(path, kind, id, owner, limit)` | The units or doodads placed on a map, with type, position, facing in degrees, scale, owner and editor numbers, filtered by type or owner |
 | `map_records(path, kind, max_chars)` | A map's regions, cameras, sounds, imports or strings as records, or a terrain summary: tilesets, size, cliff levels and ground texture use |
