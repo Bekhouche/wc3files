@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-25
+
 ### Added
 
 - `server.json` describes `wc3files-mcp` for the official MCP Registry as `io.github.Bekhouche/wc3files`, started with `uvx --from "wc3files[mcp]" wc3files-mcp --root FOLDER`, and the README carries the `mcp-name:` line the registry checks on PyPI. `docs/mcp.md` covers both (#195).
@@ -183,7 +185,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/Bekhouche/wc3files/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Bekhouche/wc3files/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Bekhouche/wc3files/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/Bekhouche/wc3files/compare/v0.3.0...v0.4.0
