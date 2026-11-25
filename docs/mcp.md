@@ -6,8 +6,10 @@ and replays and answer questions from their parsed contents: which units a
 map adds, what an ability costs, what a trigger does, whether the script
 calls a function the game does not have.
 
-Every tool only reads. The server opens files under the folders you give it
-and nothing else, and it refuses a protected map, as the command line does.
+By default every tool only reads. Started with `--allow-write`, the server
+also edits maps, writing each result as a new map (see "Editing maps"). It
+opens files under the folders you give it and nothing else, and it refuses
+a protected map, as the command line does.
 
 ## Install
 
@@ -121,6 +123,40 @@ trigger text does not fill the assistant's context by accident.
 
 Bytes come back as `{"base64": ...}`, and a NaN or infinite float as the
 string `"nan"`, `"inf"` or `"-inf"`, so every result is plain JSON.
+
+## Editing maps
+
+```bash
+wc3files-mcp --root D:/Maps --allow-write
+```
+
+Without `--allow-write` the edit tools are not registered at all, so a
+client cannot call them. With it:
+
+- every edit writes a new map, `<name>.edited.w3x` beside the source,
+  unless `out` names another path under the roots. The source changes only
+  when `out` is the source itself;
+- the new map is read back and the changed files are compared with what
+  was written before the tool reports success; every other file of the map
+  is copied unchanged;
+- a protected map is refused, and so is any change that cannot be applied
+  exactly, before anything is written;
+- the edit tools are annotated as writing and destructive (since `out` may
+  be the source), and every reading tool stays read-only.
+
+Close the map in the World Editor before editing it, and open the written
+map to see the changes.
+
+| Tool | What it does |
+|---|---|
+| `edit_objects(path, object_type, changes, out)` | Creates custom units, items, abilities and the other objects from a standard one (`{"id": "h000", "base": "hfoo"}`), changes fields of new or standard objects, takes fields back to their default (`reset`) or deletes objects. Fields are named as `object_data` shows them (`goldcost`, `Name`) or by their four-character id (`ugol`); an ability field with levels takes `{"1": 7, "2": 9}`. Values are checked against each field's type; a value past the World Editor's limits is written and reported in `warnings`, since real maps go past them on purpose |
+
+```json
+{"path": "MyMap.w3x", "object_type": "w3u", "changes": [
+  {"id": "h000", "base": "hfoo", "set": {"Name": "Knight of the Hill", "goldcost": 175, "HP": 600}},
+  {"id": "hfoo", "set": {"goldcost": 140}}
+]}
+```
 
 ## Use without MCP
 

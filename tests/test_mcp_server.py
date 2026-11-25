@@ -126,6 +126,40 @@ class TestMcpServer(unittest.TestCase):
                 self.assertFalse(result.is_error, result.content)
                 self.assertEqual(result.structured_content, json.loads(json.dumps(expected())))
 
+    def test_edit_tools_only_with_allow_write(self):
+        # Without --allow-write no edit tool is listed, so the server stays
+        # read-only; with it, edit_objects is listed as writing and writes a
+        # copy (#272).
+        from wc3files.mcp import build_server
+        writable = build_server([self.root], allow_write=True)
+
+        async def go():
+            async with Client(self.server) as client:
+                plain_names = {t.name for t in (await client.list_tools()).tools}
+            async with Client(writable) as client:
+                tools = {t.name: t for t in (await client.list_tools()).tools}
+                result = await client.call_tool('edit_objects', {
+                    'path': 'sample.w3x', 'object_type': 'w3u', 'out': 'server-edit.w3x',
+                    'changes': [{'id': 'h001', 'base': 'hfoo', 'set': {'goldcost': 175}}]})
+                return plain_names, tools, result
+        plain_names, tools, result = _run(go())
+        self.assertEqual(sorted(plain_names), TOOLS)
+        self.assertNotIn('edit_objects', plain_names)
+        notes = tools['edit_objects'].annotations
+        self.assertFalse(notes.read_only_hint)
+        self.assertTrue(notes.destructive_hint)
+        self.assertFalse(notes.idempotent_hint)
+        for name in TOOLS:
+            self.assertTrue(tools[name].annotations.read_only_hint, name)
+        self.assertFalse(result.is_error, result.content)
+        self.assertEqual(result.structured_content['created'], ['h001'])
+        self.assertTrue(os.path.exists(os.path.join(self.root, 'server-edit.w3x')))
+
+    def test_the_command_takes_allow_write(self):
+        from wc3files.mcp.server import build_parser
+        self.assertFalse(build_parser().parse_args(['--root', '.']).allow_write)
+        self.assertTrue(build_parser().parse_args(['--root', '.', '--allow-write']).allow_write)
+
     def test_an_expected_failure_reaches_the_client_with_its_message(self):
         async def go():
             async with Client(self.server) as client:

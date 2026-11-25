@@ -260,3 +260,39 @@ class MapRecordsResult(TypedDict):
                     '`wc3files dump` gives; strings are {id, text}. Not given for terrain.')]]
     terrain: NotRequired[Annotated[TerrainSummary, Field(
         description='Given for kind terrain when the map has war3map.w3e.')]]
+
+
+EditObjectType = Literal['w3u', 'w3t', 'w3b', 'w3d', 'w3a', 'w3h', 'w3q']
+
+
+class ObjectChange(TypedDict):
+    id: Annotated[str, Field(description=(
+        'The four-character object id: a standard id such as hfoo, a custom id of the map '
+        'such as h000, or a new unused id when base is given.'), min_length=4, max_length=4)]
+    base: NotRequired[Annotated[str, Field(description=(
+        'Create id as a new custom object based on this standard id, such as hfoo.'),
+        min_length=4, max_length=4)]]
+    set: NotRequired[Annotated[dict[str, Any], Field(description=(
+        'Field to value. A field is named as object_data shows it (goldcost, Name) or by its '
+        'four-character id (ugol). A field with levels takes {"1": value, "2": value}.'))]]
+    reset: NotRequired[Annotated[list[str], Field(description=(
+        'Fields to take back to the default of the base object.'))]]
+    delete: NotRequired[Annotated[bool, Field(description=(
+        'Remove the object from the map: a custom object, or the changes to a standard one.'))]]
+
+
+class EditResult(TypedDict):
+    path: Annotated[str, Field(description='The map written.')]
+    source: Annotated[str, Field(description='The map read.')]
+    overwrote_source: bool
+    changed_members: Annotated[list[str], Field(description='The map files that were rewritten.')]
+
+
+class EditObjectsResult(EditResult):
+    object_type: str
+    created: list[str]
+    changed: list[str]
+    deleted: list[str]
+    warnings: Annotated[list[str], Field(description=(
+        'Set values past the limits of the World Editor (minimum, maximum, allowed values). '
+        'The edit is written anyway, as the game takes such values.'))]
