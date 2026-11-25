@@ -1,0 +1,11 @@
+# Only what the image build needs. Everything else stays out, including the
+# map corpus and private notes a working copy may hold (#198).
+*
+!setup.py
+!MANIFEST.in
+!README.md
+!CHANGELOG.md
+!LICENSE
+!src/
+**/__pycache__
+**/*.py[cod]

@@ -61,3 +61,20 @@ jobs:
           cd /tmp && /tmp/wheel-env/bin/python -c "import wc3files; print(wc3files.__version__)"
           /tmp/wheel-env/bin/wc3files --version
           /tmp/wheel-env/bin/wc3files-mcp --version
+
+  docker:
+    name: Docker image of the MCP server
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t wc3files-mcp .
+      - name: Answer an MCP initialize request
+        # The server reads one JSON-RPC message per line on stdin and exits
+        # when stdin closes, so one request in gives one answer out (#198).
+        run: |
+          set -o pipefail
+          printf '%s\n' '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"ci","version":"0"}}}' \
+            | timeout 120 docker run -i --rm wc3files-mcp | tee answer.json
+          grep -q '"serverInfo"' answer.json
+          docker run --rm wc3files-mcp --version
