@@ -54,6 +54,31 @@ In `claude_desktop_config.json`:
 If `wc3files-mcp` is not on the client's `PATH`, give the full path to it,
 or use `"command": "python"` with `"args": ["-m", "wc3files.mcp", "--root", "D:/Maps"]`.
 
+### Without installing it first
+
+With [uv](https://docs.astral.sh/uv/), a client can start the server
+without a separate `pip install`:
+
+```bash
+uvx --from "wc3files[mcp]" wc3files-mcp --root D:/Maps
+```
+
+### MCP Registry
+
+The server is described for the official MCP Registry
+(registry.modelcontextprotocol.io) as `io.github.Bekhouche/wc3files`, by
+`server.json` at the top of the repository. The registry checks the line
+`mcp-name: io.github.Bekhouche/wc3files` in the README, which is the PyPI
+description, to confirm that the package belongs to the publisher. A new
+release is published there with
+[mcp-publisher](https://github.com/modelcontextprotocol/registry), after it
+is on PyPI:
+
+```bash
+mcp-publisher login github
+mcp-publisher publish
+```
+
 ## Tools
 
 | Tool | What it returns |
