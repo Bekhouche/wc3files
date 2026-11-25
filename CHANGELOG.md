@@ -12,6 +12,7 @@ section to the new version and its date.
 
 ### Added
 
+- The README links to the server's page on glama.ai, an MCP directory, with its score badge. glama builds and checks the server on each release (#200).
 - A `Dockerfile` that runs `wc3files-mcp` on a mounted `/data` folder, with a `.dockerignore` that only lets the package sources into the build. CI builds the image and checks that the server answers an MCP `initialize` request. See `docs/mcp.md` (#198).
 
 ## [0.6.1] - 2026-11-25

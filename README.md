@@ -4,6 +4,7 @@ Warcraft III maps files reader and writer for Python
 [![PyPI](https://img.shields.io/pypi/v/wc3files.svg)](https://pypi.python.org/pypi/wc3files)
 [![Python](https://img.shields.io/pypi/pyversions/wc3files.svg)](https://pypi.python.org/pypi/wc3files)
 [![License](https://img.shields.io/pypi/l/wc3files.svg)](LICENSE)
+[![wc3files MCP server](https://glama.ai/mcp/servers/Bekhouche/wc3files/badges/score.svg)](https://glama.ai/mcp/servers/Bekhouche/wc3files)
 
 A Python library for reading and writing various Warcraft III file formats. This library allows you to work with map files, object data, regions, replays, and more.
 
