@@ -301,6 +301,29 @@ def build_server(folders, allow_write=False):
         already changes."""
         return _edits.edit_objects(roots, path, object_type, changes, out)
 
+    @tool('Edit placed units and doodads', writes=True)
+    def edit_placed(
+            path: MapPath,
+            kind: Annotated[R.PlacedKind, Field(description=(
+                'units for the units and items placed on the map (war3mapUnits.doo), '
+                'doodads for the doodads and destructables (war3map.doo).'))],
+            add: Annotated[list[R.PlacedValues], Field(description=(
+                'New records; each needs id, x and y. Units default to player 0, '
+                'facing 270, scale 1.'))] = [],
+            change: Annotated[list[R.PlacedChange], Field(description=(
+                'Records to change: select picks them, set gives the new values.'))] = [],
+            delete: Annotated[list[R.PlacedSelector], Field(description=(
+                'Records to delete, each picked like select.'))] = [],
+            out: Out = '') -> R.EditPlacedResult:
+        """Place, move, change or delete the units or doodads placed on a
+        map. Changes and deletions pick records by index, type id or the
+        editor number placed_objects gives; indices are those of the file
+        before the call. A type id must be a standard one or one the map
+        defines, and a position must be on the map. New records get the
+        next free editor number. Use placed_objects first to find the
+        records."""
+        return _edits.edit_placed(roots, path, kind, add, change, delete, out)
+
     return server
 
 

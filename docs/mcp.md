@@ -150,6 +150,7 @@ map to see the changes.
 | Tool | What it does |
 |---|---|
 | `edit_objects(path, object_type, changes, out)` | Creates custom units, items, abilities and the other objects from a standard one (`{"id": "h000", "base": "hfoo"}`), changes fields of new or standard objects, takes fields back to their default (`reset`) or deletes objects. Fields are named as `object_data` shows them (`goldcost`, `Name`) or by their four-character id (`ugol`); an ability field with levels takes `{"1": 7, "2": 9}`. Values are checked against each field's type; a value past the World Editor's limits is written and reported in `warnings`, since real maps go past them on purpose |
+| `edit_placed(path, kind, add, change, delete, out)` | Places, moves, changes or deletes units (war3mapUnits.doo) or doodads (war3map.doo). `change` and `delete` pick records by `index`, type `id`, `creation_number` (units) or `editor_id` (doodads), with indices of the file before the call; `add` needs `id`, `x` and `y`. A type id must be standard or defined by the map, and a position must be on the map. New records get the next free editor number |
 
 ```json
 {"path": "MyMap.w3x", "object_type": "w3u", "changes": [
