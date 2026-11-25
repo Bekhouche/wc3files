@@ -12,6 +12,7 @@ section to the new version and its date.
 
 ### Added
 
+- `wc3files import-folder` and `wc3files.w3x.imports.import_folder`: every file of a folder tree added to a map at the same relative path, or under `--prefix`, and listed in `war3map.imp`. A member the map has is replaced, or kept with `--keep-existing`; files named as map data are skipped. The MCP `import_file` tool takes its flags byte from the same module (#215).
 - `wc3files replay-info` and `wc3files.w3g.summary.summarize`: what happened in a replay. Players come from the game's slot table, with team, observers, colour by its World Editor name, race and handicap; the summary adds who left and when, the chat with timestamps and mode, and the W3MMD results. The MCP `replay_info` tool returns the same summary, with a `chat` switch and `max_chars`; its players now give `player_id` and slot rather than `id`. The slot layout fits all 294 local replays that carry the record, and all 296 summarize, with 44,673 chat messages and 3,010 leaves (#263).
 - `wc3files map-strings` and `wc3files.w3x.strings`: the strings of a map by object, field and level, from `war3map.wts` or inline in the object data, with the other files that use `war3map.wts` and the strings nothing uses. `--check` reports `TRIGSTR_` references with no string, `<A000,DataA1>` references that do not resolve, and short tooltips naming another object of the map (#252).
 

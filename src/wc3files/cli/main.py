@@ -401,6 +401,24 @@ def _cmd_optimize(args):
     return 0
 
 
+def _cmd_import_folder(args):
+    """Add a folder tree to a map and list it in war3map.imp (#215)."""
+    from wc3files.w3x.imports import import_folder
+    from wc3files.w3x.modes import archive_files, _write_map
+    files = archive_files(_open_map(args.input, args.deep))
+    files, report = import_folder(files, args.folder, prefix=args.prefix,
+                                  replace=not args.keep_existing)
+    for label in ('added', 'replaced', 'kept', 'skipped'):
+        for name in report[label]:
+            print(f'{label}: {name}')
+    print(f"{len(report['added'])} added, {len(report['replaced'])} replaced, "
+          f"{len(report['kept'])} kept, {len(report['skipped'])} skipped as map data; "
+          f"{report['listed']} new war3map.imp entries")
+    _write_map(files, args.output)
+    print(f'Wrote {args.output}')
+    return 0
+
+
 def _cmd_trigger_ui(args):
     """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
     from wc3files.wtg import ydwe_ui
@@ -2183,6 +2201,23 @@ def build_parser():
     p_obj.add_argument('output', help='The map to write.')
     p_obj.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_obj.set_defaults(func=_cmd_obj_mode)
+
+    p_import = subparsers.add_parser(
+        'import-folder', help='Import a folder and its subfolders into a map.',
+        description=('Add every file under a folder to a map at the same relative '
+                     'path, and list each one in war3map.imp. A file named as map '
+                     'data (war3map.w3i, war3map.j, ...) is skipped. See '
+                     + _DOCS + '#imported-files.'))
+    p_import.add_argument('input', help='The .w3x/.w3m map.')
+    p_import.add_argument('folder', help='The folder to import.')
+    p_import.add_argument('output', help='The map to write.')
+    p_import.add_argument('--prefix', default='', help=(
+        "A path put before every name, for example 'war3mapImported'. By default "
+        'the files keep their path relative to the folder.'))
+    p_import.add_argument('--keep-existing', action='store_true',
+                          help='Keep a member the map already has instead of replacing it.')
+    p_import.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_import.set_defaults(func=_cmd_import_folder)
 
     p_opt = subparsers.add_parser(
         'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '
