@@ -348,6 +348,43 @@ def build_server(folders, allow_write=False):
         map_records first to see what is there."""
         return _edits.edit_records(roots, path, kind, add, change, delete, out)
 
+    @tool('Edit the map script', writes=True)
+    def edit_script(
+            path: MapPath,
+            code: Annotated[str, Field(description=(
+                'JASS or Lua, in the language of the map script. Added before main; a JASS '
+                'globals block in it is merged into the script\'s own.'), min_length=1)],
+            init_function: Annotated[str, Field(description=(
+                'A function of code to call when the map starts, at the top of main. '
+                'Empty adds no call.'))] = '',
+            replace: Annotated[bool, Field(description=(
+                'Replace the whole script with code, which then needs its own main and '
+                'config.'))] = False,
+            out: Out = '') -> R.EditScriptResult:
+        """Add JASS or Lua code to a map's script, called at map start when
+        init_function is given, or replace the script. The edited script
+        is parsed and checked as check_script does, and refused if it has
+        an issue the original did not have. The World Editor rebuilds the
+        script from the map's triggers when it saves the map, which drops
+        code added here; for code that must survive that, add it as a
+        custom-text trigger instead."""
+        return _edits.edit_script(roots, path, code, init_function, replace, out)
+
+    @tool('Import a file into a map', writes=True)
+    def import_file(
+            path: MapPath,
+            member: Annotated[str, Field(description=(
+                'The name inside the map, such as war3mapImported\\Hero.mdx or '
+                'UI\\MyFrame.fdf. Map data files and the script are refused.'), min_length=1)],
+            source: Annotated[str, Field(description='The file to import. ' + _PATH)],
+            out: Out = '') -> R.ImportFileResult:
+        """Add a file to a map, or replace one, and list it in war3map.imp
+        so the World Editor keeps it: models, textures, sounds, frame
+        definitions and other imports. Map data (war3map.w3u, w3e and the
+        rest) and the script are refused; the other edit tools change them
+        and check what they write."""
+        return _edits.import_file(roots, path, member, source, out)
+
     return server
 
 

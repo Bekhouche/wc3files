@@ -324,5 +324,143 @@ class TestEditRecords(EditTestCase):
         self.assertEqual(sorted(os.listdir(self.root)), ['records.w3x', 'sample.w3x', 'used.w3x'])
 
 
+JASS = '''globals
+    integer udg_score = 0
+endglobals
+
+function InitThings takes nothing returns nothing
+    set udg_score = 1
+endfunction
+
+function main takes nothing returns nothing
+    local integer i = 0
+    local real r = 1.0
+    call InitThings()
+endfunction
+
+function config takes nothing returns nothing
+    call SetPlayers(1)
+endfunction
+'''.replace('\n', '\r\n')
+
+LUA = '''udg_score = 0
+
+function InitThings()
+    udg_score = 1
+end
+
+function main()
+    InitThings()
+end
+
+function config()
+    SetPlayers(1)
+end
+'''
+
+
+class TestEditScript(EditTestCase):
+
+    def setUp(self):
+        super().setUp()
+        archive = W3xFile()
+        archive.read(sample_path('sample.w3x'))
+        files = dict(archive.files)
+        key = next(k for k in files if k.lower() == 'war3map.j')
+        files[key] = JASS.encode()
+        files['(listfile)'] = '\r\n'.join(n for n in files if n != '(listfile)').encode()
+        archive.build_from_files(files, os.path.join(self.root, 'jass.w3x'))
+        del files[key]
+        files['war3map.lua'] = LUA.encode()
+        files['(listfile)'] = '\r\n'.join(n for n in files if n != '(listfile)').encode()
+        archive.build_from_files(files, os.path.join(self.root, 'lua.w3x'))
+
+    def _script(self, path, name):
+        return _read_files(path)[name].decode('utf-8')
+
+    def test_jass_code_and_init(self):
+        code = ('globals\n    integer udg_added = 7\nendglobals\n'
+                'function AddedInit takes nothing returns nothing\n'
+                '    set udg_added = udg_added + 1\nendfunction')
+        result = E.edit_script(self.roots, 'jass.w3x', code, init_function='AddedInit')
+        self.assertEqual((result['language'], result['issues_after']), ('jass', 0))
+        script = self._script(result['path'], 'war3map.j')
+        self.assertEqual(script.count('endglobals'), 1)
+        self.assertLess(script.index('udg_added = 7'), script.index('endglobals'))
+        self.assertLess(script.index('function AddedInit'), script.index('function main'))
+        main = script[script.index('function main'):]
+        # Exact text: the call comes after main's locals, which JASS needs
+        # first, and no line of main loses a character. The first version
+        # cut one from main's first line in CRLF scripts.
+        self.assertEqual(main.split('\r\n')[:5], [
+            'function main takes nothing returns nothing', '    local integer i = 0',
+            '    local real r = 1.0', '    call AddedInit()', '    call InitThings()'])
+        # Every line of the original is still there, in order.
+        remaining = iter(script.split('\r\n'))
+        self.assertTrue(all(any(line == other for other in remaining)
+                            for line in JASS.split('\r\n')))
+
+    def test_lua_code_and_init(self):
+        result = E.edit_script(self.roots, 'lua.w3x', 'function AddedInit()\n    udg_score = 2\nend',
+                               init_function='AddedInit')
+        script = self._script(result['path'], 'war3map.lua')
+        self.assertEqual(result['language'], 'lua')
+        self.assertLess(script.index('function AddedInit'), script.index('function main'))
+        self.assertIn('function main()\n    AddedInit()\n    InitThings()', script)
+        crlf = E.edit_script(self.roots, 'lua.w3x', 'function AddedInit()\r\nend',
+                             init_function='AddedInit', out='lua-crlf.w3x')
+        self.assertNotIn('\r\r', self._script(crlf['path'], 'war3map.lua'))
+
+    def test_replace(self):
+        result = E.edit_script(self.roots, 'jass.w3x', JASS.replace('udg_score = 1', 'udg_score = 5'),
+                               replace=True, out='replaced.w3x')
+        self.assertIn('udg_score = 5', self._script(result['path'], 'war3map.j'))
+        with self.assertRaises(ValueError):
+            E.edit_script(self.roots, 'jass.w3x', 'function main takes nothing returns nothing\n'
+                                                  'endfunction', replace=True)
+
+    def test_refused_when_it_breaks_the_script(self):
+        for call in (dict(code='function Bad takes nothing returns nothing\n'
+                                '    call NoSuchNative()\nendfunction'),
+                     dict(code='function Unfinished takes'),
+                     dict(code='function F takes nothing returns nothing\nendfunction',
+                          init_function='not a name'),
+                     dict(code='   '),
+                     dict(code='x', init_function='F', replace=True)):
+            with self.subTest(call=call):
+                with self.assertRaises(ValueError):
+                    E.edit_script(self.roots, 'jass.w3x', **call)
+        self.assertEqual(sorted(os.listdir(self.root)), ['jass.w3x', 'lua.w3x', 'sample.w3x'])
+
+
+class TestImportFile(EditTestCase):
+
+    def test_import_and_list(self):
+        shutil.copy(sample_path('sample.mdx'), os.path.join(self.root, 'Hero.mdx'))
+        result = E.import_file(self.roots, 'sample.w3x', 'war3mapImported/Hero.mdx', 'Hero.mdx')
+        self.assertEqual((result['member'], result['replaced'], result['listed']),
+                         ('war3mapImported\\Hero.mdx', False, True))
+        files = _read_files(result['path'])
+        with open(sample_path('sample.mdx'), 'rb') as handle:
+            self.assertEqual(files['war3mapImported\\Hero.mdx'], handle.read())
+        imports = T.map_records(self.roots, result['path'], 'imports')['records']
+        self.assertEqual(imports[-1]['path'], 'war3mapImported\\Hero.mdx')
+        self.assertEqual(T.model_info(self.roots, result['path'],
+                                      'war3mapImported\\Hero.mdx')['name'], 'SampleModel')
+        again = E.import_file(self.roots, result['path'], 'war3mapImported\\Hero.mdx', 'Hero.mdx',
+                              out='again.w3x')
+        self.assertEqual((again['replaced'], again['listed']), (True, False))
+
+    def test_map_data_and_script_are_refused(self):
+        shutil.copy(sample_path('sample.mdx'), os.path.join(self.root, 'Hero.mdx'))
+        for member in ('war3map.w3u', 'war3map.j', 'Scripts\\war3map.lua', '(listfile)',
+                       'war3map.imp', 'war3map.w3e', ''):
+            with self.subTest(member=member):
+                with self.assertRaises(ValueError):
+                    E.import_file(self.roots, 'sample.w3x', member, 'Hero.mdx')
+        with self.assertRaises(ValueError):
+            E.import_file(self.roots, 'sample.w3x', 'x.mdx', 'missing.mdx')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -12,6 +12,8 @@ section to the new version and its date.
 
 ### Added
 
+- MCP `edit_script` and `import_file` (with `--allow-write`). `edit_script` adds JASS or Lua code before `main`, with an optional call at the top of `main` (after its locals in JASS), merges a JASS `globals` block into the script's own, or replaces the script; the result is parsed and checked, and refused on an issue the original did not have. `import_file` adds or replaces a file and lists it in war3map.imp; map data and the script are refused. On the 58 readable maps of a 90-map corpus sample, 58 script edits (55 JASS, 3 Lua) kept every original line exactly and in order, and 58 imports left every other file unchanged (#275).
+
 - MCP `edit_records` (with `--allow-write`): add, change or delete regions and cameras, and add or change strings. A region or camera the script or GUI triggers use cannot be deleted or renamed; new cameras start as the game's default camera; a new string comes back with its `TRIGSTR_` reference. On the 74 readable maps of a 100-map corpus sample, 222 edits (a region, a camera and a string on each) left every existing record and every other file unchanged (#274).
 
 - MCP `edit_placed` (with `--allow-write`): place, move, change or delete placed units or doodads, picked by index, type id or editor number. Type ids are checked against the game's and the map's objects, positions against the terrain bounds, and new records get the next free editor number. On the 92 readable maps of a 120-map corpus sample, 86 unit edits (one unit added, one moved) and 90 doodad deletions each left every other record and every other file unchanged (#273).
