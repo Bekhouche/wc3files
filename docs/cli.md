@@ -273,3 +273,11 @@ versions](gamedata.md).
 ```bash
 wc3files ui-info ResourceBar.fdf      # also .toc, .pkb, .pkcf, .pkmm, .wai
 ```
+
+`ui-build` writes a UI layout's frames as the JASS or Lua that creates them,
+as an .fdf, or as a trigger in a map; see [In-game UI frames](ui.md).
+
+```bash
+wc3files ui-build ui.json --jass ui.j --lua ui.lua
+wc3files ui-build ui.json --map MyMap.w3x --out MyMap.ui.w3x
+```

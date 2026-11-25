@@ -486,6 +486,24 @@ and the CASC family
 
 ---
 
+## In-game UI frames
+
+```python
+from wc3files.ui import Layout, Frame, Point, to_jass, to_lua, to_fdf, from_fdf, add_ui_trigger
+
+Layout.from_json(text) / .from_dict(d) / .to_json() / .to_dict() / .check() -> warnings
+Frame(name, type=None, template=None, size=None, points=None, texture=None, text=None,
+      visible=True, children=None)
+Point(point, x=0.0, y=0.0, relative_to=None, relative_point=None)
+to_jass(layout, function='CreateUI', toc=None) -> str
+to_lua(layout, function='CreateUI', table='UI', toc=None) -> str
+to_fdf(layout) -> (FdfFile, warnings)
+from_fdf(fdf_or_path_or_text) -> (Layout, left_out)
+add_ui_trigger(wtg, wct, layout, trigger_name='UI', category='UI', language='jass', ...)
+```
+
+See [In-game UI frames](ui.md).
+
 ## Low-level
 
 `BinaryFile` is the primitive every parser is built on - little-endian reads

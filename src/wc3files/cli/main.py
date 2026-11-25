@@ -863,6 +863,81 @@ def _dump_or_print(data, args):
             print(f'{key}: {value}')
 
 
+def _cmd_ui_build(args):
+    """Write a UI layout's frames as JASS, Lua or .fdf, or add them to a map
+    as a custom-text trigger (#172)."""
+    from wc3files import ui
+
+    if args.input.lower().endswith('.fdf'):
+        layout, left_out = ui.from_fdf(args.input)
+        if left_out:
+            print(f"note: left out of the layout: {', '.join(left_out)}", file=sys.stderr)
+    else:
+        with open(args.input, encoding='utf-8') as handle:
+            layout = ui.Layout.from_json(handle.read())
+    for warning in layout.check():
+        print(f'warning: {warning}', file=sys.stderr)
+
+    wrote = False
+    for path, make in ((args.jass, ui.to_jass), (args.lua, ui.to_lua)):
+        if path:
+            with open(path, 'w', encoding='utf-8', newline='\n') as handle:
+                handle.write(make(layout, function=args.function, toc=args.toc))
+            print(f'Wrote {path}', file=sys.stderr)
+            wrote = True
+    if args.fdf:
+        fdf, warnings = ui.to_fdf(layout)
+        for warning in warnings:
+            print(f'warning: {warning}', file=sys.stderr)
+        fdf.write(args.fdf)
+        print(f'Wrote {args.fdf}', file=sys.stderr)
+        wrote = True
+    if args.json:
+        with open(args.json, 'w', encoding='utf-8') as handle:
+            handle.write(layout.to_json() + '\n')
+        print(f'Wrote {args.json}', file=sys.stderr)
+        wrote = True
+    if args.map:
+        if not args.out:
+            raise ValueError('ui-build --map needs --out, the map to write')
+        _ui_into_map(layout, args)
+        wrote = True
+    if not wrote:
+        sys.stdout.write(ui.to_jass(layout, function=args.function, toc=args.toc))
+
+
+def _ui_into_map(layout, args):
+    from wc3files import ui
+    from wc3files.w3i import W3iFile
+    from wc3files.wtg import MapTriggersFile, MapCustomTextTriggersFile
+    from wc3files.w3x.w3x_file import read_map
+
+    archive = read_map(args.map)
+    files = archive.files
+    found = {name.lower(): name for name, data in files.items() if data is not None}
+    for needed in ('war3map.wtg', 'war3map.wct'):
+        if needed not in found:
+            raise ValueError(f'{args.map} has no {needed}, so there is no trigger editor '
+                             f'data to add to')
+    language = 'jass'
+    if 'war3map.w3i' in found:
+        info = W3iFile()
+        info.read(files[found['war3map.w3i']])
+        language = 'lua' if info.get_data().get('script_type') == 'lua' else 'jass'
+    triggers = MapTriggersFile()
+    triggers.read(files[found['war3map.wtg']])
+    texts = MapCustomTextTriggersFile()
+    texts.read(files[found['war3map.wct']])
+    wtg, wct = triggers.get_data(), texts.get_data()
+    ui.add_ui_trigger(wtg, wct, layout, trigger_name=args.trigger_name,
+                      language=language, function=args.function, toc=args.toc)
+    files[found['war3map.wtg']] = triggers.import_data(wtg).to_bytes()
+    files[found['war3map.wct']] = texts.import_data(wct).to_bytes()
+    W3xFile().build_from_files(files, args.out)
+    print(f"Wrote {args.out} (trigger {args.trigger_name!r}, {language}); it runs once the "
+          f"map is saved in the World Editor", file=sys.stderr)
+
+
 def _cmd_replay_mmd(args):
     """Dump the W3MMD (map meta data) a replay carries."""
     from wc3files import ReplayFile
@@ -1809,6 +1884,27 @@ def build_parser():
     p_ui_info.add_argument('--limit', type=int, default=20,
                            help='Cap long lists in the readable summary.')
     p_ui_info.set_defaults(func=_cmd_ui_info)
+
+    p_ui_build = subparsers.add_parser(
+        'ui-build',
+        help=("Write the frames of a UI layout (a .json layout, or an .fdf to read "
+              "one from) as the JASS or Lua that creates them, as an .fdf, or as a "
+              "custom-text trigger added to a map. With no output named, the JASS "
+              "goes to stdout. See " + _DOCS.replace('cli.md', 'ui.md') + "."))
+    p_ui_build.add_argument('input', help='The layout: a .json file, or an .fdf.')
+    p_ui_build.add_argument('--jass', metavar='OUT.j', help='Write the JASS here.')
+    p_ui_build.add_argument('--lua', metavar='OUT.lua', help='Write the Lua here.')
+    p_ui_build.add_argument('--fdf', metavar='OUT.fdf', help='Write frame definitions here.')
+    p_ui_build.add_argument('--json', metavar='OUT.json',
+                            help='Write the layout as JSON (for example one read from an .fdf).')
+    p_ui_build.add_argument('--map', help='A map to add the frames to, as a trigger.')
+    p_ui_build.add_argument('--out', help='The map to write, with --map.')
+    p_ui_build.add_argument('--trigger-name', default='UI',
+                            help="The trigger's name, with --map (default UI).")
+    p_ui_build.add_argument('--function', default='CreateUI',
+                            help='The name of the function that creates the frames.')
+    p_ui_build.add_argument('--toc', help='A .toc the code loads first, for templates it defines.')
+    p_ui_build.set_defaults(func=_cmd_ui_build)
 
     p_model = subparsers.add_parser(
         'model-convert',
