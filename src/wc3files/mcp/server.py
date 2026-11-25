@@ -46,6 +46,8 @@ def build_server(folders):
         from mcp.server.mcpserver.exceptions import ToolError
         from mcp.types import ToolAnnotations
         from pydantic import Field
+
+        from . import results as R
     except ImportError:
         raise _missing_mcp() from None
     roots = _tools.Roots(folders)
@@ -82,32 +84,29 @@ def build_server(folders):
                 'folder the server may read. ' + _PATH))] = '',
             pattern: Annotated[str, Field(description=(
                 'Keep only the files whose name contains this text, ignoring case, '
-                'such as "dota" or ".w3g". Empty keeps all.'))] = '') -> dict:
+                'such as "dota" or ".w3g". Empty keeps all.'))] = '') -> R.ListFilesResult:
         """Find the maps (.w3x, .w3m), campaigns (.w3n), models (.mdx, .mdl)
-        and replays (.w3g) the server may read, with their full paths and
-        sizes in bytes. Call it first, to get the paths the other tools
-        take. It lists at most 1000 files and sets truncated when there are
-        more; narrow the search with folder or pattern."""
+        and replays (.w3g) the server may read, with full paths the other
+        tools accept as they are. Use it when the user names a file but not
+        its folder. It lists at most 1000 files; narrow the search with
+        folder or pattern."""
         return _tools.list_files(roots, folder, pattern)
 
     @tool('Map information')
-    def map_info(path: MapPath) -> dict:
-        """Read a map's summary from its war3map.w3i, with the map's strings
-        resolved: name, author, description, suggested players, width and
-        height, script language (JASS or Lua), the game and editor versions
-        it was saved with, players with their race and type, forces, and
-        the number of files in the map. Use it to answer what a map is; use
-        read_member on war3map.w3i only for every raw field. Fails on a
-        protected map and on a map without war3map.w3i."""
+    def map_info(path: MapPath) -> R.MapInfoResult:
+        """Read a map's summary from its war3map.w3i, with the map's
+        strings resolved: name, author, players and forces, size, script
+        language and the game version it was saved with. Use it to answer
+        what a map is; use read_member on war3map.w3i only for every raw
+        field. Fails on a protected map."""
         return _tools.map_info(roots, path)
 
     @tool('List the files inside a map')
-    def list_members(path: MapPath) -> dict:
+    def list_members(path: MapPath) -> R.ListMembersResult:
         """List the files a map holds (war3map.j, war3map.w3u, imported
-        models and textures, ...) with their unpacked and stored sizes, read
-        from the archive tables without unpacking anything. Use it to see
-        what a map contains before read_member or model_info. Fails on a
-        protected map."""
+        models and textures, ...) with their sizes, from the archive tables
+        without unpacking anything. Use it to find the member names that
+        read_member and model_info take. Fails on a protected map."""
         return _tools.list_members(roots, path)
 
     @tool('Read a file inside a map')
@@ -116,15 +115,14 @@ def build_server(folders):
             member: Annotated[str, Field(description=(
                 'The file inside the map, as list_members names it, such as '
                 'war3map.w3e, war3map.j or war3mapImported\\Hero.mdx.'))],
-            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> dict:
-        """Read one file inside a map. For a format wc3files reads (war3map.w3i,
-        w3e, doo, w3r, wts, wtg, wct, the object files and more) it returns
-        the parsed data, for a script or text file its text, and for any
-        other file only its size. Prefer the focused tools when they fit:
-        map_info for war3map.w3i, object_data for the object files,
-        trigger_text for war3map.wtg, check_script for the script and
-        model_info for a model. A large result such as a whole terrain is
-        refused past max_chars."""
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.ReadMemberResult:
+        """Read one file inside a map: parsed data for a format wc3files
+        reads (war3map.w3i, w3e, doo, w3r, w3c, w3s, wts, wtg, wct and
+        more), the text of a script or text file, or else only its size.
+        Prefer the focused tools when they fit: map_info for war3map.w3i,
+        object_data for the object files, trigger_text for war3map.wtg,
+        check_script for the script and model_info for a model. A large
+        result, such as a whole terrain, is refused past max_chars."""
         return _tools.read_member(roots, path, member, max_chars)
 
     @tool('Object data')
@@ -132,22 +130,19 @@ def build_server(folders):
             path: Annotated[str, Field(description=(
                 'A .w3x or .w3m map, or a single object file (.w3u, .w3t, .w3b, '
                 '.w3d, .w3a, .w3h or .w3q). ' + _PATH))],
-            object_type: Annotated[str, Field(description=(
+            object_type: Annotated[R.ObjectType, Field(description=(
                 'Keep one kind of object: w3u units, w3t items, w3b destructables, '
                 'w3d doodads, w3a abilities, w3h buffs, w3q upgrades. Empty keeps '
                 'every kind.'))] = '',
             ids: Annotated[list[str] | None, Field(description=(
                 'Keep only these four-character object ids, such as hfoo (Footman) '
                 'or A000 (a custom ability). Empty keeps every object.'))] = None,
-            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> dict:
-        """Read the units, items, destructables, doodads, abilities, buffs and
-        upgrades a map adds or changes, with the game's field names (such as
-        goldcost, spd or abilList) and the map's strings resolved. Each kind
-        has an original table, for standard objects the map changes, and a
-        custom table, for new objects with their template_id. Use it to
-        answer what a unit costs or what an ability does in a map; only the
-        fields the map changes are listed, not the game's defaults. On a
-        large map, ask for one object_type or some ids."""
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.ObjectDataResult:
+        """Read the units, items, destructables, doodads, abilities, buffs
+        and upgrades a map adds or changes, with the map's strings resolved.
+        Use it to answer what a unit costs or what an ability does in a map.
+        Only the fields the map changes are given, not the game's defaults.
+        On a large map, ask for one object_type or some ids."""
         return _tools.object_data(roots, path, object_type, ids, max_chars)
 
     @tool('Trigger text')
@@ -160,13 +155,13 @@ def build_server(folders):
             names_only: Annotated[bool, Field(description=(
                 'Return only the trigger names. Use it first on a large map, then '
                 'ask for single triggers by name.'))] = False,
-            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> dict:
-        """Read a map's GUI triggers as the World Editor shows them, one line
-        per event, condition and action. Use it to explain what a map's
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.TriggerTextResult:
+        """Read a map's GUI triggers as the World Editor shows them, one
+        line per event, condition and action. Use it to explain what a map's
         triggers do. A large map's triggers run to hundreds of thousands of
-        characters: start with names_only, then pass name. Triggers written
-        as custom text are in the script; check_script or read_member on
-        war3map.j reads them."""
+        characters: ask for names_only, then one name. Triggers written as
+        custom text are in the script, which read_member on war3map.j or
+        war3map.lua gives."""
         return _tools.trigger_text(roots, path, name, names_only, max_chars)
 
     @tool('Check a script')
@@ -174,12 +169,11 @@ def build_server(folders):
             path: Annotated[str, Field(description=(
                 'A .w3x or .w3m map, whose war3map.j or war3map.lua is checked, or '
                 'a .j or .lua script file. ' + _PATH))],
-            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> dict:
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.CheckScriptResult:
         """Check a map's JASS or Lua script against the game's natives and
         Blizzard functions, as `wc3files jass --check` does: calls to
         unknown functions, wrong argument counts, arguments of the wrong
-        type and similar errors. It returns the counts by severity and each
-        finding with its line. Use it to find why a map's script may fail
+        type and similar errors. Use it to find why a map's script may fail
         to load; read_member on war3map.j gives the script text itself."""
         return _tools.check_script(roots, path, max_chars)
 
@@ -190,21 +184,21 @@ def build_server(folders):
                 'model. ' + _PATH))],
             member: Annotated[str, Field(description=(
                 'For a map, the model inside it, as list_members names it, such as '
-                'war3mapImported\\Hero.mdx. Leave it empty for a model file.'))] = '') -> dict:
-        """Read a model's summary: name, format (MDX or MDL), version, the
-        names of its animation sequences, the textures it uses and its
-        number of geosets. Use it to check which animations or textures a
-        model has, in a model file or in a model imported into a map. For a
-        map, member is required."""
+                'war3mapImported\\Hero.mdx. Leave it empty for a model file.'))] = '') -> R.ModelInfoResult:
+        """Read a model's summary: its animation sequences with their
+        frames, the textures it uses, its format, version and geoset count.
+        Use it to check which animations or textures a model has, in a
+        model file or in a model imported into a map; for a map, member is
+        required."""
         return _tools.model_info(roots, path, member)
 
     @tool('Replay information')
     def replay_info(
-            path: Annotated[str, Field(description='The .w3g replay. ' + _PATH)]) -> dict:
-        """Read a replay's summary: game name, map, host, length in
-        milliseconds, game version and build, whether it is from Reforged,
-        and the players with their races. When the map records W3MMD
-        results, it adds the winners and losers."""
+            path: Annotated[str, Field(description='The .w3g replay. ' + _PATH)]) -> R.ReplayInfoResult:
+        """Read a replay's summary: game name, map, host, length, game
+        version, players, and the W3MMD winners and losers when the map
+        records them. Use it to answer who played a game, on which map, for
+        how long and who won."""
         return _tools.replay_info(roots, path)
 
     return server

@@ -10,6 +10,15 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Changed
+
+- Every `wc3files-mcp` tool publishes an output schema, one TypedDict per result in `wc3files.mcp.results`, so a client knows what comes back. On 2,523 results from real maps, models and replays, each validates and the structured result equals what the tool function returns. `object_data`'s `object_type` is an enum, and the descriptions are shorter now that the schemas carry the fields (#268).
+- `model_info` gives each sequence with its start and end frame, and each texture as its path and replaceable id (#268).
+
+### Fixed
+
+- `model_info` returned null for every texture: the model reader keys a texture `path`, and the tool read `image` (#268).
+
 ## [0.6.2] - 2026-11-25
 
 ### Added

@@ -360,8 +360,16 @@ def model_info(roots, path, member=''):
             handle.write(data)
         model = ModelFile()
         model.read(target)
-    sequences = [s.get('name') if isinstance(s, dict) else s for s in model.sequences]
-    textures = [t.get('image') if isinstance(t, dict) else t for t in model.textures]
+    sequences = []
+    for sequence in model.sequences:
+        start, end = (list(sequence.get('interval') or []) + [None, None])[:2]
+        sequences.append({'name': sequence.get('name'), 'start': start, 'end': end})
+    # A texture with an empty path is a replaceable one (team colour, team
+    # glow, ...), named by its replaceable id. The key is 'path': reading
+    # 'image' gave None for every texture before 0.6.3.
+    textures = [{'path': texture.get('path') or '',
+                 'replaceable_id': texture.get('replaceableId') or 0}
+                for texture in model.textures]
     return plain({'path': path, 'member': member or None, 'name': model.name,
                   'format': model.get_file_type().value, 'version': model.version,
                   'geosets': len(model.geosets), 'sequences': sequences,
