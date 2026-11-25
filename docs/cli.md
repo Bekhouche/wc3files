@@ -104,6 +104,39 @@ everything else. `--validate` on `build` stops only on `issue`. Even an
 `issue` can be intentional: `maxVal` is the World Editor's slider limit, not
 something the game enforces, and maps often pass it on purpose.
 
+### Strings and tooltips
+
+```bash
+wc3files map-strings map.w3x            # every name, tooltip and description, by object
+wc3files map-strings map.w3x --check    # missing strings, broken references, copied tips
+```
+
+`map-strings` lists the text fields of each object of the map (name,
+tooltips, description, editor suffix, ...) at each level, with the
+`TRIGSTR_` id when the text is in `war3map.wts`, or `inline` when it is in
+the object data itself, as in an optimized map. It then gives the other
+files that use `war3map.wts` (map info, script, triggers) and the number of
+strings nothing uses. `--json` gives all of it, the unused strings included.
+
+`--check` reports:
+
+- `missing string` (issue): a `TRIGSTR_` reference with no entry in
+  `war3map.wts`. The game shows the reference itself;
+- `unresolved reference` (issue): a `<A000,DataA1>` in the text whose object
+  or field does not exist, resolved as `optimize --computed-text` resolves
+  them. The game shows nothing in its place;
+- `other object's name` (note): a short tooltip that names another object
+  of the same type of this map and not the object's own name, which is
+  usually a copied object whose tooltip was not changed. It is reported once
+  per object, with the levels it covers. It is a note because some maps mean
+  it: a tower's tip can read "Upgrade to Aura Tower 3". Long tooltips are not
+  checked this way, since a barracks names the units it trains.
+
+The command exits with 1 when it finds an issue. It does not compare the
+numbers written in a tooltip with the object's fields: free text does not
+say which field a number stands for, and on corpus maps such a comparison
+matched mostly unrelated numbers.
+
 ### Override tables
 
 `obj-to-override` writes the technique some maps use to have no

@@ -994,6 +994,51 @@ def _cmd_replay_info(args):
             print(f'  ... {len(messages) - args.max_chat} more (--max-chat, or --json for all)')
 
 
+def _cmd_map_strings(args):
+    """List a map's strings by object and field, or check its tooltips."""
+    from wc3files.w3x.strings import check_strings, map_strings
+
+    files = _open_map(args.map, args.deep).files
+    files = {name: data for name, data in files.items() if data is not None}
+    if args.check:
+        findings = check_strings(files)
+        if args.json:
+            _write_json(findings, args.out)
+        else:
+            for f in findings:
+                level = f' level {f["level"]}' if f['level'] else ''
+                print(f"{f['file']}: {f['id']} {f['field']}{level}: {f['severity']}: "
+                      f"{f['kind']}: {f['message']}")
+        issues = sum(1 for f in findings if f['severity'] == 'issue')
+        print(f'{issues} issue(s), {len(findings) - issues} note(s)', file=sys.stderr)
+        return 1 if issues else 0
+
+    listing = map_strings(files)
+    if args.json:
+        _write_json(listing, args.out)
+        return 0
+    current = None
+    for entry in listing['objects']:
+        key = (entry['file'], entry['id'])
+        if key != current:
+            current = key
+            origin = (f"custom, from {entry['base']}" if entry['custom']
+                      else 'changed game object')
+            print(f"\n{entry['file']} {entry['id']} ({origin})")
+        level = f" {entry['level']}" if entry['level'] else ''
+        where = f"TRIGSTR_{entry['string_id']:03d}" if entry['string_id'] is not None else 'inline'
+        text = entry['text'] if entry['text'] is not None else '(missing from war3map.wts)'
+        print(f"  {entry['field'] + level:18} {where:12} {text}")
+    if listing['references']:
+        print('\nother files that use war3map.wts:')
+        for reference in listing['references']:
+            ids = reference['string_ids']
+            print(f"  {reference['file']}: {len(ids)} string(s)")
+    print(f"\n{listing['strings']} string(s) in war3map.wts, "
+          f"{len(listing['unused'])} not used by any file")
+    return 0
+
+
 def _cmd_replay_mmd(args):
     """Dump the W3MMD (map meta data) a replay carries."""
     from wc3files import ReplayFile
@@ -2208,6 +2253,20 @@ def build_parser():
                              help='Emit JSON instead of readable text.')
     p_trig_text.add_argument('--out', help='Write JSON here instead of stdout.')
     p_trig_text.set_defaults(func=_cmd_trigger_text)
+
+    p_strings = subparsers.add_parser(
+        'map-strings',
+        help=('List the strings of a map by object and field (names, tooltips, '
+              'descriptions), the other files that use war3map.wts and the strings '
+              'nothing uses; --check reports missing strings, <A000,DataA1> '
+              'references that do not resolve and tooltips naming another object.'))
+    p_strings.add_argument('map', help='The .w3x/.w3m map.')
+    p_strings.add_argument('--check', action='store_true',
+                           help='Check the tooltips instead of listing the strings.')
+    p_strings.add_argument('--json', action='store_true', help='Emit JSON.')
+    p_strings.add_argument('--out', default='-', help='Where to write JSON (default stdout).')
+    p_strings.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_strings.set_defaults(func=_cmd_map_strings)
 
     p_from_script = subparsers.add_parser(
         'script-to-triggers',
