@@ -296,3 +296,46 @@ class EditObjectsResult(EditResult):
     warnings: Annotated[list[str], Field(description=(
         'Set values past the limits of the World Editor (minimum, maximum, allowed values). '
         'The edit is written anyway, as the game takes such values.'))]
+
+
+class PlacedValues(TypedDict, total=False):
+    id: Annotated[str, Field(description='Type id, such as hfoo for a unit or LTlt for a tree.',
+                             min_length=4, max_length=4)]
+    x: float
+    y: float
+    z: Annotated[float, Field(description='Height; the World Editor sets it from the terrain.')]
+    facing: Annotated[float, Field(description='Facing in degrees, 0 east, 90 north. New: 270.')]
+    scale: Annotated[float | list[float], Field(description='One number, or [x, y, z]. New: 1.')]
+    variation: int
+    owner: Annotated[int, Field(description='Units: player number from 0. New: 0.')]
+    hp: Annotated[int, Field(description='Units: hit points; -1 is the type default.')]
+    mana: Annotated[int, Field(description='Units: mana; -1 is the type default.')]
+    life: Annotated[int, Field(description='Doodads: life in percent, 0 to 255. New: 100.')]
+
+
+class PlacedSelector(TypedDict, total=False):
+    index: Annotated[int, Field(description='Position in the file, as placed_objects gives it.')]
+    id: Annotated[str, Field(description='Every record of this type id.')]
+    creation_number: Annotated[int, Field(description='Units: the editor number of one unit.')]
+    editor_id: Annotated[int, Field(description='Doodads: the editor number of one doodad.')]
+
+
+class PlacedChange(TypedDict):
+    select: Annotated[PlacedSelector, Field(description='Exactly one of index, id, creation_number '
+                                                        'or editor_id.')]
+    set: PlacedValues
+
+
+class PlacedAdded(TypedDict, total=False):
+    index: int
+    id: str
+    creation_number: int
+    editor_id: int
+
+
+class EditPlacedResult(EditResult):
+    kind: PlacedKind
+    added: Annotated[list[PlacedAdded], Field(description='New records with their editor numbers.')]
+    changed: Annotated[list[int], Field(description='Indices changed, in the file before the edit.')]
+    deleted: Annotated[list[int], Field(description='Indices deleted, in the file before the edit.')]
+    total: Annotated[int, Field(description='Records in the file after the edit.')]

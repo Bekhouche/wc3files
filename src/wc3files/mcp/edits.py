@@ -9,6 +9,7 @@ it; by default the result goes to <name>.edited.w3x beside it.
 
 Like tools.py, nothing here imports the `mcp` package.
 """
+import math
 import os
 
 from wc3files.w3x.modes import _read_files, _write_map
@@ -277,3 +278,166 @@ def _warnings(object_type, table_data, touched):
         subset[table][object_id] = part
     return [f'{r["id"]}.{r["field"]}: ' + ', '.join(i['message'] for i in r['issues'])
             for r in validate_object_table(object_type, subset) if r['issues']]
+
+
+# ---- edit_placed (#273) -----------------------------------------------------
+
+PLACED = {'units': ('war3mapUnits.doo', 'creation_number', ('w3u', 'w3t')),
+          'doodads': ('war3map.doo', 'editor_id', ('w3d', 'w3b'))}
+_UNIT_SET = ('id', 'x', 'y', 'z', 'facing', 'scale', 'variation', 'owner', 'hp', 'mana')
+_DOODAD_SET = ('id', 'x', 'y', 'z', 'facing', 'scale', 'variation', 'life')
+
+
+def _known_ids(files, kinds):
+    """Standard ids of the object types `kinds`, and the custom ids the map
+    defines for them."""
+    from wc3files import ObjectFile
+    from wc3files.w3o.object_base_data import BaseObjectData
+    base = BaseObjectData.default()
+    known = set()
+    for kind in kinds:
+        known.update(base.ids(kind))
+        key = _find(files, f'war3map.{kind}')
+        if key is not None:
+            handler = ObjectFile()
+            handler.read(files[key], object_type=kind)
+            known.update((handler.export_data().get(kind) or {}).get('custom') or {})
+    return known
+
+
+def _bounds(files):
+    """(min x, min y, max x, max y) of the terrain, or None without war3map.w3e."""
+    from wc3files.w3e import TerrainFile
+    key = _find(files, 'war3map.w3e')
+    if key is None:
+        return None
+    terrain = TerrainFile()
+    terrain.read(files[key])
+    data = terrain.get_data()
+    x0, y0 = data['offset_x'], data['offset_y']
+    return x0, y0, x0 + (data['width'] - 1) * 128.0, y0 + (data['height'] - 1) * 128.0
+
+
+def _apply_placed(record, values, kind, known, bounds, where):
+    allowed = _UNIT_SET if kind == 'units' else _DOODAD_SET
+    for key in values:
+        if key not in allowed:
+            raise ValueError(f'{where}: {key!r} cannot be set on {kind}; '
+                             f'one of {", ".join(allowed)}')
+    if 'id' in values:
+        type_id = values['id']
+        if not isinstance(type_id, str) or len(type_id) != 4:
+            raise ValueError(f'{where}: id is a four-character type id')
+        if type_id not in known:
+            raise ValueError(f'{where}: {type_id} is neither a standard type nor one the map '
+                             f'defines')
+        if record.get('skin', record.get('id')) == record.get('id'):
+            record['skin'] = type_id
+        record['id'] = type_id
+    position = list(record.get('position') or (0.0, 0.0, 0.0))
+    for axis, key in enumerate(('x', 'y', 'z')):
+        if key in values:
+            if not isinstance(values[key], (int, float)) or isinstance(values[key], bool):
+                raise ValueError(f'{where}: {key} is a number')
+            position[axis] = float(values[key])
+    if bounds and not (bounds[0] <= position[0] <= bounds[2] and bounds[1] <= position[1] <= bounds[3]):
+        raise ValueError(f'{where}: {position[0]}, {position[1]} is outside the map, which spans '
+                         f'x {bounds[0]} to {bounds[2]} and y {bounds[1]} to {bounds[3]}')
+    record['position'] = position
+    if 'facing' in values:
+        if not isinstance(values['facing'], (int, float)) or isinstance(values['facing'], bool):
+            raise ValueError(f'{where}: facing is a number of degrees')
+        record['rotation'] = math.radians(float(values['facing']) % 360)
+    if 'scale' in values:
+        scale = values['scale']
+        scale = [scale] * 3 if isinstance(scale, (int, float)) and not isinstance(scale, bool) else scale
+        if (not isinstance(scale, (list, tuple)) or len(scale) != 3
+                or not all(isinstance(v, (int, float)) and v > 0 for v in scale)):
+            raise ValueError(f'{where}: scale is a positive number or [x, y, z]')
+        record['scale'] = [float(v) for v in scale]
+    for key, field, low, high in (('variation', 'variation', 0, 2 ** 31 - 1),
+                                  ('owner', 'owner', 0, 31),
+                                  ('hp', 'hp', -1, 2 ** 31 - 1), ('mana', 'mp', -1, 2 ** 31 - 1),
+                                  ('life', 'life', 0, 255)):
+        if key in values:
+            value = values[key]
+            if not isinstance(value, int) or isinstance(value, bool) or not low <= value <= high:
+                raise ValueError(f'{where}: {key} is a whole number from {low} to {high}')
+            record[field] = value
+
+
+def _select(records, kind, selector, where):
+    """Indices of the records `selector` matches: {"index": n}, {"id": "hfoo"},
+    {"creation_number": n} for units or {"editor_id": n} for doodads."""
+    number = PLACED[kind][1]
+    if not isinstance(selector, dict) or len(set(selector) & {'index', 'id', number}) != 1:
+        raise ValueError(f'{where}: select one of index, id or {number}')
+    if 'index' in selector:
+        index = selector['index']
+        if not isinstance(index, int) or not 0 <= index < len(records):
+            raise ValueError(f'{where}: index {index!r} is not in 0 to {len(records) - 1}')
+        return [index]
+    key = 'id' if 'id' in selector else number
+    found = [i for i, record in enumerate(records) if record.get(key) == selector[key]]
+    if not found:
+        raise ValueError(f'{where}: no {kind[:-1]} with {key} {selector[key]!r}')
+    return found
+
+
+def edit_placed(roots, path, kind, add=None, change=None, delete=None, out=''):
+    """Add, change or delete the units or doodads placed on a map."""
+    from wc3files.doo.map_doodads_file import MapDoodadsFile
+    from wc3files.doo.map_units_file import MapUnitsFile
+    if kind not in PLACED:
+        raise ValueError(f'kind must be one of {", ".join(PLACED)}')
+    add, change, delete = list(add or []), list(change or []), list(delete or [])
+    if not (add or change or delete):
+        raise ValueError('nothing to do: give add, change or delete')
+    member, number, object_kinds = PLACED[kind]
+    source, out = target_path(roots, path, out)
+    files = _read_files(source)
+    key = _find(files, member) or member
+    handler = MapUnitsFile() if kind == 'units' else MapDoodadsFile()
+    if key in files:
+        handler.read(files[key])
+    data = handler.get_data()
+    records = data.setdefault(kind, [])
+    known = _known_ids(files, object_kinds)
+    bounds = _bounds(files)
+    changed, deleted = set(), set()
+    for n, item in enumerate(change):
+        if not isinstance(item, dict) or not isinstance(item.get('set'), dict) or not item['set']:
+            raise ValueError(f'change {n}: give select and a non-empty set')
+        for index in _select(records, kind, item.get('select'), f'change {n}'):
+            _apply_placed(records[index], item['set'], kind, known, bounds, f'change {n}')
+            changed.add(index)
+    for n, selector in enumerate(delete):
+        deleted.update(_select(records, kind, selector, f'delete {n}'))
+    kept = [record for i, record in enumerate(records) if i not in deleted]
+    next_number = max((r.get(number) or 0 for r in records), default=-1) + 1
+    skins = data.get('skins')
+    added = []
+    for n, item in enumerate(add):
+        if not isinstance(item, dict) or not {'id', 'x', 'y'} <= set(item):
+            raise ValueError(f'add {n}: give at least id, x and y')
+        record = {'id': item['id'], 'variation': 0, 'position': [0.0, 0.0, 0.0],
+                  'rotation': math.radians(270.0), 'scale': [1.0, 1.0, 1.0],
+                  'skin': item['id'], 'flags': 2, number: next_number}
+        if skins is not None:
+            record['has_skin'] = bool(skins)
+        if kind == 'units':
+            record.update({'owner': 0, 'hp': -1, 'mp': -1})
+        else:
+            record.update({'life': 100})
+        _apply_placed(record, item, kind, known, bounds, f'add {n}')
+        kept.append(record)
+        added.append({'index': len(kept) - 1, 'id': record['id'], number: next_number})
+        next_number += 1
+    data[kind] = kept
+    handler.import_data(data)
+    data_bytes = handler.to_bytes()
+    files[key] = data_bytes
+    result = commit(source, files, {key: data_bytes}, out)
+    result.update({'kind': kind, 'added': added, 'changed': sorted(changed - deleted),
+                   'deleted': sorted(deleted), 'total': len(kept)})
+    return plain(result)

@@ -150,5 +150,86 @@ class TestEditObjects(EditTestCase):
             E.edit_objects(self.roots, protected, 'w3u', [{'id': 'h001', 'base': 'hfoo'}])
 
 
+class TestEditPlaced(EditTestCase):
+
+    def setUp(self):
+        super().setUp()
+        # The sample map's war3map.doo holds unit records; give it real
+        # placed units and doodads from the format samples.
+        archive = W3xFile()
+        archive.read(sample_path('sample.w3x'))
+        files = dict(archive.files)
+        for member, sample in (('war3mapUnits.doo', 'sample.doo'),
+                               ('war3map.doo', 'sample_doodads_v8_11.doo')):
+            with open(sample_path(sample), 'rb') as handle:
+                files[member] = handle.read()
+        files['(listfile)'] = '\r\n'.join(n for n in files if n != '(listfile)').encode()
+        self.placed = os.path.join(self.root, 'placed.w3x')
+        archive.build_from_files(files, self.placed)
+
+    def test_add_change_delete_units(self):
+        before = T.placed_objects(self.roots, 'placed.w3x', 'units')['objects']
+        result = E.edit_placed(self.roots, 'placed.w3x', 'units',
+                               add=[{'id': 'hkni', 'x': 64, 'y': 64, 'owner': 1, 'facing': 90}],
+                               change=[{'select': {'index': 0}, 'set': {'x': 32.0, 'owner': 3}}],
+                               delete=[{'index': 1}])
+        self.assertEqual((result['changed'], result['deleted'], result['total']), ([0], [1], 2))
+        after = T.placed_objects(self.roots, result['path'], 'units')['objects']
+        self.assertEqual((after[0]['x'], after[0]['owner'], after[0]['y']),
+                         (32.0, 3, before[0]['y']))
+        new = after[1]
+        self.assertEqual((new['id'], new['owner'], new['facing'], new['x']), ('hkni', 1, 90.0, 64.0))
+        self.assertEqual(new['creation_number'],
+                         max(u['creation_number'] for u in before) + 1)
+
+    def test_untouched_records_and_members_are_unchanged(self):
+        from wc3files.doo.map_doodads_file import MapDoodadsFile
+        result = E.edit_placed(self.roots, 'placed.w3x', 'doodads',
+                               change=[{'select': {'index': 3}, 'set': {'life': 50}}])
+        before, after = _read_files(self.placed), _read_files(result['path'])
+        for name, data in before.items():
+            if name != 'war3map.doo':
+                self.assertEqual(after[name], data, name)
+        old, new = MapDoodadsFile(), MapDoodadsFile()
+        old.read(before['war3map.doo'])
+        new.read(after['war3map.doo'])
+        old_records, new_records = old.get_data()['doodads'], new.get_data()['doodads']
+        self.assertEqual(len(old_records), len(new_records))
+        for index, (a, b) in enumerate(zip(old_records, new_records)):
+            if index == 3:
+                self.assertEqual(b['life'], 50)
+                self.assertEqual({k: v for k, v in a.items() if k != 'life'},
+                                 {k: v for k, v in b.items() if k != 'life'})
+            else:
+                self.assertEqual(a, b)
+
+    def test_select_by_id_changes_every_match(self):
+        first = T.placed_objects(self.roots, 'placed.w3x', 'doodads', limit=1)['objects'][0]['id']
+        total = T.placed_objects(self.roots, 'placed.w3x', 'doodads', id=first)['total']
+        result = E.edit_placed(self.roots, 'placed.w3x', 'doodads',
+                               change=[{'select': {'id': first}, 'set': {'scale': 2}}])
+        self.assertEqual(len(result['changed']), total)
+        scales = {tuple(o['scale']) for o in
+                  T.placed_objects(self.roots, result['path'], 'doodads', id=first)['objects']}
+        self.assertEqual(scales, {(2.0, 2.0, 2.0)})
+
+    def test_refusals_write_nothing(self):
+        for kind, call in (
+                ('units', dict(add=[{'id': 'zzzz', 'x': 0, 'y': 0}])),      # unknown type
+                ('units', dict(add=[{'id': 'hfoo', 'x': 0}])),             # no y
+                ('units', dict(change=[{'select': {'index': 99}, 'set': {'x': 0}}])),
+                ('units', dict(change=[{'select': {'index': 0}, 'set': {'life': 5}}])),
+                ('units', dict(change=[{'select': {'index': 0, 'id': 'hfoo'}, 'set': {'x': 0}}])),
+                ('units', dict(delete=[{'creation_number': 999}])),
+                ('units', dict(change=[{'select': {'index': 0}, 'set': {'owner': 99}}])),
+                ('doodads', dict(change=[{'select': {'index': 0}, 'set': {'owner': 1}}])),
+                ('units', {}),
+                ('trees', dict(delete=[{'index': 0}]))):
+            with self.subTest(kind=kind, call=call):
+                with self.assertRaises(ValueError):
+                    E.edit_placed(self.roots, 'placed.w3x', kind, **call)
+        self.assertEqual(sorted(os.listdir(self.root)), ['placed.w3x', 'sample.w3x'])
+
+
 if __name__ == '__main__':
     unittest.main()
