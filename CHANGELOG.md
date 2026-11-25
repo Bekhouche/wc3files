@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-25
+
 ### Changed
 
 - Every `wc3files-mcp` tool publishes an output schema, one TypedDict per result in `wc3files.mcp.results`, so a client knows what comes back. On 2,523 results from real maps, models and replays, each validates and the structured result equals what the tool function returns. `object_data`'s `object_type` is an enum, and the descriptions are shorter now that the schemas carry the fields (#268).
@@ -202,7 +204,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/Bekhouche/wc3files/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Bekhouche/wc3files/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Bekhouche/wc3files/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Bekhouche/wc3files/compare/v0.5.0...v0.6.0
