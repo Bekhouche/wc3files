@@ -12,10 +12,11 @@ from . import tools as _tools
 
 INSTRUCTIONS = (
     'Reads Warcraft III maps (.w3x, .w3m), models (.mdx, .mdl) and replays '
-    '(.w3g) with wc3files. Start with list_files to find files, then map_info '
-    'and list_members for a map. read_member gives one member as data; '
-    'object_data, trigger_text and check_script answer questions about units, '
-    'abilities, triggers and scripts. Every tool only reads. Files outside '
+    '(.w3g) with wc3files. list_files finds files; map_overview says what a '
+    'map holds. placed_objects, map_records, object_data, trigger_text and '
+    'check_script answer questions about placed units, regions, objects, '
+    'triggers and scripts; read_member gives any member as data. Every tool '
+    'only reads. Files outside '
     'the folders the server was started with are refused, and so are '
     'protected maps.')
 
@@ -200,6 +201,54 @@ def build_server(folders):
         records them. Use it to answer who played a game, on which map, for
         how long and who won."""
         return _tools.replay_info(roots, path)
+
+    @tool('Map overview')
+    def map_overview(path: MapPath) -> R.MapOverviewResult:
+        """Say in one call what a map holds: its name, author, players,
+        script, terrain size and tileset, and how many units, doodads,
+        regions, cameras, sounds, imports, strings, triggers and custom
+        objects it has. Use it to size up a map before asking for any of
+        these with placed_objects, map_records, object_data or
+        trigger_text. Fails on a protected map."""
+        return _tools.map_overview(roots, path)
+
+    @tool('Placed units and doodads')
+    def placed_objects(
+            path: MapPath,
+            kind: Annotated[R.PlacedKind, Field(description=(
+                'units for the units and items placed on the map (war3mapUnits.doo), '
+                'doodads for the doodads and destructables (war3map.doo).'))] = 'units',
+            id: Annotated[str, Field(description=(
+                'Keep only objects of this four-character type id, such as hfoo or '
+                'LTlt; case matters. Empty keeps all.'))] = '',
+            owner: Annotated[int | None, Field(description=(
+                'Units only: keep the units of this player number, counted from 0, '
+                'as the owner field gives it. The neutral players come after the '
+                'last playable slot.'), ge=0)] = None,
+            limit: Annotated[int, Field(description=(
+                f'Most objects to return; total says how many match. Default '
+                f'{_tools.DEFAULT_LIMIT}.'), ge=1)] = _tools.DEFAULT_LIMIT) -> R.PlacedObjectsResult:
+        """List the units or doodads placed on a map, in file order, with
+        type, position, facing, scale and owner, and the editor numbers
+        the World Editor uses for them in triggers. Use it to answer where
+        things are or what a player starts with; object_data gives what a
+        type of unit is, not where it stands."""
+        return _tools.placed_objects(roots, path, kind, id, owner, limit)
+
+    @tool('Map records')
+    def map_records(
+            path: MapPath,
+            kind: Annotated[R.RecordKind, Field(description=(
+                'regions (war3map.w3r), cameras (war3map.w3c), sounds (war3map.w3s), '
+                'imports (war3map.imp), strings (war3map.wts) or terrain (a summary '
+                'of war3map.w3e).'))],
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.MapRecordsResult:
+        """Read one kind of map record: the regions with their bounds, the
+        cameras, the sound definitions, the imported files, the strings
+        the map's text refers to (TRIGSTR ids), or a terrain summary with
+        its tilesets, size, cliff levels and how much of each ground
+        texture is used. Use read_member for the full terrain grid."""
+        return _tools.map_records(roots, path, kind, max_chars)
 
     return server
 

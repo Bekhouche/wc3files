@@ -163,3 +163,100 @@ class ReplayInfoResult(TypedDict):
     players: list[ReplayPlayer]
     w3mmd: NotRequired[Annotated[W3mmdResult, Field(
         description='Given only when the map records W3MMD results.')]]
+
+
+PlacedKind = Literal['units', 'doodads']
+RecordKind = Literal['regions', 'cameras', 'sounds', 'imports', 'strings', 'terrain']
+
+
+class OverviewCounts(TypedDict):
+    units: Annotated[int | None, Field(description='Units and items placed on the map.')]
+    doodads: Annotated[int | None, Field(description='Doodads and destructables placed on the map.')]
+    regions: int | None
+    cameras: int | None
+    sounds: int | None
+    imports: Annotated[int | None, Field(description='Files listed in war3map.imp.')]
+    strings: Annotated[int | None, Field(description='Entries of war3map.wts.')]
+    triggers: Annotated[int | None, Field(description='GUI triggers in war3map.wtg.')]
+
+
+class OverviewTerrain(TypedDict):
+    main_tileset: str | None
+    width: int | None
+    height: int | None
+
+
+class MapOverviewResult(TypedDict):
+    path: str
+    name: str | None
+    author: str | None
+    suggested_players: str | None
+    players: int
+    forces: int
+    script: Annotated[str | None, Field(description='The script member, such as war3map.j.')]
+    script_language: str | None
+    game_version: list[int] | None
+    members: Annotated[int, Field(description='Number of files the map holds.')]
+    terrain: Annotated[OverviewTerrain | None, Field(description='Null without war3map.w3e.')]
+    counts: Annotated[OverviewCounts, Field(
+        description='How many of each the map holds; null when that file cannot be read.')]
+    objects: Annotated[dict[str, dict[str, int] | None], Field(
+        description='Object type (w3u, w3a, ...) to the number of original (changed standard) '
+                    'and custom objects; only the types the map has.')]
+
+
+class PlacedObject(TypedDict):
+    index: Annotated[int, Field(description='Position in the file.')]
+    id: Annotated[str, Field(description='Four-character type id, such as hfoo or LTlt.')]
+    x: float
+    y: float
+    z: float
+    facing: Annotated[float | None, Field(description='Facing in degrees, as the World Editor shows it.')]
+    scale: Annotated[list[float], Field(description='Scale on x, y and z.')]
+    variation: int | None
+    owner: NotRequired[Annotated[int | None, Field(description='Units: player number, from 0.')]]
+    hp: NotRequired[Annotated[int | None, Field(description='Units: hit points; -1 is the default.')]]
+    mana: NotRequired[Annotated[int | None, Field(description='Units: mana; -1 is the default.')]]
+    creation_number: NotRequired[Annotated[int | None, Field(
+        description='Units: the number the World Editor names the unit by in triggers.')]]
+    life: NotRequired[Annotated[int | None, Field(description='Doodads: life in percent.')]]
+    editor_id: NotRequired[Annotated[int | None, Field(
+        description='Doodads: the number the World Editor names the doodad by in triggers.')]]
+
+
+class PlacedObjectsResult(TypedDict):
+    path: str
+    kind: PlacedKind
+    total: Annotated[int, Field(description='How many match, before limit.')]
+    objects: list[PlacedObject]
+    truncated: Annotated[bool, Field(description='True when limit left some out.')]
+
+
+class TerrainSummary(TypedDict):
+    version: int | None
+    main_tileset: str | None
+    custom_tileset: bool | None
+    ground_tilesets: Annotated[list[str], Field(description='Ground texture ids, such as Ldrt.')]
+    cliff_tilesets: list[str]
+    width: Annotated[int | None, Field(description='Width in tile corners.')]
+    height: Annotated[int | None, Field(description='Height in tile corners.')]
+    offset_x: float | None
+    offset_y: float | None
+    corners: int
+    water_corners: int
+    ramp_corners: int
+    blight_corners: int
+    cliff_levels: Annotated[list[int] | None, Field(description='Lowest and highest cliff level.')]
+    ground_texture_use: Annotated[dict[str, int], Field(
+        description='Ground texture id to the number of corners that use it, most used first.')]
+
+
+class MapRecordsResult(TypedDict):
+    path: str
+    kind: RecordKind
+    member: Annotated[str, Field(description='The map file read, such as war3map.w3r.')]
+    records: NotRequired[Annotated[list[dict[str, Any]], Field(
+        description='One record per region, camera, sound, import or string, with the fields '
+                    '`wc3files dump` gives; strings are {id, text}. Not given for terrain.')]]
+    terrain: NotRequired[Annotated[TerrainSummary, Field(
+        description='Given for kind terrain when the map has war3map.w3e.')]]

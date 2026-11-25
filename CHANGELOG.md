@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Added
+
+- Three MCP tools that read the rest of a map: `map_overview` (what a map holds, in one call), `placed_objects` (placed units and doodads, filtered by type or owner, with facing in degrees) and `map_records` (regions, cameras, sounds, imports, strings, or a terrain summary). Each has an output schema; on 1,602 results from 250 corpus maps, each validates and comes back unchanged (#271).
+
 ## [0.6.3] - 2026-11-25
 
 ### Changed

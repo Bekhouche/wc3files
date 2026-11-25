@@ -143,10 +143,76 @@ class TestTools(ToolTestCase):
             {'path': 'Units\\Human\\Footman\\Footman.blp', 'replaceable_id': 0},
             {'path': '', 'replaceable_id': 1}])
 
+    def _full_map(self):
+        """The sample map with real placed units and doodads, regions,
+        cameras, sounds and imports, from the format samples (#271)."""
+        path = os.path.join(self.root, 'full.w3x')
+        if not os.path.exists(path):
+            archive = W3xFile()
+            archive.read(sample_path('sample.w3x'))
+            files = dict(archive.files)
+            for member, sample in (('war3mapUnits.doo', 'sample.doo'),
+                                   ('war3map.doo', 'sample_doodads_v8_11.doo'),
+                                   ('war3map.w3r', 'sample.w3r'), ('war3map.w3c', 'sample.w3c'),
+                                   ('war3map.w3s', 'sample.w3s'), ('war3map.imp', 'sample.imp')):
+                with open(sample_path(sample), 'rb') as handle:
+                    files[member] = handle.read()
+            files['(listfile)'] = '\r\n'.join(n for n in files if n != '(listfile)').encode()
+            archive.build_from_files(files, path)
+        return path
+
+    def test_placed_objects(self):
+        path = self._full_map()
+        units = T.placed_objects(self.roots, path, 'units')
+        self.assertEqual(units['total'], 2)
+        unit = units['objects'][0]
+        self.assertEqual(unit['id'], 'hfoo')
+        self.assertTrue(0 <= unit['facing'] < 360)
+        self.assertEqual(len(unit['scale']), 3)
+        self.assertIn('owner', unit)
+        doodads = T.placed_objects(self.roots, path, 'doodads', limit=5)
+        self.assertEqual((doodads['total'], len(doodads['objects']), doodads['truncated']),
+                         (54, 5, True))
+        first = doodads['objects'][0]['id']
+        same = T.placed_objects(self.roots, path, 'doodads', id=first)
+        self.assertTrue(same['total'] >= 1)
+        self.assertTrue(all(o['id'] == first for o in same['objects']))
+        self.assertEqual(T.placed_objects(self.roots, path, 'units', owner=99)['total'], 0)
+        with self.assertRaises(ValueError):
+            T.placed_objects(self.roots, path, 'trees')
+
+    def test_map_records(self):
+        path = self._full_map()
+        for kind in ('regions', 'cameras', 'sounds', 'imports'):
+            with self.subTest(kind=kind):
+                records = T.map_records(self.roots, path, kind)['records']
+                self.assertTrue(records)
+                self.assertIsInstance(records[0], dict)
+        for region in T.map_records(self.roots, path, 'regions')['records']:
+            self.assertNotIn('\x00', region.get('weather_effect') or '')
+        strings = T.map_records(self.roots, self.map, 'strings')
+        self.assertEqual(strings['member'], 'war3map.wts')
+        self.assertNotIn('terrain', T.map_records(self.roots, self.map, 'terrain'))
+        with self.assertRaises(ValueError):
+            T.map_records(self.roots, path, 'units')
+
+    def test_map_overview(self):
+        overview = T.map_overview(self.roots, self._full_map())
+        self.assertEqual(overview['name'], 'Sample Map')
+        counts = overview['counts']
+        self.assertEqual((counts['units'], counts['doodads']), (2, 54))
+        for kind in ('regions', 'cameras', 'sounds', 'imports'):
+            self.assertTrue(counts[kind], kind)
+        # The plain sample map keeps unit records in war3map.doo, which is
+        # not a doodad file: the count is null, not an error.
+        self.assertIsNone(T.map_overview(self.roots, self.map)['counts']['doodads'])
+
     def test_a_protected_map_is_refused(self):
         for tool in (T.map_info, T.list_members, T.check_script, T.trigger_text,
-                     lambda roots, path: T.read_member(roots, path, 'war3map.w3i')):
-            with self.subTest(tool=getattr(tool, '__name__', 'read_member')):
+                     T.map_overview, T.placed_objects,
+                     lambda roots, path: T.read_member(roots, path, 'war3map.w3i'),
+                     lambda roots, path: T.map_records(roots, path, 'regions')):
+            with self.subTest(tool=getattr(tool, '__name__', 'lambda')):
                 with self.assertRaises(ProtectedMapError):
                     tool(self.roots, self.protected)
 
