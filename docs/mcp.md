@@ -106,6 +106,10 @@ mcp-publisher publish
 | `model_info(path, member)` | A model's name, format, version, sequences and textures; `member` names a model inside a map |
 | `replay_info(path)` | A replay's game name, map, length, version and players, and its W3MMD winners and losers when it records them |
 
+Every tool is declared read-only, not destructive, idempotent and closed-world
+in its MCP annotations, and every parameter has a description in the tool's
+input schema, so a client can tell what a call does before making it.
+
 A result longer than `max_chars` characters (200,000 by default) is refused
 with a message that says how to ask for less, so a whole map's terrain or
 trigger text does not fill the assistant's context by accident.
