@@ -387,3 +387,19 @@ class EditRecordsResult(EditResult):
         'where reference is the TRIGSTR_ text other files use.'))]
     changed: Annotated[list[int], Field(description='Indices (or string ids) changed.')]
     deleted: Annotated[list[int], Field(description='Indices deleted.')]
+
+
+class EditScriptResult(EditResult):
+    script: Annotated[str, Field(description='The script member, such as war3map.j.')]
+    language: Annotated[str, Field(description='jass or lua.')]
+    replaced: bool
+    init_function: str | None
+    issues_before: Annotated[int, Field(description='Issue findings of the script checker before.')]
+    issues_after: Annotated[int, Field(description='Issue findings after; never a new one.')]
+
+
+class ImportFileResult(EditResult):
+    member: Annotated[str, Field(description='The file inside the map.')]
+    size: Annotated[int, Field(description='Its size in bytes.')]
+    replaced: Annotated[bool, Field(description='True when the map had a file of that name.')]
+    listed: Annotated[bool, Field(description='True when it was added to war3map.imp.')]

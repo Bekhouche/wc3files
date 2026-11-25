@@ -11,6 +11,8 @@ Like tools.py, nothing here imports the `mcp` package.
 """
 import math
 import os
+import re
+import tempfile
 
 from wc3files.w3x.modes import _read_files, _write_map
 
@@ -679,4 +681,175 @@ def edit_records(roots, path, kind, add=None, change=None, delete=None, out=''):
     files[key] = data_bytes
     result = commit(source, files, {key: data_bytes}, out)
     result.update({'kind': kind, 'added': added, 'changed': changed, 'deleted': deleted})
+    return plain(result)
+
+
+# ---- edit_script and import_file (#275) --------------------------------------
+
+_SCRIPT_MEMBERS = ('war3map.j', 'scripts\\war3map.j', 'war3map.lua', 'scripts\\war3map.lua')
+_IDENTIFIER = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+_JASS_MAIN = re.compile(r'^[ \t]*function[ \t]+main[ \t]+takes\b.*$', re.MULTILINE)
+_LUA_MAIN = re.compile(r'^[ \t]*function[ \t]+main[ \t]*\([ \t]*\).*$', re.MULTILINE)
+_JASS_GLOBALS = re.compile(r'^[ \t]*globals[ \t]*\r?\n(.*?)^[ \t]*endglobals[ \t]*\r?$',
+                           re.MULTILINE | re.DOTALL)
+
+
+def _issues(name, text):
+    """The 'issue' findings of the script checker for script `text`, as
+    a set of messages; ValueError when the script does not parse."""
+    from wc3files import ScriptFile
+    with tempfile.TemporaryDirectory() as tmp:
+        target = os.path.join(tmp, name.replace('\\', '/').rsplit('/', 1)[-1])
+        with open(target, 'w', encoding='utf-8', newline='') as handle:
+            handle.write(text)
+        script = ScriptFile()
+        script.read(target)
+    return {f['message'] for f in script.validate() if f.get('severity') == 'issue'}
+
+
+def _insert_jass(script, code, init, newline):
+    main = _JASS_MAIN.search(script)
+    if main is None:
+        raise ValueError('the script has no function main')
+    globals_body = ''
+    block = _JASS_GLOBALS.search(code)
+    if block:
+        globals_body = block.group(1)
+        code = code[:block.start()] + code[block.end():]
+        if _JASS_GLOBALS.search(code):
+            raise ValueError('give at most one globals block')
+    script = script[:main.start()] + code.strip('\r\n') + newline + newline + script[main.start():]
+    if globals_body.strip():
+        existing = re.search(r'^[ \t]*endglobals[ \t]*\r?$', script, re.MULTILINE)
+        if existing is None or existing.start() > script.find(code.strip('\r\n')):
+            script = 'globals' + newline + globals_body.rstrip('\r\n') + newline + 'endglobals' \
+                + newline + newline + script
+        else:
+            script = (script[:existing.start()] + globals_body.rstrip('\r\n') + newline
+                      + script[existing.start():])
+    if init:
+        main = _JASS_MAIN.search(script)
+        # The line after main's header. With CRLF, main.end() is after the
+        # \r, so adding len(newline) would land one character into that line.
+        position = script.index('\n', main.start()) + 1
+        lines = script[position:].split(newline)
+        skip = 0
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith('local ') or stripped == '' or stripped.startswith('//'):
+                skip += 1
+                continue
+            break
+        offset = position + sum(len(line) + len(newline) for line in lines[:skip])
+        script = script[:offset] + f'    call {init}(){newline}' + script[offset:]
+    return script
+
+
+def _insert_lua(script, code, init, newline):
+    main = _LUA_MAIN.search(script)
+    if main is None:
+        raise ValueError('the script has no function main()')
+    script = script[:main.start()] + code.strip('\r\n') + newline + newline + script[main.start():]
+    if init:
+        main = _LUA_MAIN.search(script)
+        position = script.index('\n', main.start()) + 1
+        script = script[:position] + f'    {init}(){newline}' + script[position:]
+    return script
+
+
+def edit_script(roots, path, code, init_function='', replace=False, out=''):
+    """Add code to a map's JASS or Lua script, or replace the script."""
+    if not isinstance(code, str) or not code.strip():
+        raise ValueError('code is empty')
+    if init_function and not _IDENTIFIER.match(init_function):
+        raise ValueError(f'init_function {init_function!r} is not a function name')
+    if replace and init_function:
+        raise ValueError('init_function adds a call to main; a replaced script has its own main')
+    source, out = target_path(roots, path, out)
+    files = _read_files(source)
+    key = next((k for name in _SCRIPT_MEMBERS for k in [_find(files, name)] if k), None)
+    if key is None:
+        raise ValueError(f'{source} has no war3map.j or war3map.lua')
+    raw = files[key]
+    script = raw.decode('utf-8-sig', errors='surrogateescape')
+    newline = '\r\n' if '\r\n' in script else '\n'
+    lua = key.lower().endswith('.lua')
+    before = _issues(key, script)
+    if replace:
+        edited = code
+        pattern = _LUA_MAIN if lua else _JASS_MAIN
+        if pattern.search(edited) is None:
+            raise ValueError('a replacing script needs its own function main')
+        config = r'^[ \t]*function[ \t]+config\b'
+        if re.search(config, edited, re.MULTILINE) is None:
+            raise ValueError('a replacing script needs its own function config')
+    else:
+        code = code.replace('\r\n', '\n').replace('\n', newline)
+        edited = (_insert_lua if lua else _insert_jass)(script, code, init_function, newline)
+    try:
+        after = _issues(key, edited)
+    except ValueError as exc:
+        raise ValueError(f'the edited script does not parse: {exc}') from exc
+    new = sorted(after - before)
+    if new:
+        raise ValueError(f'the edited script has {len(new)} new issue(s): '
+                         + '; '.join(new[:5]) + (' ...' if len(new) > 5 else ''))
+    data = edited.encode('utf-8', errors='surrogateescape')
+    if raw.startswith(b'\xef\xbb\xbf'):
+        data = b'\xef\xbb\xbf' + data
+    files[key] = data
+    result = commit(source, files, {key: data}, out)
+    result.update({'script': key, 'language': 'lua' if lua else 'jass',
+                   'replaced': bool(replace), 'init_function': init_function or None,
+                   'issues_before': len(before), 'issues_after': len(after)})
+    return plain(result)
+
+
+def _import_flags(entries):
+    """The flags byte for a new war3map.imp entry: what the map's own
+    entries use most, or 13, which 42,786 of the 48,487 entries in the
+    corpus maps' war3map.imp files use."""
+    counts = {}
+    for entry in entries:
+        counts[entry.get('flags')] = counts.get(entry.get('flags'), 0) + 1
+    return max(counts, key=counts.get) if counts else 13
+
+
+def import_file(roots, path, member, source, out=''):
+    """Add a file to a map, or replace one, and list it in war3map.imp."""
+    from wc3files.cli.formats import format_for_name
+    from wc3files.imp.imp_file import ImpFile
+    if not isinstance(member, str) or not member.strip():
+        raise ValueError('member is empty')
+    member = member.strip().replace('/', '\\')
+    base = member.rsplit('\\', 1)[-1]
+    if member.startswith('(') or member.lower() in {m.lower() for m in _SCRIPT_MEMBERS} \
+            or format_for_name(base) is not None or base.lower() == 'war3map.imp':
+        raise ValueError(f'{member} is map data or the script; use the edit tools for it, '
+                         f'which check what they write')
+    source_file = roots.resolve(source)
+    if not os.path.isfile(source_file):
+        raise ValueError(f'{source_file} is not a file')
+    with open(source_file, 'rb') as handle:
+        data = handle.read()
+    map_path, out = target_path(roots, path, out)
+    files = _read_files(map_path)
+    existing = _find(files, member)
+    key = existing or member
+    files[key] = data
+    imp_key = _find(files, 'war3map.imp') or 'war3map.imp'
+    imports = ImpFile()
+    if imp_key in files:
+        imports.read(files[imp_key])
+    listing = imports.get_data()
+    entries = listing.setdefault('files', [])
+    changed = {key: data}
+    if not any(e.get('path', '').lower() == key.lower() for e in entries):
+        entries.append({'flags': _import_flags(entries), 'path': key})
+        imports.import_data(listing)
+        files[imp_key] = imports.to_bytes()
+        changed[imp_key] = files[imp_key]
+    result = commit(map_path, files, changed, out)
+    result.update({'member': key, 'size': len(data), 'replaced': existing is not None,
+                   'listed': imp_key in changed})
     return plain(result)
