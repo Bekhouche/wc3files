@@ -324,6 +324,30 @@ def build_server(folders, allow_write=False):
         records."""
         return _edits.edit_placed(roots, path, kind, add, change, delete, out)
 
+    @tool('Edit regions, cameras and strings', writes=True)
+    def edit_records(
+            path: MapPath,
+            kind: Annotated[R.EditRecordKind, Field(description=(
+                'regions (war3map.w3r), cameras (war3map.w3c) or strings (war3map.wts).'))],
+            add: Annotated[list[R.RecordValues], Field(description=(
+                'New records. A region needs name, left, right, bottom and top; a camera '
+                'name, target_x and target_y; a string its text.'))] = [],
+            change: Annotated[list[R.RecordChange], Field(description=(
+                'Regions and cameras: {select, set}. Strings: {id, text}.'))] = [],
+            delete: Annotated[list[R.RecordSelector], Field(description=(
+                'Regions and cameras to delete, picked by index or name.'))] = [],
+            out: Out = '') -> R.EditRecordsResult:
+        """Add, change or delete a map's regions or cameras, or add and
+        change its strings. A region or camera that the script or GUI
+        triggers name (gg_rct_..., gg_cam_...) cannot be deleted or
+        renamed, and names must stay unique. Regions must lie on the map.
+        A new camera starts as the game's default camera. A new string
+        gets the next id, and its TRIGSTR_ reference is returned; strings
+        are not deleted, as other files refer to them. Rewriting
+        war3map.wts keeps every string but drops its comment lines. Use
+        map_records first to see what is there."""
+        return _edits.edit_records(roots, path, kind, add, change, delete, out)
+
     return server
 
 

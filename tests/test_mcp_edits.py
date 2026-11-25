@@ -231,5 +231,98 @@ class TestEditPlaced(EditTestCase):
         self.assertEqual(sorted(os.listdir(self.root)), ['placed.w3x', 'sample.w3x'])
 
 
+class TestEditRecords(EditTestCase):
+
+    def setUp(self):
+        super().setUp()
+        archive = W3xFile()
+        archive.read(sample_path('sample.w3x'))
+        files = dict(archive.files)
+        for member, sample in (('war3map.w3r', 'sample.w3r'), ('war3map.w3c', 'sample.w3c')):
+            with open(sample_path(sample), 'rb') as handle:
+                files[member] = handle.read()
+        regions = T.map_records
+        files['(listfile)'] = '\r\n'.join(n for n in files if n != '(listfile)').encode()
+        self.records = os.path.join(self.root, 'records.w3x')
+        archive.build_from_files(files, self.records)
+        self.region = regions(self.roots, 'records.w3x', 'regions')['records'][0]['name']
+        # The same map with a script that uses that region.
+        key = next(k for k in files if k.lower() == 'war3map.j')
+        files[key] = files[key] + ('\r\nglobals\r\n    rect gg_rct_%s = null\r\nendglobals\r\n'
+                                   % self.region.replace(' ', '_')).encode()
+        self.used = os.path.join(self.root, 'used.w3x')
+        archive.build_from_files(files, self.used)
+
+    def test_regions(self):
+        before = T.map_records(self.roots, 'records.w3x', 'regions')['records']
+        result = E.edit_records(self.roots, 'records.w3x', 'regions', add=[
+            {'name': 'Test Zone', 'left': -64, 'right': 64, 'bottom': -64, 'top': 64,
+             'color': [0, 128, 255], 'weather': 'RAhr'}])
+        after = T.map_records(self.roots, result['path'], 'regions')['records']
+        self.assertEqual(after[:len(before)], before)
+        new = after[-1]
+        self.assertEqual((new['name'], new['left'], new['top'], new['color'], new['weather_effect']),
+                         ('Test Zone', -64.0, 64.0, [0, 128, 255], 'RAhr'))
+        self.assertEqual(new['index'], max(r['index'] for r in before) + 1)
+        moved = E.edit_records(self.roots, 'records.w3x', 'regions', out='moved.w3x', change=[
+            {'select': {'index': 0}, 'set': {'right': before[0]['right'] + 32}}])
+        self.assertEqual(T.map_records(self.roots, moved['path'], 'regions')['records'][0]['right'],
+                         before[0]['right'] + 32)
+
+    def test_a_region_the_script_uses_is_kept(self):
+        for call in (dict(delete=[{'name': self.region}]),
+                     dict(change=[{'select': {'name': self.region}, 'set': {'name': 'Other'}}])):
+            with self.subTest(call=call):
+                with self.assertRaises(ValueError) as caught:
+                    E.edit_records(self.roots, 'used.w3x', 'regions', **call)
+                self.assertIn('gg_rct_', str(caught.exception))
+        result = E.edit_records(self.roots, 'records.w3x', 'regions',
+                                delete=[{'name': self.region}])
+        self.assertEqual(result['deleted'], [0])
+
+    def test_cameras_start_as_the_game_default(self):
+        result = E.edit_records(self.roots, 'records.w3x', 'cameras',
+                                add=[{'name': 'Intro', 'target_x': 100, 'target_y': 200}])
+        camera = T.map_records(self.roots, result['path'], 'cameras')['records'][-1]
+        self.assertEqual((camera['cinematic_name'], camera['target_x'], camera['distance'],
+                          camera['angle_of_attack'], camera['field_of_view'],
+                          camera['far_clipping_plane'], camera['rotation']),
+                         ('Intro', 100.0, 1650.0, 304.0, 70.0, 5000.0, 90.0))
+
+    def test_strings(self):
+        first = E.edit_records(self.roots, 'sample.w3x', 'strings', out='s1.w3x',
+                               add=[{'text': 'Hello'}, {'text': 'Two\r\nlines'}])
+        ids = [a['id'] for a in first['added']]
+        self.assertEqual(first['added'][0]['reference'], f'TRIGSTR_{ids[0]:03d}')
+        second = E.edit_records(self.roots, first['path'], 'strings', out='s2.w3x',
+                                change=[{'id': ids[0], 'text': 'Hello again'}])
+        texts = {r['id']: r['text'] for r in
+                 T.map_records(self.roots, second['path'], 'strings')['records']}
+        self.assertEqual((texts[ids[0]], texts[ids[1]]), ('Hello again', 'Two\r\nlines'))
+        for call in (dict(delete=[{'index': 0}]),
+                     dict(change=[{'id': 99999, 'text': 'x'}]),
+                     dict(add=[{'text': 'bad\r\n}\r\nend'}])):
+            with self.subTest(call=call):
+                with self.assertRaises(ValueError):
+                    E.edit_records(self.roots, first['path'], 'strings', **call)
+
+    def test_refusals_write_nothing(self):
+        for kind, call in (
+                ('regions', dict(add=[{'name': 'Far', 'left': 0, 'right': 1, 'bottom': 1, 'top': 0}])),
+                ('regions', dict(add=[{'left': 0, 'right': 1, 'bottom': 0, 'top': 1}])),
+                ('regions', dict(add=[{'name': 'C', 'left': 0, 'right': 1, 'bottom': 0, 'top': 1,
+                                       'color': [300, 0, 0]}])),
+                ('regions', dict(change=[{'select': {'index': 0}, 'set': {'target_x': 1}}])),
+                ('regions', dict(change=[{'select': {'name': 'nothing'}, 'set': {'left': 1}}])),
+                ('cameras', dict(add=[{'name': 'N', 'near_clipping_plane': 9000}])),
+                ('cameras', dict(add=[{'name': 'N', 'left': 1}])),
+                ('units', dict(delete=[{'index': 0}])),
+                ('regions', {})):
+            with self.subTest(kind=kind, call=call):
+                with self.assertRaises(ValueError):
+                    E.edit_records(self.roots, 'records.w3x', kind, **call)
+        self.assertEqual(sorted(os.listdir(self.root)), ['records.w3x', 'sample.w3x', 'used.w3x'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -339,3 +339,51 @@ class EditPlacedResult(EditResult):
     changed: Annotated[list[int], Field(description='Indices changed, in the file before the edit.')]
     deleted: Annotated[list[int], Field(description='Indices deleted, in the file before the edit.')]
     total: Annotated[int, Field(description='Records in the file after the edit.')]
+
+
+EditRecordKind = Literal['regions', 'cameras', 'strings']
+
+
+class RecordValues(TypedDict, total=False):
+    name: Annotated[str, Field(description='Regions and cameras: the name; the script global is '
+                                           'gg_rct_ or gg_cam_ and the name with _ for spaces.')]
+    left: float
+    right: float
+    bottom: float
+    top: float
+    weather: Annotated[str, Field(description='Regions: a weather id such as RAhr, or empty.')]
+    ambient_sound: Annotated[str, Field(description='Regions: a sound name, or empty.')]
+    color: Annotated[list[int], Field(description='Regions: [red, green, blue], 0 to 255.')]
+    target_x: float
+    target_y: float
+    z_offset: float
+    rotation: Annotated[float, Field(description='Cameras: degrees. New: 90.')]
+    angle_of_attack: Annotated[float, Field(description='Cameras: degrees. New: 304.')]
+    distance: Annotated[float, Field(description='Cameras: new: 1650.')]
+    roll: float
+    field_of_view: Annotated[float, Field(description='Cameras: degrees. New: 70.')]
+    far_clipping_plane: Annotated[float, Field(description='Cameras: new: 5000.')]
+    near_clipping_plane: Annotated[float, Field(description='Cameras: new: 16.')]
+    id: Annotated[int, Field(description='Strings: the string id (TRIGSTR_ number) to change.')]
+    text: Annotated[str, Field(description='Strings: the text.')]
+
+
+class RecordSelector(TypedDict, total=False):
+    index: Annotated[int, Field(description='Position, as map_records gives it.')]
+    name: Annotated[str, Field(description='Every record of this name.')]
+
+
+class RecordChange(TypedDict, total=False):
+    select: Annotated[RecordSelector, Field(description='Regions and cameras: index or name.')]
+    set: RecordValues
+    id: Annotated[int, Field(description='Strings: the id of the string to change.')]
+    text: Annotated[str, Field(description='Strings: its new text.')]
+
+
+class EditRecordsResult(EditResult):
+    kind: EditRecordKind
+    added: Annotated[list[dict[str, Any]], Field(description=(
+        'New records: {index, name} for regions and cameras, {id, reference} for strings, '
+        'where reference is the TRIGSTR_ text other files use.'))]
+    changed: Annotated[list[int], Field(description='Indices (or string ids) changed.')]
+    deleted: Annotated[list[int], Field(description='Indices deleted.')]
