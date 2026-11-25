@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-11-25
+
 ### Added
 
 - MCP `edit_script` and `import_file` (with `--allow-write`). `edit_script` adds JASS or Lua code before `main`, with an optional call at the top of `main` (after its locals in JASS), merges a JASS `globals` block into the script's own, or replaces the script; the result is parsed and checked, and refused on an issue the original did not have. `import_file` adds or replaces a file and lists it in war3map.imp; map data and the script are refused. On the 58 readable maps of a 90-map corpus sample, 58 script edits (55 JASS, 3 Lua) kept every original line exactly and in order, and 58 imports left every other file unchanged (#275).
@@ -216,7 +218,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.4...HEAD
+[0.6.4]: https://github.com/Bekhouche/wc3files/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Bekhouche/wc3files/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Bekhouche/wc3files/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Bekhouche/wc3files/compare/v0.6.0...v0.6.1
