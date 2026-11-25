@@ -1,0 +1,34 @@
+{
+  "frames": [
+    {
+      "name": "Panel",
+      "type": "BACKDROP",
+      "size": [0.24, 0.12],
+      "points": [{"point": "CENTER", "x": 0.4, "y": 0.3}],
+      "texture": "UI\\Widgets\\EscMenu\\Human\\blank-background.blp",
+      "children": [
+        {
+          "name": "Title",
+          "type": "TEXT",
+          "text": "Hello \"hero\"",
+          "points": [{"point": "TOP", "relative_to": "parent", "relative_point": "TOP", "x": 0, "y": -0.01}]
+        },
+        {
+          "name": "Close",
+          "type": "GLUETEXTBUTTON",
+          "template": "ScriptDialogButton",
+          "size": [0.08, 0.03],
+          "text": "Close",
+          "points": [{"point": "BOTTOM", "relative_to": "parent", "x": 0, "y": 0.01}]
+        }
+      ]
+    },
+    {
+      "name": "Hint",
+      "type": "TEXT",
+      "text": "Press Close",
+      "visible": false,
+      "points": [{"point": "TOPLEFT", "relative_to": "Panel", "relative_point": "BOTTOMLEFT", "x": 0, "y": -0.005}]
+    }
+  ]
+}

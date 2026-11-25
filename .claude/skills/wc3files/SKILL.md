@@ -234,8 +234,12 @@ targets - MPQ is documented well enough to implement natively.
   still works as one flat namespace.
 - `src/wc3files/files/binary_file.py` - shared binary read/write primitives
   every format parser is built on.
-- `src/wc3files/gui/`, `src/wc3files/utils/` - GUI front end and shared
-  helpers.
+- `src/wc3files/ui/` - in-game UI frames (#172): `Layout`/`Frame`/`Point`
+  (`frames.py`, JSON in and out, `check()`), JASS and Lua writers over the
+  frame natives (`code.py`), `.fdf` to and from a layout through `FdfFile`
+  (`fdf.py`), and a custom-text trigger merged into a map's wtg/wct
+  (`triggers.py`, `add_ui_trigger`). CLI `ui-build`. See `docs/ui.md`.
+- `src/wc3files/utils/` - shared helpers.
 - `src/wc3files/mcp/` - the MCP server, `wc3files-mcp` (optional extra
   `wc3files[mcp]`, #179). `tools.py` holds the read-only tools as plain
   functions that never import `mcp` (`Roots` limits paths to the `--root`

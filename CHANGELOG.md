@@ -12,6 +12,7 @@ section to the new version and its date.
 
 ### Added
 
+- `wc3files.ui`: in-game UI frames for 1.31 and later, described as a layout (JSON or Python) and written as the JASS or Lua that creates them with the frame natives, as an .fdf, or as a custom-text trigger merged into a map's `war3map.wtg` and `war3map.wct` for World Editor users, classic or Reforged. An .fdf reads back into a layout. CLI `ui-build`; see `docs/ui.md` (#172).
 - An MCP server, `wc3files-mcp` (`pip install "wc3files[mcp]"`), so an AI assistant such as Claude can read maps, models and replays: `list_files`, `map_info`, `list_members`, `read_member`, `object_data`, `trigger_text`, `check_script`, `model_info` and `replay_info`. Every tool only reads, opens files under the `--root` folders only, and refuses protected maps. The tools are plain functions in `wc3files.mcp.tools`. See `docs/mcp.md` (#179).
 - Every map, model, table and script file class has `get_data()` and `import_data(data)`, which returns the handler. `RegionFile` and `PreviewIconsFile` had neither, eleven classes had no `import_data()`, and seven had only `export_data()`, which stays as the same method. The CLI no longer sets their private `_data` (#174).
 - Every map sub-file class has `to_bytes()`, so a parsed member can be changed and put back into `W3xFile.files` without a temporary file; `write()` saves what `to_bytes()` returns. Only `MapDoodadsFile` had it (#173).
@@ -23,6 +24,7 @@ section to the new version and its date.
 
 ### Removed
 
+- The empty `wc3files.gui` package; `wc3files.ui` takes its place (#172).
 - Python 3.9, which reached its end of life in October 2025. The package needs 3.10 or newer, and CI tests 3.10 as the oldest version on Linux, Windows and macOS (#178).
 
 ### Fixed

@@ -26,6 +26,7 @@ print(sorted(archive.files))          # war3map.w3i, war3map.j, war3map.doo, ...
 | [Game data for other versions](gamedata.md) | Profiles of another version's tables, extracted from an install |
 | [Lni mode](lni.md) | A map as a folder of text files and back, for version control |
 | [Triggers and scripts](triggers.md) | GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script |
+| [In-game UI frames](ui.md) | Frames as data, written as JASS, Lua, .fdf or a map trigger |
 | [MCP server](mcp.md) | `wc3files-mcp`: read-only tools that let an AI assistant read your maps, models and replays |
 
 ## What a Warcraft III map is
