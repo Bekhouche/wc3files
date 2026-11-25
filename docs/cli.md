@@ -236,9 +236,21 @@ changed files.
 ## Replays
 
 ```bash
+wc3files replay-info replay.w3g           # game, players, who left, chat, winners
+wc3files replay-info replay.w3g --json    # the same as JSON (--no-chat leaves chat out)
 wc3files replay-mmd replay.w3g            # the W3MMD meta data a replay carries
 wc3files replay-actions replay.w3g        # per-player action totals
 ```
+
+`replay-info` lists the players from the game's slot table, with team
+(`obs` for an observer), colour, race and handicap, then who left and when,
+the W3MMD winners when the map records them, and the chat with timestamps
+(the first 50; `--max-chat` shows more). A leave is shown with its reason,
+remote or local, and its result as the raw code: the replay format
+specification reads the result differently by reason and context and does
+not document the two codes most Reforged replays use, so the W3MMD results
+are the reliable account of who won. Chat and leave times count the
+recorded time slots, which can run past the length the header gives.
 
 An unfinished replay also reads: the `TempReplay.w3g` the game leaves after a
 crash or a hang has no header yet (the game writes it when the game ends),

@@ -219,12 +219,18 @@ def build_server(folders, allow_write=False):
 
     @tool('Replay information')
     def replay_info(
-            path: Annotated[str, Field(description='The .w3g replay. ' + _PATH)]) -> R.ReplayInfoResult:
-        """Read a replay's summary: game name, map, host, length, game
-        version, players, and the W3MMD winners and losers when the map
-        records them. Use it to answer who played a game, on which map, for
-        how long and who won."""
-        return _tools.replay_info(roots, path)
+            path: Annotated[str, Field(description='The .w3g replay. ' + _PATH)],
+            chat: Annotated[bool, Field(description=(
+                'Include the chat. A long game has hundreds of messages; false leaves '
+                'them out.'))] = True,
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.ReplayInfoResult:
+        """Read what happened in a replay: game name, map, host and length,
+        the players with team, colour, race and handicap, who left and when,
+        the chat with timestamps, and the W3MMD winners and losers when the
+        map records them. Use it to answer who played, who won, who left
+        early or what was said; leave result codes are raw, so winners come
+        from w3mmd."""
+        return _tools.replay_info(roots, path, chat, max_chars)
 
     @tool('Map overview')
     def map_overview(path: MapPath) -> R.MapOverviewResult:

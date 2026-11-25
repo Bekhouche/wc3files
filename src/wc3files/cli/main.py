@@ -938,6 +938,62 @@ def _ui_into_map(layout, args):
           f"map is saved in the World Editor", file=sys.stderr)
 
 
+def _clock(ms):
+    seconds = int((ms or 0) // 1000)
+    return f'{seconds // 3600}:{seconds // 60 % 60:02d}:{seconds % 60:02d}'
+
+
+def _cmd_replay_info(args):
+    """Summarize a replay: game, players, chat, leaves and W3MMD results."""
+    from wc3files import ReplayFile
+    from wc3files.w3g.summary import summarize
+
+    replay = ReplayFile()
+    replay.read(args.replay)
+    summary = summarize(replay.get_data(), chat=not args.no_chat)
+    if args.json:
+        _write_json(summary, args.out)
+        return
+
+    print(f"game     : {summary['game_name']}")
+    print(f"map      : {summary['map']}")
+    print(f"host     : {summary['host']}")
+    length = _clock(summary['length_ms'])
+    if summary['unfinished']:
+        length += ' (unfinished replay: up to the last recorded time slot)'
+    print(f"length   : {length}")
+    print(f"version  : {summary['version']} build {summary['build']}"
+          + (' (Reforged)' if summary['reforged'] else ''))
+    print()
+    print(f"{'slot':>4}  {'player':28} {'team':>4}  {'colour':11} {'race':10} handicap")
+    for player in summary['players']:
+        team = 'obs' if player['observer'] else str(player['team'] + 1)
+        print(f"{player['slot'] + 1:>4}  {str(player['name'])[:28]:28} {team:>4}  "
+              f"{str(player['color_name'])[:11]:11} {str(player['race'])[:10]:10} "
+              f"{player['handicap']}%" + ('  host' if player['host'] else ''))
+    if summary['leaves']:
+        print()
+        print('left:')
+        for leave in summary['leaves']:
+            print(f"  {_clock(leave['time_ms'])}  {leave['name']}"
+                  f"  ({leave['reason'] or 'reason ' + str(leave['reason_code'])}, "
+                  f"result 0x{leave['result_code']:02X})")
+    if 'w3mmd' in summary:
+        mmd = summary['w3mmd']
+        print()
+        print('W3MMD winners: ' + (', '.join(str(mmd['players'].get(str(p), mmd['players'].get(p, p)))
+                                            for p in mmd['winners']) or 'none'))
+    messages = summary.get('chat') or []
+    if messages:
+        print()
+        print(f'chat ({len(messages)}):')
+        for message in messages[:args.max_chat]:
+            to = message['to'] if message['to'] != 'player' else f"slot {message['to_slot'] + 1}"
+            print(f"  {_clock(message['time_ms'])}  [{to}] {message['name']}: {message['text']}")
+        if len(messages) > args.max_chat:
+            print(f'  ... {len(messages) - args.max_chat} more (--max-chat, or --json for all)')
+
+
 def _cmd_replay_mmd(args):
     """Dump the W3MMD (map meta data) a replay carries."""
     from wc3files import ReplayFile
@@ -1832,6 +1888,21 @@ def build_parser():
                                 help="Extract every match under here, keeping the game's layout.")
     p_casc_extract.add_argument('--locale', default=None)
     p_casc_extract.set_defaults(func=_cmd_casc_extract)
+
+    p_replay_info = subparsers.add_parser(
+        'replay-info',
+        help=('Summarize a replay: game, length, players with team, colour and '
+              'race, who left and when, chat with timestamps, and the W3MMD '
+              'winners when the map records them.'))
+    p_replay_info.add_argument('replay', help='Path to a .w3g replay.')
+    p_replay_info.add_argument('--json', action='store_true',
+                               help='Emit JSON instead of a readable summary.')
+    p_replay_info.add_argument('--out', default='-',
+                               help='Where to write JSON (default stdout).')
+    p_replay_info.add_argument('--no-chat', action='store_true', help='Leave the chat out.')
+    p_replay_info.add_argument('--max-chat', type=int, default=50,
+                               help='How many chat messages the summary shows (default 50).')
+    p_replay_info.set_defaults(func=_cmd_replay_info)
 
     p_replay_mmd = subparsers.add_parser(
         'replay-mmd',

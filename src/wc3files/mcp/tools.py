@@ -377,36 +377,16 @@ def model_info(roots, path, member=''):
                   'textures': textures})
 
 
-def replay_info(roots, path):
-    """A replay's game, map, length and players, and its W3MMD results
-    when it carries them."""
+def replay_info(roots, path, chat=True, max_chars=DEFAULT_MAX_CHARS):
+    """A replay's game, players with team, colour and race, who left and
+    when, its chat with timestamps, and its W3MMD results when it carries
+    them (wc3files.w3g.summary, #263)."""
     from wc3files import ReplayFile
-    from wc3files.w3g import mmd as _mmd
+    from wc3files.w3g.summary import summarize
     path = roots.resolve(path)
     replay = ReplayFile()
     replay.read(path)
-    data = replay.get_data()
-    header = data.get('header') or {}
-    sub = header.get('sub') or {}
-    game = data.get('compressed_data') or {}
-    result = {
-        'path': path,
-        'game_name': game.get('GameName'),
-        'map': game.get('MapName'),
-        'host': game.get('CreatorName'),
-        'length_ms': sub.get('replay_length'),
-        'version': sub.get('version_number'),
-        'build': sub.get('build_number'),
-        'reforged': header.get('reforged'),
-        'players': [{'id': p.get('player_id'), 'name': p.get('name'),
-                     'race': p.get('race'), 'host': p.get('is_host')}
-                    for p in game.get('Players') or []],
-    }
-    stats = _mmd.from_replay(data)
-    if stats.messages:
-        result['w3mmd'] = {'players': stats.players, 'winners': stats.winners(),
-                           'losers': stats.losers()}
-    return plain(result)
+    return limited({'path': path, **summarize(replay.get_data(), chat=chat)}, max_chars)
 
 
 # ---- the rest of a map (#271) -------------------------------------------
