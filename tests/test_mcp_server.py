@@ -57,6 +57,28 @@ class TestMcpServer(unittest.TestCase):
         self.assertFalse(info.is_error)
         self.assertEqual(_json(info)['name'], 'Sample Map')
 
+    def test_tool_definitions(self):
+        # Every tool says it only reads, has a title, and describes every
+        # parameter, so a client can choose and call it (#265).
+        async def go():
+            async with Client(self.server) as client:
+                return (await client.list_tools()).tools
+        for tool in _run(go()):
+            with self.subTest(tool=tool.name):
+                notes = tool.annotations
+                self.assertTrue(notes.read_only_hint)
+                self.assertFalse(notes.destructive_hint)
+                self.assertTrue(notes.idempotent_hint)
+                self.assertFalse(notes.open_world_hint)
+                self.assertTrue(tool.title)
+                self.assertNotIn('\n', tool.description)
+                self.assertTrue(tool.description.endswith('gives the same result.'))
+                self.assertTrue(tool.description.split()[0][0].isupper())
+                properties = tool.input_schema['properties']
+                self.assertTrue(properties)
+                for name, schema in properties.items():
+                    self.assertTrue(schema.get('description'), name)
+
     def test_an_expected_failure_reaches_the_client_with_its_message(self):
         async def go():
             async with Client(self.server) as client:

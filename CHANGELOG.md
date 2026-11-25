@@ -12,6 +12,7 @@ section to the new version and its date.
 
 ### Added
 
+- `wc3files-mcp` tools declare that they only read (the MCP annotations `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`), have a title, describe every parameter in their input schema, and say when to use each tool instead of another. glama.ai rated the old definitions 2.8 of 5. The repository has a `glama.json` naming its maintainer (#265).
 - The README links to the server's page on glama.ai, an MCP directory, with its score badge. glama builds and checks the server on each release (#200).
 - A `Dockerfile` that runs `wc3files-mcp` on a mounted `/data` folder, with a `.dockerignore` that only lets the package sources into the build. CI builds the image and checks that the server answers an MCP `initialize` request. See `docs/mcp.md` (#198).
 
