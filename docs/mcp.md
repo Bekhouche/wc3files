@@ -63,6 +63,19 @@ without a separate `pip install`:
 uvx --from "wc3files[mcp]" wc3files-mcp --root D:/Maps
 ```
 
+### Docker
+
+The `Dockerfile` at the top of the repository builds an image that runs the
+server on `/data`. Mount the folder of maps there:
+
+```bash
+docker build -t wc3files-mcp .
+docker run -i --rm -v D:/Maps:/data:ro wc3files-mcp
+```
+
+For a client, the command is `docker` with the arguments
+`["run", "-i", "--rm", "-v", "D:/Maps:/data:ro", "wc3files-mcp"]`.
+
 ### MCP Registry
 
 The server is described for the official MCP Registry
