@@ -1636,6 +1636,14 @@ def _cmd_dump(args):
         print(f"Wrote {output}")
 
 
+def _cmd_textconv(args):
+    from .textconv import textconv
+    text = textconv(args.path)
+    out = sys.stdout.buffer
+    out.write(text.encode('utf-8'))
+    out.flush()
+
+
 def _cmd_build(args):
     fmt, paths = _format_and_paths('build', args.paths, 1)
     if len(paths) != 2:
@@ -1883,6 +1891,16 @@ def build_parser():
     p_dump.add_argument('--height', type=int, default=None,
                         help='Grid height, as --width.')
     p_dump.set_defaults(func=_cmd_dump)
+
+    p_textconv = subparsers.add_parser(
+        'textconv', help='Print a map file as text for git diff.',
+        description=('Print a map file as text that git diff can compare: the dump '
+                     'JSON with one record per line, scripts and other text files as '
+                     'they are, an MDX model as MDL, and any other file as its size '
+                     'and SHA-256. The format comes from the file name. See '
+                     + _DOCS + '#maps-in-git.'))
+    p_textconv.add_argument('path', help='The file to print (git passes it).')
+    p_textconv.set_defaults(func=_cmd_textconv)
 
     p_build = subparsers.add_parser(
         'build', help='Build a map sub-file back from a dump() JSON file.',
