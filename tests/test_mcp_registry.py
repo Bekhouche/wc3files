@@ -51,6 +51,10 @@ class TestServerJson(unittest.TestCase):
         self.assertTrue(option['isRequired'] and option['isRepeated'])
         args = build_parser().parse_args(['--root', 'a', '--root', 'b'])
         self.assertEqual(args.root, ['a', 'b'])
+        # --allow-write (#272) is listed as an optional flag the server has.
+        flag = self.package['packageArguments'][1]
+        self.assertEqual((flag['name'], flag['isRequired']), ('--allow-write', False))
+        self.assertTrue(build_parser().parse_args(['--root', 'a', '--allow-write']).allow_write)
 
 
 if __name__ == '__main__':
