@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-25
+
 ### Added
 
 - `wc3files-mcp` tools declare that they only read (the MCP annotations `readOnlyHint`, `destructiveHint`, `idempotentHint` and `openWorldHint`), have a title, describe every parameter in their input schema, and say when to use each tool instead of another. glama.ai rated the old definitions 2.8 of 5. The repository has a `glama.json` naming its maintainer (#265).
@@ -191,7 +193,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/Bekhouche/wc3files/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/Bekhouche/wc3files/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/Bekhouche/wc3files/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/Bekhouche/wc3files/compare/v0.4.0...v0.5.0
