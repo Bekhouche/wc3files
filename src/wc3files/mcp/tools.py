@@ -12,6 +12,7 @@ without it.
 """
 import base64
 import json
+import math
 import os
 import tempfile
 
@@ -406,3 +407,226 @@ def replay_info(roots, path):
         result['w3mmd'] = {'players': stats.players, 'winners': stats.winners(),
                            'losers': stats.losers()}
     return plain(result)
+
+
+# ---- the rest of a map (#271) -------------------------------------------
+
+PLACED_KINDS = {'units': 'war3mapUnits.doo', 'doodads': 'war3map.doo'}
+RECORD_KINDS = {'regions': 'war3map.w3r', 'cameras': 'war3map.w3c', 'sounds': 'war3map.w3s',
+                'imports': 'war3map.imp', 'strings': 'war3map.wts', 'terrain': 'war3map.w3e'}
+DEFAULT_LIMIT = 500
+
+
+def _map_members(roots, path, names):
+    """(resolved path, {lower name: (name, bytes)}) for a map, refusing
+    anything that is not a .w3x or .w3m map."""
+    path = roots.resolve(path)
+    if not _is_map(path):
+        raise ValueError(f'{path} is not a .w3x or .w3m map')
+    return path, _members(path, tuple(names))
+
+
+def _dump(name, data):
+    """What `wc3files dump` gives for the member `name` holding `data`."""
+    from wc3files.cli.formats import FORMATS, format_for_name
+    base = name.replace('\\', '/').rsplit('/', 1)[-1]
+    with tempfile.TemporaryDirectory() as tmp:
+        target = os.path.join(tmp, base)
+        with open(target, 'wb') as handle:
+            handle.write(data)
+        return FORMATS[format_for_name(base)].dump(target)
+
+
+def _degrees(radians):
+    return None if radians is None else round(math.degrees(radians) % 360, 2)
+
+
+def _placed(kind, record, index):
+    x, y, z = (list(record.get('position') or []) + [None] * 3)[:3]
+    scale = record.get('scale')
+    out = {'index': index, 'id': record.get('id'), 'x': x, 'y': y, 'z': z,
+           'facing': _degrees(record.get('rotation')),
+           'scale': list(scale) if isinstance(scale, (list, tuple)) else scale,
+           'variation': record.get('variation')}
+    if kind == 'units':
+        out.update({'owner': record.get('owner'), 'hp': record.get('hp'),
+                    'mana': record.get('mp'), 'creation_number': record.get('creation_number')})
+    else:
+        out.update({'life': record.get('life'), 'editor_id': record.get('editor_id')})
+    return out
+
+
+def placed_objects(roots, path, kind='units', id='', owner=None, limit=DEFAULT_LIMIT):
+    """The units (war3mapUnits.doo) or doodads (war3map.doo) placed on a
+    map, in file order, optionally only those of type `id` or, for units,
+    of player `owner`."""
+    if kind not in PLACED_KINDS:
+        raise ValueError(f'kind must be one of {", ".join(PLACED_KINDS)}')
+    member = PLACED_KINDS[kind]
+    path, found = _map_members(roots, path, (member,))
+    name, data = _first(found, (member,))
+    if data is None:
+        return plain({'path': path, 'kind': kind, 'total': 0, 'objects': [], 'truncated': False})
+    records = _dump(name, data).get(kind) or []
+    objects = []
+    total = 0
+    for index, record in enumerate(records):
+        if id and record.get('id') != id:
+            continue
+        if owner is not None and kind == 'units' and record.get('owner') != owner:
+            continue
+        total += 1
+        if len(objects) < limit:
+            objects.append(_placed(kind, record, index))
+    return plain({'path': path, 'kind': kind, 'total': total, 'objects': objects,
+                  'truncated': total > len(objects)})
+
+
+def _terrain_summary(data):
+    tiles = data.get('tiles') or []
+    textures = {}
+    layers = [t.get('layer_height') for t in tiles if t.get('layer_height') is not None]
+    for tile in tiles:
+        textures[tile.get('ground_texture')] = textures.get(tile.get('ground_texture'), 0) + 1
+    ground = list(data.get('ground_tilesets') or [])
+
+    def texture_name(index):
+        return str(ground[index] if isinstance(index, int) and 0 <= index < len(ground) else index)
+    return {
+        'version': data.get('version'),
+        'main_tileset': data.get('main_tileset'),
+        'custom_tileset': data.get('custom_tileset'),
+        'ground_tilesets': ground,
+        'cliff_tilesets': list(data.get('cliff_tilesets') or []),
+        'width': data.get('width'),
+        'height': data.get('height'),
+        'offset_x': data.get('offset_x'),
+        'offset_y': data.get('offset_y'),
+        'corners': len(tiles),
+        'water_corners': sum(1 for t in tiles if t.get('is_water')),
+        'ramp_corners': sum(1 for t in tiles if t.get('is_ramp')),
+        'blight_corners': sum(1 for t in tiles if t.get('is_blight')),
+        'cliff_levels': [min(layers), max(layers)] if layers else None,
+        'ground_texture_use': {texture_name(i): n for i, n in
+                               sorted(textures.items(), key=lambda kv: -kv[1])},
+    }
+
+
+def map_records(roots, path, kind, max_chars=DEFAULT_MAX_CHARS):
+    """A map's regions, cameras, sounds, imports or strings as records, or
+    a summary of its terrain."""
+    if kind not in RECORD_KINDS:
+        raise ValueError(f'kind must be one of {", ".join(RECORD_KINDS)}')
+    member = RECORD_KINDS[kind]
+    path, found = _map_members(roots, path, (member,))
+    name, data = _first(found, (member,))
+    result = {'path': path, 'kind': kind, 'member': member}
+    if data is None:
+        if kind != 'terrain':
+            result['records'] = []
+        return limited(result, max_chars)
+    dumped = _dump(name, data)
+    if kind == 'terrain':
+        result['terrain'] = _terrain_summary(dumped)
+    elif kind == 'strings':
+        result['records'] = [{'id': k, 'text': v} for k, v in dumped.items()]
+    elif kind == 'regions':
+        regions = dumped.get('regions') or {}
+        regions = list(regions.values()) if isinstance(regions, dict) else list(regions)
+        for region in regions:
+            # No weather is stored as four NUL bytes.
+            if isinstance(region.get('weather_effect'), str):
+                region['weather_effect'] = region['weather_effect'].strip(chr(0))
+        result['records'] = regions
+    elif kind == 'cameras':
+        result['records'] = list(dumped.get('cameras') or [])
+    elif kind == 'sounds':
+        result['records'] = list(dumped.get('sounds') or [])
+    else:
+        result['records'] = list(dumped.get('files') or [])
+    return limited(result, max_chars)
+
+
+def _count(fn):
+    """fn(), or None when the member cannot be read."""
+    try:
+        return fn()
+    except (ValueError, KeyError, EOFError, IndexError):
+        return None
+
+
+_RECORD_LISTS = {'regions': 'regions', 'cameras': 'cameras', 'sounds': 'sounds',
+                 'imports': 'files'}
+
+
+def map_overview(roots, path):
+    """One call that says what a map holds."""
+    from wc3files import ObjectFile
+    from wc3files.wtg import MapTriggersFile
+    info = map_info(roots, path)
+    path = info['path']
+    wanted = (list(PLACED_KINDS.values()) + list(RECORD_KINDS.values())
+              + [f'war3map.{t}' for t in OBJECT_TYPES] + ['war3map.wtg'] + list(SCRIPTS))
+    found = _members(path, tuple(wanted))
+
+    def records(kind):
+        name, data = _first(found, (RECORD_KINDS[kind],))
+        if data is None:
+            return 0
+        dumped = _dump(name, data)
+        return len(dumped if kind == 'strings' else (dumped.get(_RECORD_LISTS[kind]) or []))
+
+    def placed(kind):
+        name, data = _first(found, (PLACED_KINDS[kind],))
+        return 0 if data is None else len(_dump(name, data).get(kind) or [])
+
+    def object_tables(kind, data):
+        handler = ObjectFile()
+        handler.read(data, object_type=kind)
+        return {table: len(rows) for table, rows in handler.to_slk(kind).items()}
+
+    objects = {}
+    for kind in OBJECT_TYPES:
+        _name, data = _first(found, (f'war3map.{kind}',))
+        if data is not None:
+            objects[kind] = _count(lambda kind=kind, data=data: object_tables(kind, data))
+
+    def triggers():
+        _name, data = _first(found, ('war3map.wtg',))
+        if data is None:
+            return 0
+        handler = MapTriggersFile()
+        handler.read(data)
+        return len(handler.get_triggers())
+
+    terrain = None
+    name, data = _first(found, ('war3map.w3e',))
+    if data is not None:
+        summary = _count(lambda: _terrain_summary(_dump(name, data)))
+        if summary:
+            terrain = {k: summary[k] for k in ('main_tileset', 'width', 'height')}
+    script, _data = _first(found, SCRIPTS)
+    return plain({
+        'path': path,
+        'name': info['name'],
+        'author': info['author'],
+        'suggested_players': info['suggested_players'],
+        'players': len(info['players']),
+        'forces': len(info['forces']),
+        'script': script,
+        'script_language': info['script_language'],
+        'game_version': info['game_version'],
+        'members': info['members'],
+        'terrain': terrain,
+        'counts': {
+            'units': _count(lambda: placed('units')),
+            'doodads': _count(lambda: placed('doodads')),
+            'regions': _count(lambda: records('regions')),
+            'cameras': _count(lambda: records('cameras')),
+            'sounds': _count(lambda: records('sounds')),
+            'imports': _count(lambda: records('imports')),
+            'strings': _count(lambda: records('strings')),
+            'triggers': _count(triggers),
+        },
+        'objects': objects,
+    })

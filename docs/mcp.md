@@ -105,6 +105,9 @@ mcp-publisher publish
 | `check_script(path)` | JASS or Lua findings for the map's script, as `wc3files jass --check` reports them |
 | `model_info(path, member)` | A model's name, format, version, geoset count, sequences with their start and end frames, and textures with their replaceable ids; `member` names a model inside a map |
 | `replay_info(path)` | A replay's game name, map, length, version and players, and its W3MMD winners and losers when it records them |
+| `map_overview(path)` | What a map holds in one call: info, script, terrain size and tileset, and the number of placed units, doodads, regions, cameras, sounds, imports, strings, triggers and custom objects |
+| `placed_objects(path, kind, id, owner, limit)` | The units or doodads placed on a map, with type, position, facing in degrees, scale, owner and editor numbers, filtered by type or owner |
+| `map_records(path, kind, max_chars)` | A map's regions, cameras, sounds, imports or strings as records, or a terrain summary: tilesets, size, cliff levels and ground texture use |
 
 Every tool is declared read-only, not destructive, idempotent and closed-world
 in its MCP annotations, and every parameter has a description in the tool's

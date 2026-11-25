@@ -17,8 +17,9 @@ try:
 except ImportError:  # pragma: no cover
     Client = None
 
-TOOLS = ['check_script', 'list_files', 'list_members', 'map_info', 'model_info',
-         'object_data', 'read_member', 'replay_info', 'trigger_text']
+TOOLS = ['check_script', 'list_files', 'list_members', 'map_info', 'map_overview',
+         'map_records', 'model_info', 'object_data', 'placed_objects', 'read_member',
+         'replay_info', 'trigger_text']
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
@@ -100,6 +101,13 @@ class TestMcpServer(unittest.TestCase):
             ('trigger_text', {'path': 'sample.w3x'}, lambda: T.trigger_text(roots, 'sample.w3x')),
             ('check_script', {'path': 'sample.j'}, lambda: T.check_script(roots, 'sample.j')),
             ('model_info', {'path': 'sample.mdx'}, lambda: T.model_info(roots, 'sample.mdx')),
+            ('map_overview', {'path': 'sample.w3x'}, lambda: T.map_overview(roots, 'sample.w3x')),
+            ('placed_objects', {'path': 'sample.w3x'},
+             lambda: T.placed_objects(roots, 'sample.w3x')),
+            ('map_records', {'path': 'sample.w3x', 'kind': 'imports'},
+             lambda: T.map_records(roots, 'sample.w3x', 'imports')),
+            ('map_records', {'path': 'sample.w3x', 'kind': 'strings'},
+             lambda: T.map_records(roots, 'sample.w3x', 'strings')),
         ]
 
         async def go():
