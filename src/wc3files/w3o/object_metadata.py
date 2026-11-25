@@ -42,6 +42,24 @@ _FILES = {
 _DATA_SLOT_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'  # Reforged goes past J (DataK..DataN)
 
 
+def level_column(base_name, field_def, level):
+     """The column name for one level of a field in an ability, doodad or upgrade
+     table, as Blizzard's own tables name them: DataA1 for level 1 of DataA.
+
+     Real files store a field with levels (`repeat` > 0 in the metadata) from
+     level 1, and a field without levels at level 0 (measured over 342 corpus
+     maps: every one of 260,503 single w3a values, 40,991 w3d and 56,751 w3q
+     at level 0; levels of repeated fields from 1, with 11 w3d values at 0).
+     So level 0 of a field without levels has no suffix, and level n is
+     `{name}{n}`. These were named one too high before (#277): Name1 for a name,
+     DataA2 for level 1.
+     """
+     repeated = bool(field_def) and int(field_def.get('repeat') or 0) > 0
+     if level == 0 and not repeated:
+          return base_name
+     return f'{base_name}{level}'
+
+
 def field_display_name(field_def):
      """
      The effective column/display name for a metadata field row - `field_def['field']`, with
@@ -91,7 +109,12 @@ class ObjectMetaData(object):
           rows = slk.export_data()
 
           if object_type == ObjectFileType.Items:
-               rows = {code: row for code, row in rows.items() if row.get('slk') == 'ItemData'}
+               # Items take their name, tooltip, icon and other shared fields
+               # from the unit rows marked useItem (unam, utip, uico, ...); with
+               # ItemData rows alone, object_data named an item's name `unam`
+               # (#283).
+               rows = {code: row for code, row in rows.items()
+                       if row.get('slk') == 'ItemData' or str(row.get('useItem')) == '1'}
           elif object_type == ObjectFileType.Units:
                rows = {code: row for code, row in rows.items() if row.get('slk') != 'ItemData'}
 
