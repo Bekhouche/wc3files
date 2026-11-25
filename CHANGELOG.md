@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Added
+
+- `server.json` describes `wc3files-mcp` for the official MCP Registry as `io.github.Bekhouche/wc3files`, started with `uvx --from "wc3files[mcp]" wc3files-mcp --root FOLDER`, and the README carries the `mcp-name:` line the registry checks on PyPI. `docs/mcp.md` covers both (#195).
+
 ## [0.6.0] - 2026-11-25
 
 ### Added

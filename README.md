@@ -76,6 +76,8 @@ What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 - `pip install "wc3files[mcp]"`, then `wc3files-mcp --root D:/Maps`: read-only tools for an AI assistant such as Claude (map info, members, object data, trigger text, script checks, models, replays)
 - Opens only files under the given folders, and refuses protected maps
 
+<!-- mcp-name: io.github.Bekhouche/wc3files -->
+
 ### External tools and Lua
 - Run the `//! external` calls and Lua `//! externalblock` blocks of a vJass map (ObjectMerger, FileImporter, FileExporter, ConstantMerger), as the World Editor does when saving
 - Check that Lua before opening the editor: errors name the `.j` line they come from

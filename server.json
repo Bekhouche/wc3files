@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.Bekhouche/wc3files",
+  "title": "wc3files",
+  "description": "Read Warcraft III maps, object data, triggers, scripts, models and replays. Every tool only reads.",
+  "version": "0.6.0",
+  "websiteUrl": "https://github.com/Bekhouche/wc3files/blob/main/docs/mcp.md",
+  "repository": {
+    "url": "https://github.com/Bekhouche/wc3files",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "wc3files",
+      "version": "0.6.0",
+      "runtimeHint": "uvx",
+      "runtimeArguments": [
+        {
+          "type": "named",
+          "name": "--from",
+          "value": "wc3files[mcp]==0.6.0"
+        },
+        {
+          "type": "positional",
+          "value": "wc3files-mcp"
+        }
+      ],
+      "packageArguments": [
+        {
+          "type": "named",
+          "name": "--root",
+          "description": "A folder the tools may read: maps, models or replays. Repeat it for more folders.",
+          "isRequired": true,
+          "isRepeated": true,
+          "format": "filepath",
+          "valueHint": "folder"
+        }
+      ],
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
