@@ -124,9 +124,24 @@ class TestTools(ToolTestCase):
     def test_model_info(self):
         info = T.model_info(self.roots, 'models/sample.mdx')
         self.assertEqual((info['name'], info['format'], info['sequences']),
-                         ('SampleModel', 'mdx', ['Stand']))
+                         ('SampleModel', 'mdx', [{'name': 'Stand', 'start': 0, 'end': 1000}]))
         with self.assertRaises(ValueError):
             T.model_info(self.roots, self.map)
+
+    def test_model_info_textures(self):
+        # Every texture came back as None: the reader keys it 'path', and
+        # model_info read 'image'.
+        with open(sample_path('sample.mdl'), encoding='utf-8') as handle:
+            text = handle.read()
+        text += ('Textures 2 {\n\tBitmap {\n\t\tImage "Units\\\\Human\\\\Footman\\\\Footman.blp",\n'
+                 '\t}\n\tBitmap {\n\t\tImage "",\n\t\tReplaceableId 1,\n\t}\n}\n')
+        path = os.path.join(self.root, 'models', 'textured.mdl')
+        with open(path, 'w', encoding='utf-8') as handle:
+            handle.write(text)
+        info = T.model_info(self.roots, 'models/textured.mdl')
+        self.assertEqual(info['textures'], [
+            {'path': 'Units\\Human\\Footman\\Footman.blp', 'replaceable_id': 0},
+            {'path': '', 'replaceable_id': 1}])
 
     def test_a_protected_map_is_refused(self):
         for tool in (T.map_info, T.list_members, T.check_script, T.trigger_text,

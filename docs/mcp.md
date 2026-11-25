@@ -103,12 +103,14 @@ mcp-publisher publish
 | `object_data(path, object_type, ids)` | The objects a map changes or adds (units, items, destructables, doodads, abilities, buffs, upgrades), with readable field names, for the whole map or one object type or some ids |
 | `trigger_text(path, name, names_only)` | GUI triggers as the World Editor shows them; `names_only` lists the trigger names first, which is the way to start on a large map |
 | `check_script(path)` | JASS or Lua findings for the map's script, as `wc3files jass --check` reports them |
-| `model_info(path, member)` | A model's name, format, version, sequences and textures; `member` names a model inside a map |
+| `model_info(path, member)` | A model's name, format, version, geoset count, sequences with their start and end frames, and textures with their replaceable ids; `member` names a model inside a map |
 | `replay_info(path)` | A replay's game name, map, length, version and players, and its W3MMD winners and losers when it records them |
 
 Every tool is declared read-only, not destructive, idempotent and closed-world
 in its MCP annotations, and every parameter has a description in the tool's
 input schema, so a client can tell what a call does before making it.
+Each tool also publishes an output schema, the TypedDicts in
+`wc3files.mcp.results`, which gives every field of its result.
 
 A result longer than `max_chars` characters (200,000 by default) is refused
 with a message that says how to ask for less, so a whole map's terrain or

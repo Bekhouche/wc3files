@@ -39,7 +39,8 @@ class TestMcpServer(unittest.TestCase):
     def setUpClass(cls):
         from wc3files.mcp import build_server
         cls.root = tempfile.mkdtemp()
-        shutil.copy(sample_path('sample.w3x'), cls.root)
+        for name in ('sample.w3x', 'sample.mdx', 'sample.w3u', 'sample.j'):
+            shutil.copy(sample_path(name), cls.root)
         cls.server = build_server([cls.root])
 
     @classmethod
@@ -78,6 +79,44 @@ class TestMcpServer(unittest.TestCase):
                 self.assertTrue(properties)
                 for name, schema in properties.items():
                     self.assertTrue(schema.get('description'), name)
+
+    def test_structured_results_equal_the_functions(self):
+        # Every tool publishes an output schema, and its structured result is
+        # exactly what the function in tools.py returns: a key missing from
+        # the schema would be dropped without an error (#268).
+        from wc3files.mcp import tools as T
+        roots = T.Roots([self.root])
+        calls = [
+            ('list_files', {}, lambda: T.list_files(roots)),
+            ('map_info', {'path': 'sample.w3x'}, lambda: T.map_info(roots, 'sample.w3x')),
+            ('list_members', {'path': 'sample.w3x'}, lambda: T.list_members(roots, 'sample.w3x')),
+            ('read_member', {'path': 'sample.w3x', 'member': 'war3map.w3i'},
+             lambda: T.read_member(roots, 'sample.w3x', 'war3map.w3i')),
+            ('read_member', {'path': 'sample.w3x', 'member': 'war3map.j'},
+             lambda: T.read_member(roots, 'sample.w3x', 'war3map.j')),
+            ('object_data', {'path': 'sample.w3u'}, lambda: T.object_data(roots, 'sample.w3u')),
+            ('trigger_text', {'path': 'sample.w3x', 'names_only': True},
+             lambda: T.trigger_text(roots, 'sample.w3x', names_only=True)),
+            ('trigger_text', {'path': 'sample.w3x'}, lambda: T.trigger_text(roots, 'sample.w3x')),
+            ('check_script', {'path': 'sample.j'}, lambda: T.check_script(roots, 'sample.j')),
+            ('model_info', {'path': 'sample.mdx'}, lambda: T.model_info(roots, 'sample.mdx')),
+        ]
+
+        async def go():
+            async with Client(self.server) as client:
+                tools = {t.name: t for t in (await client.list_tools()).tools}
+                return tools, [await client.call_tool(name, args) for name, args, _ in calls]
+        tools, results = _run(go())
+        for tool in tools.values():
+            with self.subTest(schema=tool.name):
+                self.assertEqual(tool.output_schema.get('type'), 'object')
+                self.assertTrue(tool.output_schema.get('properties'))
+        self.assertEqual(set(tools['object_data'].input_schema['properties']['object_type']['enum']),
+                         {'', 'w3u', 'w3t', 'w3b', 'w3d', 'w3a', 'w3h', 'w3q'})
+        for (name, args, expected), result in zip(calls, results):
+            with self.subTest(call=name, args=args):
+                self.assertFalse(result.is_error, result.content)
+                self.assertEqual(result.structured_content, json.loads(json.dumps(expected())))
 
     def test_an_expected_failure_reaches_the_client_with_its_message(self):
         async def go():
