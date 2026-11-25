@@ -12,6 +12,8 @@ section to the new version and its date.
 
 ### Added
 
+- `wc3files-mcp --allow-write` registers edit tools, starting with `edit_objects`: create custom objects from standard ones, change or reset their fields by the names `object_data` shows or by field id, or delete them. An edit writes a new map (`<name>.edited.w3x` unless `out` says otherwise), reads it back and checks it; every other file is copied unchanged. Without the option the server stays read-only and lists no edit tool. On the 84 readable maps of a 120-map corpus sample, 441 edits (a new object in each object file a map has, all seven types) each left every existing object and every other file unchanged (#272).
+
 - Three MCP tools that read the rest of a map: `map_overview` (what a map holds, in one call), `placed_objects` (placed units and doodads, filtered by type or owner, with facing in degrees) and `map_records` (regions, cameras, sounds, imports, strings, or a terrain summary). Each has an output schema; on 1,602 results from 250 corpus maps, each validates and comes back unchanged (#271).
 
 ## [0.6.3] - 2026-11-25

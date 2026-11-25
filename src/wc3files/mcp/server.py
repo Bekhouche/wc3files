@@ -2,6 +2,10 @@
 over stdio with the official `mcp` package (`pip install wc3files[mcp]`).
 
     wc3files-mcp --root D:/Maps --root D:/Replays
+    wc3files-mcp --root D:/Maps --allow-write
+
+Without --allow-write every tool only reads. With it, the edit tools of
+wc3files.mcp.edits are registered too (#272); they write a new map.
 """
 import argparse
 import functools
@@ -19,6 +23,12 @@ INSTRUCTIONS = (
     'only reads. Files outside '
     'the folders the server was started with are refused, and so are '
     'protected maps.')
+WRITE_INSTRUCTIONS = (
+    ' This server was started with --allow-write: the edit_ tools change a '
+    'map and write the result as a new map, <name>.edited.w3x beside it '
+    'unless out names another path; the source changes only when out is the '
+    'source itself. Close the map in the World Editor first, and reopen the '
+    'written map to see the changes.')
 
 
 def _missing_mcp():
@@ -36,10 +46,17 @@ _MAX_CHARS = ('The longest result, in characters of JSON, before the call is '
               f'refused with a hint on how to ask for less. Default {_tools.DEFAULT_MAX_CHARS}.')
 _READ_ONLY = ('Only reads: it changes no file, and the same call on the same '
               'file gives the same result.')
+_WRITES = ('Writes a new map, <name>.edited.w3x beside the source unless out '
+           'names another path under the roots, and reads it back to check it; '
+           'the source changes only when out is the source. A protected map is '
+           'refused. The result names the map written.')
+_OUT = ('The map to write, under the roots. Empty writes <name>.edited.w3x '
+        'beside the source; giving the source itself overwrites it.')
 
 
-def build_server(folders):
-    """An MCPServer whose tools read files under `folders` only."""
+def build_server(folders, allow_write=False):
+    """An MCPServer whose tools read files under `folders` only; with
+    `allow_write`, also the edit tools, which write maps under them."""
     try:
         from typing import Annotated
 
@@ -48,19 +65,24 @@ def build_server(folders):
         from mcp.types import ToolAnnotations
         from pydantic import Field
 
+        from . import edits as _edits
         from . import results as R
     except ImportError:
         raise _missing_mcp() from None
     roots = _tools.Roots(folders)
-    server = MCPServer('wc3files', version=__version__, instructions=INSTRUCTIONS)
+    server = MCPServer('wc3files', version=__version__,
+                       instructions=INSTRUCTIONS + (WRITE_INSTRUCTIONS if allow_write else ''))
 
-    def tool(title):
-        """Register a tool as read-only and closed-world: every tool reads
-        files under the roots and nothing else. Its description is its
-        docstring followed by _READ_ONLY. A failure the tools expect (bad
-        input, which is a ValueError in wc3files, a protected map, a missing
-        file or a path outside the roots) reaches the client with its
-        message; the SDK would hide the message of any other exception."""
+    def tool(title, writes=False):
+        """Register a tool. Every tool is closed-world: it touches files
+        under the roots and nothing else. A reading tool is read-only and
+        its description ends with _READ_ONLY; an edit tool is neither
+        read-only nor idempotent, is destructive since out may name the
+        source, and its description ends with _WRITES. A failure the tools
+        expect (bad input, which is a ValueError in wc3files, a protected
+        map, a missing file or a path outside the roots) reaches the client
+        with its message; the SDK would hide the message of any other
+        exception."""
         def wrap(function):
             @functools.wraps(function)
             def run(*args, **kwargs):
@@ -68,11 +90,13 @@ def build_server(folders):
                     return function(*args, **kwargs)
                 except (ValueError, OSError) as exc:
                     raise ToolError(str(exc)) from exc
-            description = ' '.join(function.__doc__.split()) + ' ' + _READ_ONLY
+            description = (' '.join(function.__doc__.split()) + ' '
+                           + (_WRITES if writes else _READ_ONLY))
             return server.tool(title=title, description=description,
                                annotations=ToolAnnotations(
-                                   title=title, readOnlyHint=True, destructiveHint=False,
-                                   idempotentHint=True, openWorldHint=False))(run)
+                                   title=title, readOnlyHint=not writes,
+                                   destructiveHint=writes, idempotentHint=not writes,
+                                   openWorldHint=False))(run)
         return wrap
 
     MapPath = Annotated[str, Field(description=_MAP)]
@@ -250,6 +274,33 @@ def build_server(folders):
         texture is used. Use read_member for the full terrain grid."""
         return _tools.map_records(roots, path, kind, max_chars)
 
+    if not allow_write:
+        return server
+
+    Out = Annotated[str, Field(description=_OUT)]
+
+    @tool('Edit object data', writes=True)
+    def edit_objects(
+            path: MapPath,
+            object_type: Annotated[R.EditObjectType, Field(description=(
+                'The object file to edit: w3u units, w3t items, w3b destructables, '
+                'w3d doodads, w3a abilities, w3h buffs, w3q upgrades.'))],
+            changes: Annotated[list[R.ObjectChange], Field(description=(
+                'The changes, applied in order. All are checked before anything is '
+                'written; one that cannot be applied refuses the whole call.'),
+                min_length=1)],
+            out: Out = '') -> R.EditObjectsResult:
+        """Create, change or delete units, items, abilities and the other
+        objects of a map's object data. A change with base creates a custom
+        object from a standard one (h000 from hfoo); without base it changes
+        a standard or custom object already there. Fields are named as
+        object_data shows them (goldcost, HP, Name) or by their
+        four-character id (ugol); an ability field with levels takes
+        {"1": value, "2": value}. Values are checked against the game's
+        field types and limits. Use object_data first to see what the map
+        already changes."""
+        return _edits.edit_objects(roots, path, object_type, changes, out)
+
     return server
 
 
@@ -260,6 +311,9 @@ def build_parser():
     parser.add_argument('--root', action='append', required=True, metavar='FOLDER',
                         help='A folder the tools may read. Repeat it for more folders. '
                              'A relative path given to a tool is taken from the first.')
+    parser.add_argument('--allow-write', action='store_true',
+                        help='Also register the edit tools, which write maps under the roots. '
+                             'Without it every tool only reads.')
     parser.add_argument('--version', action='version', version=f'wc3files-mcp {__version__}')
     return parser
 
@@ -267,7 +321,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        server = build_server(args.root)
+        server = build_server(args.root, allow_write=args.allow_write)
     except ValueError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2
