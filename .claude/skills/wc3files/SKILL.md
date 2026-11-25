@@ -236,6 +236,12 @@ targets - MPQ is documented well enough to implement natively.
   every format parser is built on.
 - `src/wc3files/gui/`, `src/wc3files/utils/` - GUI front end and shared
   helpers.
+- `src/wc3files/mcp/` - the MCP server, `wc3files-mcp` (optional extra
+  `wc3files[mcp]`, #179). `tools.py` holds the read-only tools as plain
+  functions that never import `mcp` (`Roots` limits paths to the `--root`
+  folders; protected maps raise `ProtectedMapError`); `server.py` registers
+  them on the SDK's `MCPServer` and turns ValueError/OSError into tool
+  errors so their message reaches the client. See `docs/mcp.md`.
 - `w3x2lni/` - a mature Lua/C++ WC3 map converter/protector, kept as a local
   dev-only reference clone (gitignored, not part of the versioned project -
   not every checkout will have it). When adding a new format parser, check
