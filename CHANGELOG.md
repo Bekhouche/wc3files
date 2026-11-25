@@ -12,6 +12,8 @@ section to the new version and its date.
 
 ### Added
 
+- MCP `edit_records` (with `--allow-write`): add, change or delete regions and cameras, and add or change strings. A region or camera the script or GUI triggers use cannot be deleted or renamed; new cameras start as the game's default camera; a new string comes back with its `TRIGSTR_` reference. On the 74 readable maps of a 100-map corpus sample, 222 edits (a region, a camera and a string on each) left every existing record and every other file unchanged (#274).
+
 - MCP `edit_placed` (with `--allow-write`): place, move, change or delete placed units or doodads, picked by index, type id or editor number. Type ids are checked against the game's and the map's objects, positions against the terrain bounds, and new records get the next free editor number. On the 92 readable maps of a 120-map corpus sample, 86 unit edits (one unit added, one moved) and 90 doodad deletions each left every other record and every other file unchanged (#273).
 
 - `wc3files-mcp --allow-write` registers edit tools, starting with `edit_objects`: create custom objects from standard ones, change or reset their fields by the names `object_data` shows or by field id, or delete them. An edit writes a new map (`<name>.edited.w3x` unless `out` says otherwise), reads it back and checks it; every other file is copied unchanged. Without the option the server stays read-only and lists no edit tool. On the 84 readable maps of a 120-map corpus sample, 441 edits (a new object in each object file a map has, all seven types) each left every existing object and every other file unchanged (#272).

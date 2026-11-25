@@ -441,3 +441,242 @@ def edit_placed(roots, path, kind, add=None, change=None, delete=None, out=''):
     result.update({'kind': kind, 'added': added, 'changed': sorted(changed - deleted),
                    'deleted': sorted(deleted), 'total': len(kept)})
     return plain(result)
+
+
+# ---- edit_records (#274) ----------------------------------------------------
+
+RECORDS = {'regions': 'war3map.w3r', 'cameras': 'war3map.w3c', 'strings': 'war3map.wts'}
+_GLOBAL_PREFIX = {'regions': 'gg_rct_', 'cameras': 'gg_cam_'}
+_REFERENCE_MEMBERS = ('war3map.j', 'scripts\\war3map.j', 'war3map.lua', 'scripts\\war3map.lua',
+                      'war3map.wtg', 'war3map.wct')
+_REGION_SET = ('name', 'left', 'right', 'bottom', 'top', 'weather', 'ambient_sound', 'color')
+_CAMERA_SET = ('name', 'target_x', 'target_y', 'z_offset', 'rotation', 'angle_of_attack',
+               'distance', 'roll', 'field_of_view', 'far_clipping_plane', 'near_clipping_plane')
+# A new camera starts as the game's default camera: bj_CAMERA_DEFAULT_* of
+# blizzard.j (distance 1650, far z 5000, angle of attack 304, field of view
+# 70, roll 0, rotation 90). The near clipping plane is the value the World
+# Editor writes, as in the camera files of the corpus.
+_CAMERA_DEFAULTS = {'z_offset': 0.0, 'rotation': 90.0, 'angle_of_attack': 304.0,
+                    'distance': 1650.0, 'roll': 0.0, 'field_of_view': 70.0,
+                    'far_clipping_plane': 5000.0, 'near_clipping_plane': 16.0}
+
+
+def _global_name(kind, name):
+    return _GLOBAL_PREFIX[kind] + name.replace(' ', '_')
+
+
+def _referenced(files, kind, name):
+    """The members that name the region or camera `name` by its script
+    global (gg_rct_..., gg_cam_...)."""
+    needle = _global_name(kind, name).encode('utf-8')
+    found = []
+    for member in _REFERENCE_MEMBERS:
+        key = _find(files, member)
+        if key is not None and needle in files[key]:
+            found.append(key)
+    return found
+
+
+def _number(values, key, where):
+    value = values[key]
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ValueError(f'{where}: {key} is a number')
+    return float(value)
+
+
+def _set_region(region, values, bounds, where):
+    for key in values:
+        if key not in _REGION_SET:
+            raise ValueError(f'{where}: {key!r} cannot be set on a region; one of '
+                             f'{", ".join(_REGION_SET)}')
+    if 'name' in values:
+        if not isinstance(values['name'], str) or not values['name'].strip():
+            raise ValueError(f'{where}: name is a non-empty text')
+        region.name = values['name']
+    for key in ('left', 'right', 'bottom', 'top'):
+        if key in values:
+            setattr(region, key, _number(values, key, where))
+    if not (region.left < region.right and region.bottom < region.top):
+        raise ValueError(f'{where}: left must be below right and bottom below top')
+    if bounds and not (bounds[0] <= region.left and region.right <= bounds[2]
+                       and bounds[1] <= region.bottom and region.top <= bounds[3]):
+        raise ValueError(f'{where}: the region leaves the map, which spans x {bounds[0]} to '
+                         f'{bounds[2]} and y {bounds[1]} to {bounds[3]}')
+    if 'weather' in values:
+        weather = values['weather']
+        if weather in ('', None):
+            region.weather_effect = b'\x00\x00\x00\x00'
+        elif isinstance(weather, str) and len(weather) == 4:
+            region.weather_effect = weather.encode('latin-1')
+        else:
+            raise ValueError(f'{where}: weather is a four-character weather id such as RAhr, '
+                             f'or empty for none')
+    if 'ambient_sound' in values:
+        if not isinstance(values['ambient_sound'], str):
+            raise ValueError(f'{where}: ambient_sound is the name of a sound, or empty')
+        region.ambient_sound = values['ambient_sound']
+    if 'color' in values:
+        color = values['color']
+        if (not isinstance(color, (list, tuple)) or len(color) != 3
+                or not all(isinstance(c, int) and 0 <= c <= 255 for c in color)):
+            raise ValueError(f'{where}: color is [red, green, blue], each 0 to 255')
+        region.color = tuple(color)
+
+
+def _set_camera(camera, values, where):
+    for key in values:
+        if key not in _CAMERA_SET:
+            raise ValueError(f'{where}: {key!r} cannot be set on a camera; one of '
+                             f'{", ".join(_CAMERA_SET)}')
+    if 'name' in values:
+        if not isinstance(values['name'], str) or not values['name'].strip():
+            raise ValueError(f'{where}: name is a non-empty text')
+        camera['cinematic_name'] = values['name']
+    for key in _CAMERA_SET[1:]:
+        if key in values:
+            camera[key] = _number(values, key, where)
+    if camera.get('near_clipping_plane', 0) >= camera.get('far_clipping_plane', 1):
+        raise ValueError(f'{where}: near_clipping_plane must be below far_clipping_plane')
+
+
+def _pick(items, name_of, selector, where):
+    """Indices matched by {"index": n} or {"name": text}."""
+    if not isinstance(selector, dict) or len(set(selector) & {'index', 'name'}) != 1:
+        raise ValueError(f'{where}: select one of index or name')
+    if 'index' in selector:
+        index = selector['index']
+        if not isinstance(index, int) or not 0 <= index < len(items):
+            raise ValueError(f'{where}: index {index!r} is not in 0 to {len(items) - 1}')
+        return [index]
+    found = [i for i, item in enumerate(items) if name_of(item) == selector['name']]
+    if not found:
+        raise ValueError(f'{where}: nothing named {selector["name"]!r}')
+    return found
+
+
+def _edit_named(kind, items, files, add, change, delete, make, apply, name_of, rename):
+    """Changes, then deletions, then additions on a list of regions or
+    cameras. A deletion or a rename of one the script or triggers name is
+    refused: they would no longer compile."""
+    changed, deleted = set(), set()
+    for n, item in enumerate(change):
+        if not isinstance(item, dict) or not isinstance(item.get('set'), dict) or not item['set']:
+            raise ValueError(f'change {n}: give select and a non-empty set')
+        for index in _pick(items, name_of, item.get('select'), f'change {n}'):
+            old = name_of(items[index])
+            apply(items[index], item['set'], f'change {n}')
+            if name_of(items[index]) != old:
+                users = _referenced(files, kind, old)
+                if users:
+                    raise ValueError(f'change {n}: {old!r} is used as {_global_name(kind, old)} '
+                                     f'in {", ".join(users)}; renaming it would break them')
+            changed.add(index)
+    for n, selector in enumerate(delete):
+        for index in _pick(items, name_of, selector, f'delete {n}'):
+            users = _referenced(files, kind, name_of(items[index]))
+            if users:
+                raise ValueError(f'delete {n}: {name_of(items[index])!r} is used as '
+                                 f'{_global_name(kind, name_of(items[index]))} in '
+                                 f'{", ".join(users)}; deleting it would break them')
+            deleted.add(index)
+    kept = [item for i, item in enumerate(items) if i not in deleted]
+    added = []
+    names = {name_of(item) for item in kept}
+    for n, values in enumerate(add):
+        if not isinstance(values, dict) or not isinstance(values.get('name'), str):
+            raise ValueError(f'add {n}: give at least name')
+        if values['name'] in names:
+            raise ValueError(f'add {n}: {values["name"]!r} is already used; names make the '
+                             f'script globals, so they must differ')
+        item = make()
+        apply(item, values, f'add {n}')
+        kept.append(item)
+        names.add(values['name'])
+        added.append({'index': len(kept) - 1, 'name': values['name']})
+    return kept, added, sorted(changed - deleted), sorted(deleted)
+
+
+def edit_records(roots, path, kind, add=None, change=None, delete=None, out=''):
+    """Add, change or delete a map's regions, cameras or strings."""
+    if kind not in RECORDS:
+        raise ValueError(f'kind must be one of {", ".join(RECORDS)}')
+    add, change, delete = list(add or []), list(change or []), list(delete or [])
+    if not (add or change or delete):
+        raise ValueError('nothing to do: give add, change or delete')
+    source, out = target_path(roots, path, out)
+    files = _read_files(source)
+    member = RECORDS[kind]
+    key = _find(files, member) or member
+    if kind == 'regions':
+        from wc3files.w3r import RegionFile
+        from wc3files.w3r.region import Region
+        handler = RegionFile()
+        if key in files:
+            handler.read(files[key])
+        regions = list(handler.get_data().values())
+        bounds = _bounds(files)
+        next_index = max((r.index for r in regions), default=-1) + 1
+
+        def make():
+            nonlocal next_index
+            region = Region(left=0.0, right=0.0, bottom=0.0, top=0.0, index=next_index,
+                            color=(255, 255, 255))
+            next_index += 1
+            return region
+        kept, added, changed, deleted = _edit_named(
+            kind, regions, files, add, change, delete, make,
+            lambda r, v, w: _set_region(r, v, bounds, w), lambda r: r.name, True)
+        handler.import_data({i: region for i, region in enumerate(kept)})
+    elif kind == 'cameras':
+        from wc3files.w3c import CameraFile
+        handler = CameraFile()
+        if key in files:
+            handler.read(files[key])
+        data = handler.get_data()
+        template = dict(data['cameras'][0]) if data.get('cameras') else None
+
+        def make():
+            camera = dict(template) if template else {}
+            camera.update({'target_x': 0.0, 'target_y': 0.0, **_CAMERA_DEFAULTS,
+                           'local_pitch': 0.0, 'local_yaw': 0.0, 'local_roll': 0.0})
+            return camera
+        kept, added, changed, deleted = _edit_named(
+            kind, list(data.get('cameras') or []), files, add, change, delete, make,
+            _set_camera, lambda c: c.get('cinematic_name'), True)
+        data['cameras'] = kept
+        handler.import_data(data)
+    else:
+        from wc3files.table.wts_file import WtsFile
+        handler = WtsFile()
+        if key in files:
+            handler.read(files[key])
+        strings = dict(handler.export_data())
+        if delete:
+            raise ValueError('strings cannot be deleted: other files refer to them by id '
+                             '(TRIGSTR_...); change their text instead')
+        changed, added = [], []
+        for n, item in enumerate(change):
+            if (not isinstance(item, dict) or not isinstance(item.get('id'), int)
+                    or not isinstance(item.get('text'), str)):
+                raise ValueError(f'change {n}: give id (a number) and text')
+            if item['id'] not in strings:
+                raise ValueError(f'change {n}: no string {item["id"]}; add it instead')
+            strings[item['id']] = item['text']
+            changed.append(item['id'])
+        for n, item in enumerate(add):
+            if not isinstance(item, dict) or not isinstance(item.get('text'), str):
+                raise ValueError(f'add {n}: give text')
+            new_id = max(strings, default=0) + 1
+            strings[new_id] = item['text']
+            added.append({'id': new_id, 'reference': f'TRIGSTR_{new_id:03d}'})
+        for text in strings.values():
+            if '\n}' in text.replace('\r\n', '\n'):
+                raise ValueError('a string cannot have a line that starts with }: the file '
+                                 'format ends a string there')
+        handler.import_data(strings)
+        deleted = []
+    data_bytes = handler.to_bytes()
+    files[key] = data_bytes
+    result = commit(source, files, {key: data_bytes}, out)
+    result.update({'kind': kind, 'added': added, 'changed': changed, 'deleted': deleted})
+    return plain(result)
