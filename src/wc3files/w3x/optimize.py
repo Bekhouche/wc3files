@@ -213,18 +213,14 @@ _REFERENCE = re.compile(r'<([^<>]*)>')
 _COMPUTED_TYPES = ('w3a', 'w3u', 'w3t', 'w3q')
 
 
-def computed_text(files):
-     """(files, report): the <A000,DataA1> references in the map's own
-     tooltips and other text replaced by the values they stand for, as
-     w3x2lni's computed_text does: the referenced object's field (the map's
-     change, else the game's default), at that level, rounded down to a
-     whole number; `,%` multiplies by 100 first; mindmg/maxdmg/realhp are
-     computed from the damage and life fields. A reference that cannot be
-     worked out is left as it is, and counted."""
+def reference_resolver(files):
+     """A function giving the value a <A000,DataA1> reference stands for in
+     the map `files` ({name: bytes}), as a whole-number string, or None when
+     it cannot be worked out. computed_text substitutes with it, and the
+     string check (#252) reports the references it cannot resolve."""
      from wc3files.w3o.data import ObjectFileType
      from wc3files.w3o.object_base_data import BaseObjectData
      from wc3files.w3o.object_metadata import ObjectMetaData, field_display_name
-     files = dict(files)
      metadata = ObjectMetaData.default()
      base_data = BaseObjectData.default()
      loaded = {}         # ext -> [(name, ObjectFile)]: the object file and its skin file
@@ -300,11 +296,36 @@ def computed_text(files):
                     levels = number(row.get('levels'))
                     if m and levels is not None and int(m.group(2)) > levels:
                          result = 0.0                # past the last level
+                    elif m:
+                         # A level the map added and did not set: the game's
+                         # last level, as w3x2lni fills it (fill_and_copy).
+                         stem, level = m.group(1), int(m.group(2))
+                         # The tables write '-' past their last real level.
+                         result = next((number(row[f'{stem}{i}']) for i in range(level - 1, 0, -1)
+                                        if number(row.get(f'{stem}{i}')) is not None), None)
                if result is None:
                     return None
           if len(parts) > 2 and parts[2].strip() == '%':
                result *= 100
           return str(int(math.floor(result + 0.00005)))
+
+     value_of.loaded = loaded
+     value_of.lookup = lookup
+
+     return value_of
+
+
+def computed_text(files):
+     """(files, report): the <A000,DataA1> references in the map's own
+     tooltips and other text replaced by the values they stand for, as
+     w3x2lni's computed_text does: the referenced object's field (the map's
+     change, else the game's default), at that level, rounded down to a
+     whole number; `,%` multiplies by 100 first; mindmg/maxdmg/realhp are
+     computed from the damage and life fields. A reference that cannot be
+     worked out is left as it is, and counted."""
+     files = dict(files)
+     value_of = reference_resolver(files)
+     loaded = value_of.loaded
 
      replaced = failed = 0
      trigstrings = set()

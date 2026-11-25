@@ -13,10 +13,12 @@ section to the new version and its date.
 ### Added
 
 - `wc3files replay-info` and `wc3files.w3g.summary.summarize`: what happened in a replay. Players come from the game's slot table, with team, observers, colour by its World Editor name, race and handicap; the summary adds who left and when, the chat with timestamps and mode, and the W3MMD results. The MCP `replay_info` tool returns the same summary, with a `chat` switch and `max_chars`; its players now give `player_id` and slot rather than `id`. The slot layout fits all 294 local replays that carry the record, and all 296 summarize, with 44,673 chat messages and 3,010 leaves (#263).
+- `wc3files map-strings` and `wc3files.w3x.strings`: the strings of a map by object, field and level, from `war3map.wts` or inline in the object data, with the other files that use `war3map.wts` and the strings nothing uses. `--check` reports `TRIGSTR_` references with no string, `<A000,DataA1>` references that do not resolve, and short tooltips naming another object of the map (#252).
 
 ### Fixed
 
 - Ability, doodad and upgrade levels are named as Blizzard's tables name them: level n of a field is `{name}{n}` (`DataA1` for level 1) and a field without levels has no suffix (`Name`). `to_slk`, `object_data`, the SLK export and the override tables named every level one too high (`DataA2`, `Name1`). Over 342 corpus maps, fields with levels are stored from level 1 and fields without levels at level 0. The override tables now drop an upgrade or ability value that only restates the base default, as they already did for units: on 60 corpus maps, the 1,746 values affected all equal their default (#277).
+- `optimize --computed-text` resolves a reference to a level the map added to an ability and left unset, such as `<A000,Dur5>` on a five-level copy of a three-level ability: the level takes the last value of the game's table, as w3x2lni fills it. Such references were left in the text (#252).
 - Items take their name, tooltip, icon and the other shared fields from the unit metadata rows marked `useItem`, so `object_data` names an item's name `Name` rather than `unam` (#283).
 
 ## [0.6.4] - 2026-11-25
