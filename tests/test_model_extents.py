@@ -184,6 +184,19 @@ class ExtentsTest(unittest.TestCase):
         self.assertAlmostEqual(model.get_data()['extent']['maximum'][0], 110.0, places=4)
         self.assertIn(b'1 model(s) edited', result.stdout)
 
+    def test_two_inputs_never_write_the_same_path(self):
+        from wc3files.mdl.batch import edit_models
+        tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, tmp)
+        for folder in ('a', 'b'):
+            os.makedirs(os.path.join(tmp, folder))
+            ModelFile().import_data(walking_cube()).write(os.path.join(tmp, folder, 'cube.mdx'))
+        results = list(edit_models([os.path.join(tmp, 'a'), os.path.join(tmp, 'b')],
+                                   compute_extents, os.path.join(tmp, 'out')))
+        self.assertIsNotNone(results[0][1])
+        self.assertIsNone(results[1][1])
+        self.assertIn('already written', str(results[1][2]))
+
 
 if __name__ == '__main__':
     unittest.main()

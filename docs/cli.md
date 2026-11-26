@@ -474,7 +474,8 @@ Each model edit takes models and folders, searched with their subfolders, and
 writes the results to `-o` under the same layout, or over the models with
 `--in-place`. A model is written back in its own format, MDX or MDL. One that
 cannot be read or edited is reported, and the others go on; the command then
-exits with status 1.
+exits with status 1. So is a model whose output path another input already
+took, as two folders holding the same names would.
 
 `model-extents` sets the extents of each geoset, sequence and model from the
 vertices. Each sequence is posed by its bones at `--frames` frames spread

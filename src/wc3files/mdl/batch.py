@@ -10,7 +10,9 @@ writes each result, so every CLI model command takes the same inputs:
   its folder, or `in_place` to overwrite the models.
 
 A model is written back in its own format. One that cannot be read or
-edited is reported and left as it was; the others go on.
+edited is reported and left as it was; the others go on. So is a model
+whose output path another input of the same run already took, as two
+folders holding the same names would.
 """
 import os
 
@@ -43,8 +45,14 @@ def edit_models(inputs, edit, out_dir=None, in_place=False):
     from .model_file import ModelFile
     if not in_place and not out_dir:
         raise ValueError('give an output folder, or edit the models in place')
+    written = set()
     for path, relative in model_paths(inputs):
         target = path if in_place else os.path.join(out_dir, relative)
+        key = os.path.normcase(os.path.abspath(target))
+        if key in written:
+            yield path, None, ValueError(f'{target} was already written by this run')
+            continue
+        written.add(key)
         try:
             model = ModelFile()
             model.read(path)
