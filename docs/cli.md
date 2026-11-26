@@ -331,6 +331,60 @@ values on top. A base table does not always name a field as the override
 does: an ability's base row has `DataA1` where the override has `Data1`.
 Both are kept side by side rather than merged into one column.
 
+## Transferring map data
+
+```bash
+wc3files transfer MyMod.w3x out/ Melee/*.w3m                       # every part
+wc3files transfer MyMod.w3x out/ Melee/*.w3m --parts objects,constants
+```
+
+`transfer` copies parts of one source map into each target map and writes
+each result to the output folder under its target's name. The target keeps
+its terrain, placed units and doodads, regions, cameras and map info, so a
+mod made on one map can ship on many melee maps. The parts are:
+
+| Part | What is copied |
+|---|---|
+| `objects` | the object data (`war3map.w3u` ... `war3map.w3q`, `war3mapSkin.*`), merged with the target's; on a rawcode both use, the source's object is kept |
+| `triggers` | `war3map.wtg`, `war3map.wct` and the script, merged as described below |
+| `interface` | `war3mapSkin.txt` (the game interface) |
+| `constants` | `war3mapMisc.txt` (the gameplay constants) |
+| `imports` | the imported files and their `war3map.imp` entries; a target file the source also imports is replaced, or kept with `--keep-imports` |
+| `sounds` | `war3map.w3s` |
+
+A part the source does not have leaves the target's as it is.
+
+**Strings.** What is copied names its strings as `TRIGSTR_` numbers in the
+source's `war3map.wts`. Each such string is added to the target's
+`war3map.wts`, under its own number when the target does not use it, and
+under a new one otherwise; the copied files are rewritten to match.
+
+**The script.** The World Editor writes `war3map.j` or `war3map.lua` from the
+map info, the placed objects and the triggers, so neither map's script can be
+copied as it is. The merged script takes, function by function:
+
+1. from the target, what the World Editor writes from the target's map info
+   and placed objects: `config`, the player slots, teams and ally priorities,
+   `CreateAllUnits` and its helpers, item drop tables, upgrades, tech tree,
+   random groups, regions and cameras;
+2. from the source, every other function: the triggers, the custom script code
+   and what JassHelper adds for vJass;
+3. in `main`, the target's statements up to and including `InitBlizzard()`
+   (camera bounds, environment, placement), then the source's after it
+   (globals, library initializers, triggers);
+4. `InitSounds` from the source when the sounds are copied;
+5. the source's globals, with the placement variables (`gg_unit_`, `gg_rct_`,
+   `gg_cam_`, `gg_dest_`, `gg_item_`) of the target. A placement variable the
+   source's triggers name and the target lacks is declared as `null` so that
+   the script still loads, and is printed as `not in the target`.
+
+The merged script is refused when the script checker finds an issue in it
+that neither map's script has. A JASS source is translated to Lua for a Lua
+target, and `war3map.wct` then still holds JASS, which the World Editor would
+write into the Lua script on its next save; a Lua source cannot go into a
+JASS target. When the World Editor saves the result, it writes the script
+again from the copied triggers and the target's map info and placed objects.
+
 ## Images and icons
 
 ```bash
