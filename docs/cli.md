@@ -126,6 +126,33 @@ w3e  w3f  w3g  w3i  w3r  w3s  wct  wes  wpm  wtg  wts
 A shadow map (`shd`) has no header. Its size is read from a `war3map.wpm` or
 `war3map.w3e` next to it, or given with `--width` and `--height`.
 
+## Merging doodads
+
+```bash
+wc3files doodads-merge Out.w3x MyMap.w3x Forest.w3x Ruins.doo    # into a copy of MyMap.w3x
+wc3files doodads-merge war3map.doo a.doo b.doo --renumber-all     # a war3map.doo, ids from 0
+```
+
+`doodads-merge` puts every doodad and destructable of the inputs, maps or
+`war3map.doo` files, into one `war3map.doo`, in order. This places the
+objects of several edits of one map in the same terrain, or gets past what
+the World Editor lets one edit place. When the output is a map, it is the
+first input map with the merged `war3map.doo`; its other files are kept.
+
+1. **Format:** the newest format among the inputs is written, so no record
+   loses a field. A format 13 file needs a Reforged game.
+2. **Editor ids:** the first input keeps its own, and the records of the
+   others are numbered on from its highest. `--renumber-all` numbers every
+   record from 0 in order, the first input too.
+3. **Variables:** the World Editor names a destructable that the script or
+   the GUI triggers use `gg_dest_<rawcode>_<editor id>`. A renumbered one that
+   its map's `war3map.j`, `war3map.lua`, `war3map.wtg` or `war3map.wct` names
+   is printed as `breaks:`, and the command exits with 1.
+4. **Item tables:** a record of an input after the first that drops items
+   from an item table points to a table of its own map, and is printed.
+5. **Special doodads** (cliff and terrain decoration) are joined, and exact
+   duplicates left out.
+
 ## Maps in git
 
 A map saved as a folder (the World Editor's *Save as folder*, or `wc3files

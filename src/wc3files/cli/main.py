@@ -401,6 +401,62 @@ def _cmd_optimize(args):
     return 0
 
 
+def _doodad_source(path, deep):
+    """(war3map.doo bytes, the gg_dest_ variables its map uses, the map's
+    members or None) for a war3map.doo file or a map."""
+    from wc3files.doo.merge import referenced_destructables
+    from wc3files.w3x.modes import archive_files
+    if not path.lower().endswith(_MAP_EXTENSIONS):
+        with open(path, 'rb') as handle:
+            return handle.read(), None, None
+    files = archive_files(_open_map(path, deep))
+    lower = {name.lower(): name for name in files}
+    if 'war3map.doo' not in lower:
+        raise ValueError(f'{path} has no war3map.doo')
+    texts = [files[lower[name]] for name in ('war3map.j', 'scripts\\war3map.j', 'war3map.lua',
+                                             'war3map.wtg', 'war3map.wct') if name in lower]
+    return files[lower['war3map.doo']], referenced_destructables(*texts), files
+
+
+def _cmd_doodads_merge(args):
+    """Merge the war3map.doo files of several maps or files (#219)."""
+    from wc3files.doo.merge import merge_doodads
+    from wc3files.w3x.modes import _write_map
+    sources = [_doodad_source(path, args.deep) for path in args.inputs]
+    references = [refs if refs is not None else set() for _, refs, _ in sources]
+    merged, report = merge_doodads([raw for raw, _, _ in sources], references=references,
+                                   renumber_all=args.renumber_all)
+    for path, changed in zip(args.inputs, report['renumbered']):
+        print(f'{path}: {len(changed)} editor ids changed')
+    for item in report['broken_references']:
+        print(f"breaks: gg_dest_{item['id']}_{item['old']:04d} of {args.inputs[item['source']]} "
+              f"is now gg_dest_{item['id']}_{item['new']:04d}")
+    for item in report['item_tables']:
+        print(f"item table: record {item['index']} ({item['id']}) of "
+              f"{args.inputs[item['source']]} points to item table {item['pointer']} of its "
+              f"own map")
+    if report['specials_dropped']:
+        print(f"{report['specials_dropped']} duplicate special doodads left out")
+    if report['duplicate_ids']:
+        print(f"{args.inputs[0]} itself repeats editor ids {report['duplicate_ids']}; "
+              f"--renumber-all gives every record its own")
+    data = merged.get_data()
+    print(f"{len(data['doodads'])} doodads, format {report['version'][0]}/"
+          f"{report['version'][1]}")
+    if args.output.lower().endswith(_MAP_EXTENSIONS):
+        files = sources[0][2]
+        if files is None:
+            raise ValueError('to write a map, the first input must be a map')
+        files = dict(files)
+        key = next(name for name in files if name.lower() == 'war3map.doo')
+        files[key] = merged.to_bytes()
+        _write_map(files, args.output)
+    else:
+        merged.write(args.output)
+    print(f'Wrote {args.output}')
+    return 1 if report['broken_references'] else 0
+
+
 def _cmd_import_folder(args):
     """Add a folder tree to a map and list it in war3map.imp (#215)."""
     from wc3files.w3x.imports import import_folder
@@ -2263,6 +2319,21 @@ def build_parser():
     p_obj.add_argument('output', help='The map to write.')
     p_obj.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_obj.set_defaults(func=_cmd_obj_mode)
+
+    p_doodads = subparsers.add_parser(
+        'doodads-merge', help='Merge the doodads of several maps or war3map.doo files.',
+        description=('Put every doodad and destructable of the inputs into one '
+                     'war3map.doo. The first input keeps its editor ids and the others '
+                     'are numbered on from its highest. A renumbered destructable that '
+                     "its map's script or triggers name (gg_dest_...) is reported, and "
+                     'the command then exits with 1. See ' + _DOCS + '#merging-doodads.'))
+    p_doodads.add_argument('output', help=('The war3map.doo to write, or a map: the first '
+                                           'input map with the merged war3map.doo.'))
+    p_doodads.add_argument('inputs', nargs='+', help='Maps or war3map.doo files.')
+    p_doodads.add_argument('--renumber-all', action='store_true',
+                           help='Number every record from 0 in order, the first input too.')
+    p_doodads.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_doodads.set_defaults(func=_cmd_doodads_merge)
 
     p_import = subparsers.add_parser(
         'import-folder', help='Import a folder and its subfolders into a map.',
