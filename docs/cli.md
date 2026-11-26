@@ -663,6 +663,30 @@ played like the original on every track. Between the game's SD and HD models
 of the same 21 units, 341 of 449 SD nodes had no node of that name in the HD
 model, so the HD skeletons are named apart, and the report says so.
 
+```bash
+wc3files model-obj Crate.obj Crate.mdx --texture-dir war3mapImported   # OBJ to a static model
+wc3files model-obj Footman.mdx Footman.obj --sequence "Attack - 1" --frame 1200
+```
+
+`model-obj` converts between Wavefront OBJ and MDX or MDL, in the direction
+the extensions give. From OBJ it makes a static model: a geoset for each group
+and material used together, polygons cut into triangles, a vertex for each
+distinct position, texture coordinate and normal, normals from the faces where
+the file has none, a material for each MTL material with its `map_Kd` texture
+as `.blp` (in `--texture-dir` when given; `Textures\White.blp` when there is
+none), one root bone, a `Stand` sequence and extents. OBJ files most often have
+Y up while the game has Z up: `--up y`, the default, turns the model upright,
+and `--up z` keeps it. `--scale` scales it. To OBJ, the model is posed at
+`--frame` of `--sequence` (its first frame by default; the rest pose without a
+sequence), with one group per geoset shown at that frame and an `.mtl` beside it
+naming each material's texture.
+
+Two public OBJ test models (the Stanford bunny, 69,451 triangles, and a cow)
+came out with every triangle and the same bounding box. 95 game and corpus
+models taken to OBJ and back in the rest pose kept every triangle and corner
+position, and their OBJ at the middle of their first sequence held the same
+vertices as the model posed there.
+
 ## Pathing textures
 
 ```bash
