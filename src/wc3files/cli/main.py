@@ -518,15 +518,14 @@ def _cmd_model_gltf(args):
         return 0
     if not args.output.lower().endswith('.glb'):
         raise ValueError('model-gltf: give a .glb or .gltf to read, or a .glb to write')
-    textures = None
-    if args.textures:
-        def textures(path):
-            stem = os.path.join(args.textures, *path.split(chr(92))).rsplit('.', 1)[0]
-            for ext in ('.blp', '.dds', '.tga', '.png', '.BLP'):
-                if os.path.exists(stem + ext):
-                    with open(stem + ext, 'rb') as handle:
-                        return handle.read()
-            return None
+    def read_texture(path):
+        stem = os.path.join(args.textures, *path.split(chr(92))).rsplit('.', 1)[0]
+        for ext in ('.blp', '.dds', '.tga', '.png', '.BLP'):
+            if os.path.exists(stem + ext):
+                with open(stem + ext, 'rb') as handle:
+                    return handle.read()
+        return None
+    textures = read_texture if args.textures else None
     glb, report = model_to_gltf(ModelFile().read(args.input), args.scale, textures,
                                 args.curve_ms)
     with open(args.output, 'wb') as handle:
