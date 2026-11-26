@@ -806,13 +806,8 @@ def edit_script(roots, path, code, init_function='', replace=False, out=''):
 
 
 def _import_flags(entries):
-    """The flags byte for a new war3map.imp entry: what the map's own
-    entries use most, or 13, which 42,786 of the 48,487 entries in the
-    corpus maps' war3map.imp files use."""
-    counts = {}
-    for entry in entries:
-        counts[entry.get('flags')] = counts.get(entry.get('flags'), 0) + 1
-    return max(counts, key=counts.get) if counts else 13
+    from wc3files.w3x.imports import import_flags
+    return import_flags(entries)
 
 
 def import_file(roots, path, member, source, out=''):
