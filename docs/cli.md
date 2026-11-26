@@ -38,6 +38,26 @@ the listfile does not name would be lost:
 error: MyMap.w3x is protected: it has no (listfile). Reading it as it is would lose those files.
 ```
 
+## Imported files
+
+```bash
+wc3files import-folder MyMap.w3x Assets/ Out.w3x                             # same relative paths
+wc3files import-folder MyMap.w3x Assets/ Out.w3x --prefix war3mapImported    # under war3mapImported\
+wc3files import-folder MyMap.w3x Assets/ Out.w3x --keep-existing             # do not replace members
+```
+
+`import-folder` adds every file under a folder, subfolders included, to the
+map at the same relative path, and lists each one in `war3map.imp`. The World
+Editor's import manager takes one file or one folder at a time, without its
+subfolders. A new `war3map.imp` entry takes the flags the map's own entries
+use most, or 13 for a map with no imports yet.
+
+A member the map already has is matched ignoring case and replaced, or kept
+with `--keep-existing`. A file at the root of the folder that is named as map
+data (`war3map.w3i`, `war3map.j`, `war3mapUnits.doo`, ...) is skipped and
+reported, since the map owns these files and `war3map.imp` does not list
+them.
+
 ## Inspecting map sub-files
 
 ```bash
