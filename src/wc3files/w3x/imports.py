@@ -473,3 +473,51 @@ def strip_prefix_moves(files, names=None, prefix=PREFIX):
         moves[key] = new
         taken.add(new.lower())
     return moves, skipped
+
+
+# --- File names with more than one dot (#213) --------------------------------
+
+def multi_dot_members(files):
+    """The members whose file name has more than one dot, sorted. As the
+    author of Import Fixer for Reforged 3.00's Multi-Dot Bug describes it,
+    patch 3.0 takes the extension from the first dot, so the game does not
+    load `TownHallElfV1.01.mdx`, while the World Editor still shows it. Map
+    data is left out; a dot in a folder name is not counted."""
+    return sorted((name for name in files
+                   if _basename(name).count('.') > 1 and not is_map_data(name)),
+                  key=str.lower)
+
+
+def multi_dot_moves(files):
+    """({old: new}, skipped): the moves that turn each dot but the last of a
+    file name into an underscore (`TownHallElfV1.01.mdx` becomes
+    `TownHallElfV1_01.mdx`). A member whose new name the map already has, or
+    that another member takes first, is skipped, as [(old, new)]."""
+    return undot_moves(files, {old: old for old in multi_dot_members(files)})
+
+
+def undotted(name):
+    """`name` with each dot but the last of its file name an underscore."""
+    folder, _, base = name.replace('/', '\\').rpartition('\\')
+    stem, _, ext = base.rpartition('.')
+    return (folder + '\\' if folder else '') + stem.replace('.', '_') + '.' + ext
+
+
+def undot_moves(files, moves):
+    """({old: new}, skipped): `moves` with every new name that has more than
+    one dot undotted, and the rest kept. A move whose undotted name the map
+    already has, or that another move takes first, is skipped, as
+    [(old, new)]."""
+    taken = {key.lower() for key in files} - {old.lower() for old in moves}
+    out, skipped = {}, []
+    for old, new in moves.items():
+        if _basename(new).count('.') > 1 and not is_map_data(new):
+            new = undotted(new)
+        if new == old:
+            continue
+        if new.lower() in taken:
+            skipped.append((old, new))
+            continue
+        out[old] = new
+        taken.add(new.lower())
+    return out, skipped

@@ -80,6 +80,17 @@ to leave it). `--strip-prefix` takes `war3mapImported\` off every member
 under it, or off the members `--only` names; a member whose new name the map
 already has is skipped.
 
+`--fix-dots` renames every file whose name has more than one dot, turning
+each dot but the last into an underscore (`TownHallElfV1.01.mdx` becomes
+`TownHallElfV1_01.mdx`), and rewrites the references the same way. As the
+author of Import Fixer for Reforged 3.00's Multi-Dot Bug describes it, patch
+3.0 takes the extension of an imported file from its first dot, so the game
+does not load such a file, with no error, while the World Editor still shows
+it. This has not been checked here on the current patch, so the check runs
+only when it is asked for: `--fix-dots --report-only` lists the files. A dot
+in a folder name is left as it is, and a file whose new name the map already
+has is skipped.
+
 What it cannot update is printed as `not updated`:
 
 - the old path, or the file name alone, where a reference was not rewritten;

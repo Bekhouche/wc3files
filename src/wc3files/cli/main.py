@@ -421,10 +421,11 @@ def _cmd_import_folder(args):
 
 def _cmd_import_move(args):
     """Move imported files and rewrite the references to them (#214)."""
-    from wc3files.w3x.imports import move_imports, strip_prefix_moves
+    from wc3files.w3x.imports import (move_imports, multi_dot_members, strip_prefix_moves,
+                                      undot_moves)
     from wc3files.w3x.modes import archive_files, _write_map
-    if not (args.move or args.strip_prefix):
-        raise ValueError('give --move OLD NEW or --strip-prefix')
+    if not (args.move or args.strip_prefix or args.fix_dots):
+        raise ValueError('give --move OLD NEW, --strip-prefix or --fix-dots')
     if args.output is None and not args.report_only:
         raise ValueError('give the map to write, or --report-only')
     files = archive_files(_open_map(args.input, args.deep))
@@ -434,6 +435,14 @@ def _cmd_import_move(args):
         for old, new in skipped:
             print(f'skipped: {old} (the map already has {new})')
         moves.update({old: new for old, new in stripped.items() if old not in moves})
+    if args.fix_dots:
+        dotted = multi_dot_members(files)
+        print(f'{len(dotted)} file names with more than one dot')
+        for old in dotted:
+            moves.setdefault(old, old)
+        moves, skipped = undot_moves(files, moves)
+        for old, new in skipped:
+            print(f'skipped: {old} (the map already has {new})')
     if not moves:
         print('nothing to move')
         return 0
@@ -2289,6 +2298,11 @@ def build_parser():
                         help='Take war3mapImported\\ off every member under it.')
     p_move.add_argument('--only', nargs='+', metavar='MEMBER',
                         help='With --strip-prefix, only these members.')
+    p_move.add_argument('--fix-dots', action='store_true', help=(
+        'Turn each dot but the last of a file name into an underscore, as '
+        'TownHallElfV1.01.mdx to TownHallElfV1_01.mdx: patch 3.0 takes the extension '
+        'from the first dot and does not load such a file. With --report-only, '
+        'lists them.'))
     p_move.add_argument('--no-portraits', action='store_true',
                         help="Do not move a model's _portrait model with it.")
     p_move.add_argument('--report-only', action='store_true',
