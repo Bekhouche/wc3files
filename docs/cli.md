@@ -221,6 +221,37 @@ literal game-loadable default-table overrides, in both directions. Not
 everything can move (icons, models, tooltips and some editor-only fields stay
 behind), and what cannot is kept rather than silently dropped.
 
+### Merging object data
+
+```bash
+wc3files objects-merge Out.w3u Mine.w3u Theirs.w3u                       # remap conflicts
+wc3files objects-merge Out.w3a Mine.w3a Theirs.w3a --on-conflict first   # keep mine
+wc3files objects-merge Out.w3u Mine.w3u Theirs.w3u --table ids.json      # save the id table
+```
+
+`objects-merge` puts the objects of the second file into the first. Two kinds
+of conflict take a policy each:
+
+1. a custom object whose rawcode both files use (`--on-conflict`);
+2. an edit of a default object both files change (`--on-edit-conflict`).
+
+The policies are `remap` (the default), `first` and `second`. With `remap`,
+the second file's object takes a free rawcode with the same first letter, one
+that neither file and no default object of the game uses; a conflicting edit
+of a default object becomes a new custom object based on it (`H` for a hero,
+`h` for another unit, `A`, `I`, `B`, `D` and `R` for the other types, as the
+World Editor names them). `first` keeps the first file's object and `second`
+takes the second's.
+
+The second file's own lists (abilities, build and train lists, requirements,
+and any other string field) are rewritten to the new rawcodes. `--table`
+writes the old-to-new table, to apply to that map's script and other files.
+`TRIGSTR_` names of the second file point into its own `war3map.wts`, so
+their count is printed.
+
+In Python, `wc3files.w3o.merge.merge_objects(a, b)` takes the `export_data()`
+of two `ObjectFile`s and merges every type at once.
+
 ### Checking object data
 
 `obj-to-slk --validate` reports fields that break the bundled Blizzard
