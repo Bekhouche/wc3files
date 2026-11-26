@@ -454,6 +454,43 @@ def _cmd_import_folder(args):
     return 0
 
 
+def _cmd_transfer(args):
+    """Copy parts of one map into other maps (#218)."""
+    from wc3files.w3x.modes import archive_files, _write_map
+    from wc3files.w3x.transfer import PARTS, transfer
+    parts = PARTS if not args.parts else tuple(p.strip() for p in args.parts.split(','))
+    source = archive_files(_open_map(args.source, args.deep))
+    os.makedirs(args.out_dir, exist_ok=True)
+    failed = 0
+    for target_path in args.targets:
+        output = os.path.join(args.out_dir, os.path.basename(target_path))
+        if os.path.normcase(os.path.abspath(output)) == \
+                os.path.normcase(os.path.abspath(target_path)):
+            raise ValueError(f'{output} would overwrite its target; choose another --out-dir')
+        target = archive_files(_open_map(target_path, args.deep))
+        try:
+            files, report = transfer(source, target, parts=parts,
+                                     replace_imports=not args.keep_imports)
+        except ValueError as error:
+            print(f'{target_path}: not written: {error}', file=sys.stderr)
+            failed += 1
+            continue
+        _write_map(files, output)
+        script = report['script'] or {}
+        renumbered = sum(1 for old, new in report['strings'].items() if old != new)
+        print(f"{target_path}: {len(report['copied'])} files copied, "
+              f"{len(report['strings'])} strings ({renumbered} renumbered)")
+        for name in script.get('missing_placement', []):
+            print(f'  not in the target: {name} (declared as null)')
+        for name, replaced in report['objects'].items():
+            if replaced:
+                print(f'  {name}: {len(replaced)} target objects replaced by the source\'s')
+        for note in report['notes']:
+            print(f'  note: {note}')
+        print(f'Wrote {output}')
+    return 1 if failed else 0
+
+
 def _cmd_trigger_ui(args):
     """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
     from wc3files.wtg import ydwe_ui
@@ -2273,6 +2310,25 @@ def build_parser():
                           help='Keep a member the map already has instead of replacing it.')
     p_import.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_import.set_defaults(func=_cmd_import_folder)
+
+    p_transfer = subparsers.add_parser(
+        'transfer', help="Copy one map's object data, triggers and more into other maps.",
+        description=('Copy parts of SOURCE into each TARGET and keep the target\'s '
+                     'terrain, placed units and doodads, regions, cameras and map info. '
+                     'The script is merged: the target keeps what the World Editor '
+                     'writes from its own map info and placed objects, the source brings '
+                     'its triggers and custom code. Each result is written to OUT_DIR '
+                     'under its target\'s name. See ' + _DOCS + '#transferring-map-data.'))
+    p_transfer.add_argument('source', help='The map to copy from.')
+    p_transfer.add_argument('out_dir', help='The folder to write the results to.')
+    p_transfer.add_argument('targets', nargs='+', help='The maps to copy into.')
+    p_transfer.add_argument('--parts', default='', help=(
+        'Comma-separated parts to copy (default all): objects, triggers, interface, '
+        'constants, imports, sounds.'))
+    p_transfer.add_argument('--keep-imports', action='store_true',
+                            help='Keep a target file that the source also imports.')
+    p_transfer.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_transfer.set_defaults(func=_cmd_transfer)
 
     p_opt = subparsers.add_parser(
         'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '
