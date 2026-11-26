@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-26
+
 ### Added
 
 - `wc3files pathing-texture` and `wc3files.wpm.texture`: pathing textures read as cells of no-walk, no-fly and no-build flags, written back, made from rows of digits, or made from a model's footprint (`from-model`, snapped to 2x2 blocks, with an optional unbuildable border). Red, green and blue block walking, flying and building, as the game's own textures show; all 209 of them read and write back with the same cells. Against the 196 game buildings with a model and a texture, the footprint overlaps the game's texture with a median intersection over union of 0.80 (#262).
@@ -239,7 +241,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.6.4...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Bekhouche/wc3files/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/Bekhouche/wc3files/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Bekhouche/wc3files/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/Bekhouche/wc3files/compare/v0.6.1...v0.6.2
