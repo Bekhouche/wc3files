@@ -115,6 +115,55 @@ w3e  w3f  w3g  w3i  w3r  w3s  wct  wes  wpm  wtg  wts
 A shadow map (`shd`) has no header. Its size is read from a `war3map.wpm` or
 `war3map.w3e` next to it, or given with `--width` and `--height`.
 
+## Maps in git
+
+A map saved as a folder (the World Editor's *Save as folder*, or `wc3files
+unpack`) can be kept in git, but most of its files are binary, so `git diff`
+only says that they changed. `textconv` prints a file as text that git can
+compare:
+
+```bash
+wc3files textconv war3map.doo
+```
+
+What it prints depends on the file name:
+
+1. a file `dump` reads (`war3map.w3i`, `war3map.doo`, `war3mapUnits.doo`,
+   `war3map.w3e`, the object files, ...): its `dump` JSON, with each record on
+   one line, so a moved doodad or a changed tile is one changed line;
+2. a text file (`war3map.j`, `war3map.lua`, `war3map.wts`, SLK, FDF, MDL,
+   `(listfile)`): the file as it is, and an MDX model as MDL;
+3. any other file (images, sounds): one line with its size and SHA-256.
+
+A file that does not read gives the third form, with the error on a second
+line, so the diff of the other files still runs.
+
+To have `git diff` use it, add a `.gitattributes` to the repository:
+
+```
+war3map.* diff=wc3files
+war3mapUnits.doo diff=wc3files
+war3mapSkin.* diff=wc3files
+*.mdx diff=wc3files
+```
+
+and tell git what the `wc3files` diff driver runs, once per clone:
+
+```bash
+git config diff.wc3files.textconv "wc3files textconv"
+git config diff.wc3files.cachetextconv true
+```
+
+`cachetextconv` keeps the text of each committed version, so `git log -p`
+does not read the same file twice. The driver changes only what `git diff`,
+`git log -p` and `git show` print; merges and the files themselves are not
+affected.
+
+git gives `textconv` a temporary copy of the old version, named after the
+file, with no other map file beside it. A shadow map has no header and its
+size comes from the terrain next to it, so the old copy of a `war3map.shd` is
+printed in rows of 64 cells rather than rows of the map's width.
+
 ## Object data
 
 ```bash
