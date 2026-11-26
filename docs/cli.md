@@ -687,6 +687,68 @@ models taken to OBJ and back in the rest pose kept every triangle and corner
 position, and their OBJ at the middle of their first sequence held the same
 vertices as the model posed there.
 
+```bash
+wc3files model-gltf Knight.glb Knight.mdx --scale 60 --texture-dir war3mapImported
+wc3files model-gltf Footman.mdx Footman.glb --textures extracted/   # to open in Blender
+```
+
+`model-gltf` converts glTF 2.0 (`.glb`, or `.gltf` with its buffers) to a
+version 800 MDX or MDL, and a model to `.glb`, in the direction the extensions
+give.
+
+From glTF, every node of the scene becomes a bone. Its MDX matrix is the glTF
+skinning matrix, broken down at each key time into what MDX keeps, so a skinned
+mesh, a mesh moved by its own node and a static one all pose as in glTF. Each
+animation becomes a sequence, the base color texture of each material a `.blp`
+texture written beside the model (`--texture-dir` names its folder in the
+model; PNG and JPEG images are converted), `alphaMode` MASK and BLEND the
+Transparent and Blend filter modes, and `doubleSided` a two-sided layer. A
+model without animations gets a one-second `Stand` in its rest pose. glTF has Y
+up and faces +Z where the game has Z up and faces +X: a point (x, y, z) becomes
+(z, x, y), times `--scale`, since glTF counts in metres.
+
+What MDX version 800 cannot hold, and how it is handled:
+
+- bone weights: a vertex follows a group of bones in equal parts. Each vertex
+  keeps the bones that carry at least `--min-weight` of its weight (0.2 by
+  default; its heaviest bone at least), up to 4;
+- key times: MDX counts whole milliseconds, so a glTF key moves to the nearest
+  one;
+- morph targets and their animations, other textures (normal, occlusion,
+  emissive, metallic-roughness), vertex colours, a second set of texture
+  coordinates, cameras and lights: left out and listed. Sparse accessors are
+  refused.
+
+On the Khronos sample models Box, BoxTextured, BoxAnimated, Duck, CesiumMan,
+Fox, RiggedSimple and RiggedFigure, every bone matrix matched the glTF skinning
+matrix at every key time, rounded to the millisecond, within 1e-4. Posed
+vertices then differ only by the equal weights: by at most 2.6% of the model's
+size on CesiumMan, 5.2% on Fox, 1.5% on RiggedSimple and 0.8% on RiggedFigure,
+which `--min-weight` 0.2 to 0.3 keeps smallest (0, keeping every bone, gives
+8.3% and 12.7% on the first two). The JPEG texture of CesiumMan decoded within
+3 levels of 255 of Pillow's decoding.
+
+To glTF, the model is one mesh with a primitive per geoset, a skin with a joint
+per node and an animation per sequence. A joint rests at its pivot, moved by the
+pivot's offset from its parent's, which makes the MDX node matrices carry over
+exactly; keys are written LINEAR or STEP, every 1/30 s for a Hermite or Bezier
+track (`--curve-ms` sets how often). Each vertex keeps up to 4 bones. glTF has
+no global sequences, so a global sequence track is baked into every animation
+on its own clock; geoset visibility is not written. A texture is named by its
+path as `.png`, or, with `--textures FOLDER`, read from that folder by its path
+and embedded.
+
+59 game and corpus models taken to glTF and back, posed at the start, middle and
+end of each sequence, came out as follows, relative to the model's size:
+
+| Models | Count | Within 1e-4 | Within 1% |
+|---|---|---|---|
+| no curved tracks, no global sequence, equal bone weights | 22 | 21 | 22 |
+| Hermite or Bezier tracks, sampled every 33 ms | 12 | 6 | 12 |
+| global sequences, baked into each animation | 17 | 6 | 14 |
+| unequal skin weights, which version 800 holds in equal parts | 7 | 0 | 2 |
+| a vertex of more than 4 bones | 1 | 0 | 0 |
+
 ## Pathing textures
 
 ```bash

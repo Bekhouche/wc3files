@@ -128,8 +128,10 @@ def sample(track, frame, interval=None, global_sequences=(), default=None,
         return keys[0]['value']
     if frame >= keys[-1]['frame']:
         return keys[-1]['value']
+    # A frame on a key takes that key: on a step track the pair before it
+    # would still hold the value before.
     for left, right in zip(keys, keys[1:]):
-        if left['frame'] <= frame <= right['frame']:
+        if left['frame'] <= frame < right['frame']:
             return interpolate(left, right, frame, track.get('interpolationType', 0), rotation)
     return keys[-1]['value']
 
@@ -148,8 +150,13 @@ def _multiply(a, b):
 
 
 def compose(pivot, translation, rotation, scaling):
-    """The matrix of pivot + translation, rotation and scaling about the pivot."""
+    """The matrix of pivot + translation, rotation and scaling about the pivot.
+    The rotation is made unit length first: squeezed models (`squeeze.py`)
+    keep quaternions a little off it, and a rotation is all it stands for."""
     x, y, z, w = rotation
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    if norm > 0 and abs(norm - 1.0) > 1e-12:
+        x, y, z, w = x / norm, y / norm, z / norm, w / norm
     sx, sy, sz = scaling
     r = (1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
          2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),

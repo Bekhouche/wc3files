@@ -494,6 +494,50 @@ def _cmd_model_obj(args):
     return 0
 
 
+def _cmd_model_gltf(args):
+    """glTF 2.0 to MDX/MDL, or MDX/MDL to .glb (#245)."""
+    from wc3files.mdl.gltf import gltf_to_model, model_to_gltf
+    from wc3files.mdl.model_file import ModelFile
+    if args.input.lower().endswith(('.glb', '.gltf')):
+        model, report = gltf_to_model(args.input, args.scale, args.texture_dir, args.min_weight)
+        ModelFile().import_data(model).write(args.output)
+        folder = os.path.dirname(os.path.abspath(args.output))
+        for path, data in report['textures'].items():
+            target = os.path.join(folder, *path.split(chr(92)))
+            os.makedirs(os.path.dirname(target), exist_ok=True)
+            with open(target, 'wb') as handle:
+                handle.write(data)
+            print(f'Wrote {target}')
+        print(f"Wrote {args.output}: {report['geosets']} geoset(s), {report['bones']} bone(s), "
+              f"sequences {', '.join(report['sequences'])}")
+        if report['largest_weight_dropped']:
+            print(f"bone weights: up to {report['largest_weight_dropped']:.0%} of a vertex's "
+                  'weight was on bones below --min-weight, and the bones kept weigh the same')
+        for note in report['notes']:
+            print(f'not taken: {note}')
+        return 0
+    if not args.output.lower().endswith('.glb'):
+        raise ValueError('model-gltf: give a .glb or .gltf to read, or a .glb to write')
+    textures = None
+    if args.textures:
+        def textures(path):
+            stem = os.path.join(args.textures, *path.split(chr(92))).rsplit('.', 1)[0]
+            for ext in ('.blp', '.dds', '.tga', '.png', '.BLP'):
+                if os.path.exists(stem + ext):
+                    with open(stem + ext, 'rb') as handle:
+                        return handle.read()
+            return None
+    glb, report = model_to_gltf(ModelFile().read(args.input), args.scale, textures,
+                                args.curve_ms)
+    with open(args.output, 'wb') as handle:
+        handle.write(glb)
+    print(f"Wrote {args.output}: {report['nodes']} node(s), {report['primitives']} "
+          f"primitive(s), {report['animations']} animation(s)")
+    for note in report['notes']:
+        print(f'not written: {note}')
+    return 0
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2770,6 +2814,27 @@ def build_parser():
     p_obj.add_argument('--sequence', help='Model to OBJ: the sequence to pose (by name).')
     p_obj.add_argument('--frame', type=int, help="Model to OBJ: the frame (default the sequence's first).")
     p_obj.set_defaults(func=_cmd_model_obj)
+
+    p_gltf = subparsers.add_parser(
+        'model-gltf', help='Convert a glTF 2.0 model to MDX or MDL, or a model to .glb.',
+        description=('A .glb or .gltf (meshes, skins, animations, base color textures) to '
+                     'a version 800 MDX or MDL, its textures written beside it as BLP; or a '
+                     'model to a .glb with its skin and an animation per sequence. The '
+                     'direction comes from the extensions. See ' + _DOCS + '#model-edits.'))
+    p_gltf.add_argument('input', help='The .glb/.gltf, or the .mdx/.mdl model.')
+    p_gltf.add_argument('output', help='The .mdx/.mdl to write, or the .glb.')
+    p_gltf.add_argument('--scale', type=float, default=1.0,
+                        help='Game units per glTF metre (default 1; 50 to 100 is common).')
+    p_gltf.add_argument('--texture-dir', help='glTF to model: the folder of the .blp textures.')
+    p_gltf.add_argument('--min-weight', type=float, default=0.2,
+                        help='glTF to model: the lightest bone weight kept (default 0.2).')
+    p_gltf.add_argument('--textures', metavar='FOLDER',
+                        help='Model to glTF: a folder holding the textures by their path, '
+                             'to embed them as PNG.')
+    p_gltf.add_argument('--curve-ms', type=int, default=33,
+                        help='Model to glTF: how often a Hermite or Bezier track is sampled, '
+                             'in milliseconds (default 33).')
+    p_gltf.set_defaults(func=_cmd_model_gltf)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
