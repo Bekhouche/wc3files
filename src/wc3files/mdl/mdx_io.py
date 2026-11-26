@@ -380,13 +380,22 @@ def _read_layer(stream, version):
         layer['fresnelOpacity'] = stream.read_f32()
         layer['fresnelTeamColor'] = stream.read_f32()
     if version >= 1100:
-        # Sixteen further bytes sit between the fresnel fields and the track
-        # data from version 1100 on - measured across 569 layers in versions
-        # 1100, 1200, 1400 and 1800, and absent from the 208 version-1000
-        # layers sampled. They were not read at all, so track parsing began
-        # in the wrong place and the bytes were then dropped by the seek
-        # below, which is why materials came out 16 bytes short per layer.
-        layer['unknown_v1100'] = stream.read_u8_array(16)
+        # From version 1100 on, a layer lists its textures after the
+        # fresnel fields: a flag (0 in the game's SD models, 1 in its HD
+        # ones), a count, then per texture its id and slot, with an optional
+        # KMTF (flipbook) track (#301). An HD layer has 6: diffuse, normal,
+        # ORM, emissive, team color and environment. Measured on 1,161
+        # layers of versions 1100 to 1800, all of them this layout. The
+        # textureId field above is not the layer's texture there: on HD
+        # layers it is 0 while the list starts elsewhere.
+        layer['hd'] = stream.read_u32()
+        count = stream.read_u32()
+        textures = []
+        for _ in range(count):
+            entry = {'textureId': stream.read_u32(), 'slot': stream.read_u32()}
+            entry['tracks'] = read_tracks(stream, end, only=('KMTF',))
+            textures.append(entry)
+        layer['textures'] = textures
     layer['tracks'] = read_tracks(stream, end)
     if stream.tell() != end:
         # Anything still unaccounted for is kept rather than discarded, so a
@@ -410,7 +419,16 @@ def _write_layer(stream, layer, version):
             body.write_f32(layer.get('fresnelOpacity', 0.0))
             body.write_f32(layer.get('fresnelTeamColor', 0.0))
         if version >= 1100:
-            body.write_u8_array(layer.get('unknown_v1100') or bytes(16))
+            if layer.get('textures') is not None:
+                body.write_u32(layer.get('hd', 0))
+                body.write_u32(len(layer['textures']))
+                for entry in layer['textures']:
+                    body.write_u32(entry.get('textureId', 0))
+                    body.write_u32(entry.get('slot', 0))
+                    write_tracks(body, entry.get('tracks'))
+            else:
+                # data from before #301, or a layer built without the list
+                body.write_u8_array(layer.get('unknown_v1100') or bytes(16))
         write_tracks(body, layer.get('tracks'))
         if layer.get('trailing'):
             body.write_u8_array(layer['trailing'])

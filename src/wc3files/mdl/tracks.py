@@ -134,8 +134,9 @@ def _read_keys(stream, kind, count, tangents):
     return keys
 
 
-def read_tracks(stream, end=None):
-    """Read optional keyframe tracks until ``end`` (absolute offset) or EOF."""
+def read_tracks(stream, end=None, only=None):
+    """Read optional keyframe tracks until ``end`` (absolute offset) or EOF.
+    With ``only``, stop at the first track whose tag is not in it."""
     tracks = {}
     while True:
         if end is not None and stream.tell() >= end:
@@ -143,7 +144,9 @@ def read_tracks(stream, end=None):
         if stream.remaining() < 8:
             break
         tag = stream.peek(4).decode('latin-1')
-        if tag not in TRACK_VALUE_SIZE:
+        if tag not in TRACK_VALUE_SIZE or (only is not None and tag not in only):
+            break
+        if tag in tracks and only is not None:
             break
         stream.read_tag()
         kind, _ = TRACK_VALUE_SIZE[tag]
