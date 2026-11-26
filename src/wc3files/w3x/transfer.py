@@ -371,21 +371,27 @@ def _object_bytes(data, ext):
     return handler.to_bytes(ext)
 
 
-def transfer(source, target, parts=PARTS, replace_imports=True):
+def transfer(source, target, parts=PARTS, replace_imports=None, prefer='source'):
     """(files, report): the target map's members with `parts` of the
     source's copied in. `source` and `target` are {name: bytes} member
     tables (wc3files.w3x.modes.archive_files); neither is changed.
 
-    Parts: 'objects' (object data, merged with the target's, the source's
-    object taking a rawcode both use), 'triggers' (war3map.wtg, war3map.wct
-    and the script, merged), 'interface' (war3mapSkin.txt), 'constants'
-    (war3mapMisc.txt), 'imports' (the imported files and war3map.imp), and
-    'sounds' (war3map.w3s; its files are imports). A part the source does
-    not have leaves the target's as it is.
+    Parts: 'objects' (object data, merged with the target's), 'triggers'
+    (war3map.wtg, war3map.wct and the script, merged), 'interface'
+    (war3mapSkin.txt), 'constants' (war3mapMisc.txt), 'imports' (the
+    imported files and war3map.imp), and 'sounds' (war3map.w3s; its files
+    are imports). A part the source does not have leaves the target's as it
+    is.
+
+    `prefer` says which side wins where both have something: with 'source',
+    the source's object takes a rawcode both use, and the source's interface,
+    constants, sounds and imported files replace the target's; with 'target',
+    the target keeps its own, as a campaign's maps do over the campaign's
+    data. `replace_imports` overrides `prefer` for the imported files.
 
     The report gives `copied` (member names), `kept` (target members a part
-    left, since the source has none), `objects` (per type, the target
-    objects the source's replaced), `script` (merge_scripts' report, with
+    left), `objects` (per type, the rawcodes both sides had, where the side
+    `prefer` names won), `script` (merge_scripts' report, with
     `translated` when a JASS source went into a Lua target), `strings`
     (source string number to target number, for each string copied), and
     `notes`."""
@@ -393,6 +399,11 @@ def transfer(source, target, parts=PARTS, replace_imports=True):
     unknown = set(parts) - set(PARTS)
     if unknown:
         raise ValueError(f'unknown parts {sorted(unknown)}; choose from {", ".join(PARTS)}')
+    if prefer not in ('source', 'target'):
+        raise ValueError(f"prefer must be 'source' or 'target', not {prefer!r}")
+    if replace_imports is None:
+        replace_imports = prefer == 'source'
+    policy = 'second' if prefer == 'source' else 'first'
     from wc3files.w3o.merge import merge_objects
     files = dict(target)
     report = {'copied': [], 'kept': [], 'objects': {}, 'script': None, 'strings': {},
@@ -410,8 +421,9 @@ def transfer(source, target, parts=PARTS, replace_imports=True):
                 data = find(source, name) and source[find(source, name)]
             else:
                 merged, merge = merge_objects({ext: mine}, {ext: theirs},
-                                              on_conflict='second', on_edit_conflict='second')
-                report['objects'][name] = [object_id for _, object_id in merge['kept_second']]
+                                              on_conflict=policy, on_edit_conflict=policy)
+                report['objects'][name] = [object_id for _, object_id
+                                           in merge['kept_' + policy]]
                 data = _object_bytes(merged[ext], ext)
             copied[find(files, name) or name] = data
 
@@ -420,10 +432,11 @@ def transfer(source, target, parts=PARTS, replace_imports=True):
             continue
         for name in names:
             key = find(source, name)
-            if key is not None:
-                copied[find(files, name) or name] = source[key]
-            elif find(files, name) is not None:
-                report['kept'].append(find(files, name))
+            own = find(files, name)
+            if key is not None and (own is None or prefer == 'source'):
+                copied[own or name] = source[key]
+            elif own is not None:
+                report['kept'].append(own)
 
     if 'triggers' in parts:
         for name in TRIGGER_FILES:
