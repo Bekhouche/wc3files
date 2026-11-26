@@ -58,6 +58,48 @@ data (`war3map.w3i`, `war3map.j`, `war3mapUnits.doo`, ...) is skipped and
 reported, since the map owns these files and `war3map.imp` does not list
 them.
 
+```bash
+wc3files import-move MyMap.w3x Out.w3x --move war3mapImported\\BTNHero.blp ReplaceableTextures\\CommandButtons\\BTNHero.blp
+wc3files import-move MyMap.w3x Out.w3x --strip-prefix         # every war3mapImported\ member
+wc3files import-move MyMap.w3x --strip-prefix --report-only   # print what would change
+```
+
+`import-move` renames imported files and rewrites every reference to them:
+
+1. the object data (`war3map.w3u` and the others, `war3mapSkin.*`), the map
+   info, the sounds and the GUI triggers;
+2. the script, the custom-text triggers of `war3map.wct`, FDF, TOC, TXT, SLK,
+   MDL and `war3map.wts`;
+3. the texture, attachment and particle paths inside MDX models;
+4. the entries of `war3map.imp`.
+
+Names are matched ignoring case and with either separator, and a reference
+keeps its own separator. A model is matched as `.mdl` or `.mdx`, since the
+game loads either, and its `_portrait` model moves with it (`--no-portraits`
+to leave it). `--strip-prefix` takes `war3mapImported\` off every member
+under it, or off the members `--only` names; a member whose new name the map
+already has is skipped.
+
+`--fix-dots` renames every file whose name has more than one dot, turning
+each dot but the last into an underscore (`TownHallElfV1.01.mdx` becomes
+`TownHallElfV1_01.mdx`), and rewrites the references the same way. As the
+author of Import Fixer for Reforged 3.00's Multi-Dot Bug describes it, patch
+3.0 takes the extension of an imported file from its first dot, so the game
+does not load such a file, with no error, while the World Editor still shows
+it. This has not been checked here on the current patch, so the check runs
+only when it is asked for: `--fix-dots --report-only` lists the files. A dot
+in a folder name is left as it is, and a file whose new name the map already
+has is skipped.
+
+What it cannot update is printed as `not updated`:
+
+- the old path, or the file name alone, where a reference was not rewritten;
+- a script string that ends in a moved file's old folder, such as
+  `"war3mapImported\\" + name`, which builds the path while the script runs;
+- a path an MDX field has no room for: the field is 260 bytes;
+- a binary file that does not read before or after the edit, which is left
+  as it was.
+
 ## Inspecting map sub-files
 
 ```bash
@@ -83,6 +125,82 @@ w3e  w3f  w3g  w3i  w3r  w3s  wct  wes  wpm  wtg  wts
 
 A shadow map (`shd`) has no header. Its size is read from a `war3map.wpm` or
 `war3map.w3e` next to it, or given with `--width` and `--height`.
+
+## Merging doodads
+
+```bash
+wc3files doodads-merge Out.w3x MyMap.w3x Forest.w3x Ruins.doo    # into a copy of MyMap.w3x
+wc3files doodads-merge war3map.doo a.doo b.doo --renumber-all     # a war3map.doo, ids from 0
+```
+
+`doodads-merge` puts every doodad and destructable of the inputs, maps or
+`war3map.doo` files, into one `war3map.doo`, in order. This places the
+objects of several edits of one map in the same terrain, or gets past what
+the World Editor lets one edit place. When the output is a map, it is the
+first input map with the merged `war3map.doo`; its other files are kept.
+
+1. **Format:** the newest format among the inputs is written, so no record
+   loses a field. A format 13 file needs a Reforged game.
+2. **Editor ids:** the first input keeps its own, and the records of the
+   others are numbered on from its highest. `--renumber-all` numbers every
+   record from 0 in order, the first input too.
+3. **Variables:** the World Editor names a destructable that the script or
+   the GUI triggers use `gg_dest_<rawcode>_<editor id>`. A renumbered one that
+   its map's `war3map.j`, `war3map.lua`, `war3map.wtg` or `war3map.wct` names
+   is printed as `breaks:`, and the command exits with 1.
+4. **Item tables:** a record of an input after the first that drops items
+   from an item table points to a table of its own map, and is printed.
+5. **Special doodads** (cliff and terrain decoration) are joined, and exact
+   duplicates left out.
+
+## Maps in git
+
+A map saved as a folder (the World Editor's *Save as folder*, or `wc3files
+unpack`) can be kept in git, but most of its files are binary, so `git diff`
+only says that they changed. `textconv` prints a file as text that git can
+compare:
+
+```bash
+wc3files textconv war3map.doo
+```
+
+What it prints depends on the file name:
+
+1. a file `dump` reads (`war3map.w3i`, `war3map.doo`, `war3mapUnits.doo`,
+   `war3map.w3e`, the object files, ...): its `dump` JSON, with each record on
+   one line, so a moved doodad or a changed tile is one changed line;
+2. a text file (`war3map.j`, `war3map.lua`, `war3map.wts`, SLK, FDF, MDL,
+   `(listfile)`): the file as it is, and an MDX model as MDL;
+3. any other file (images, sounds): one line with its size and SHA-256.
+
+A file that does not read gives the third form, with the error on a second
+line, so the diff of the other files still runs.
+
+To have `git diff` use it, add a `.gitattributes` to the repository:
+
+```
+war3map.* diff=wc3files
+war3mapUnits.doo diff=wc3files
+war3mapSkin.* diff=wc3files
+*.mdx diff=wc3files
+```
+
+and tell git what the `wc3files` diff driver runs, once per clone:
+
+```bash
+git config diff.wc3files.textconv "wc3files textconv"
+git config diff.wc3files.cachetextconv true
+```
+
+`cachetextconv` keeps the text of each committed version, so `git log -p`
+does not read the same file twice. The driver changes only what `git diff`,
+`git log -p` and `git show` print; merges and the files themselves are not
+affected.
+
+git gives `textconv` a temporary copy of the old version, named after the
+file, with no other map file beside it. A shadow map has no header and its
+size comes from the terrain next to it, so the old copy of a `war3map.shd` is
+printed in rows of 64 cells rather than rows of the map's width.
 
 ## Object data
 

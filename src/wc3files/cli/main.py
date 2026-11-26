@@ -436,6 +436,62 @@ def _cmd_objects_merge(args):
     return 0
 
 
+def _doodad_source(path, deep):
+    """(war3map.doo bytes, the gg_dest_ variables its map uses, the map's
+    members or None) for a war3map.doo file or a map."""
+    from wc3files.doo.merge import referenced_destructables
+    from wc3files.w3x.modes import archive_files
+    if not path.lower().endswith(_MAP_EXTENSIONS):
+        with open(path, 'rb') as handle:
+            return handle.read(), None, None
+    files = archive_files(_open_map(path, deep))
+    lower = {name.lower(): name for name in files}
+    if 'war3map.doo' not in lower:
+        raise ValueError(f'{path} has no war3map.doo')
+    texts = [files[lower[name]] for name in ('war3map.j', 'scripts\\war3map.j', 'war3map.lua',
+                                             'war3map.wtg', 'war3map.wct') if name in lower]
+    return files[lower['war3map.doo']], referenced_destructables(*texts), files
+
+
+def _cmd_doodads_merge(args):
+    """Merge the war3map.doo files of several maps or files (#219)."""
+    from wc3files.doo.merge import merge_doodads
+    from wc3files.w3x.modes import _write_map
+    sources = [_doodad_source(path, args.deep) for path in args.inputs]
+    references = [refs if refs is not None else set() for _, refs, _ in sources]
+    merged, report = merge_doodads([raw for raw, _, _ in sources], references=references,
+                                   renumber_all=args.renumber_all)
+    for path, changed in zip(args.inputs, report['renumbered']):
+        print(f'{path}: {len(changed)} editor ids changed')
+    for item in report['broken_references']:
+        print(f"breaks: gg_dest_{item['id']}_{item['old']:04d} of {args.inputs[item['source']]} "
+              f"is now gg_dest_{item['id']}_{item['new']:04d}")
+    for item in report['item_tables']:
+        print(f"item table: record {item['index']} ({item['id']}) of "
+              f"{args.inputs[item['source']]} points to item table {item['pointer']} of its "
+              f"own map")
+    if report['specials_dropped']:
+        print(f"{report['specials_dropped']} duplicate special doodads left out")
+    if report['duplicate_ids']:
+        print(f"{args.inputs[0]} itself repeats editor ids {report['duplicate_ids']}; "
+              f"--renumber-all gives every record its own")
+    data = merged.get_data()
+    print(f"{len(data['doodads'])} doodads, format {report['version'][0]}/"
+          f"{report['version'][1]}")
+    if args.output.lower().endswith(_MAP_EXTENSIONS):
+        files = sources[0][2]
+        if files is None:
+            raise ValueError('to write a map, the first input must be a map')
+        files = dict(files)
+        key = next(name for name in files if name.lower() == 'war3map.doo')
+        files[key] = merged.to_bytes()
+        _write_map(files, args.output)
+    else:
+        merged.write(args.output)
+    print(f'Wrote {args.output}')
+    return 1 if report['broken_references'] else 0
+
+
 def _cmd_import_folder(args):
     """Add a folder tree to a map and list it in war3map.imp (#215)."""
     from wc3files.w3x.imports import import_folder
@@ -449,6 +505,50 @@ def _cmd_import_folder(args):
     print(f"{len(report['added'])} added, {len(report['replaced'])} replaced, "
           f"{len(report['kept'])} kept, {len(report['skipped'])} skipped as map data; "
           f"{report['listed']} new war3map.imp entries")
+    _write_map(files, args.output)
+    print(f'Wrote {args.output}')
+    return 0
+
+
+def _cmd_import_move(args):
+    """Move imported files and rewrite the references to them (#214)."""
+    from wc3files.w3x.imports import (move_imports, multi_dot_members, strip_prefix_moves,
+                                      undot_moves)
+    from wc3files.w3x.modes import archive_files, _write_map
+    if not (args.move or args.strip_prefix or args.fix_dots):
+        raise ValueError('give --move OLD NEW, --strip-prefix or --fix-dots')
+    if args.output is None and not args.report_only:
+        raise ValueError('give the map to write, or --report-only')
+    files = archive_files(_open_map(args.input, args.deep))
+    moves = {old: new for old, new in args.move or ()}
+    if args.strip_prefix:
+        stripped, skipped = strip_prefix_moves(files, names=args.only or None)
+        for old, new in skipped:
+            print(f'skipped: {old} (the map already has {new})')
+        moves.update({old: new for old, new in stripped.items() if old not in moves})
+    if args.fix_dots:
+        dotted = multi_dot_members(files)
+        print(f'{len(dotted)} file names with more than one dot')
+        for old in dotted:
+            moves.setdefault(old, old)
+        moves, skipped = undot_moves(files, moves)
+        for old, new in skipped:
+            print(f'skipped: {old} (the map already has {new})')
+    if not moves:
+        print('nothing to move')
+        return 0
+    files, report = move_imports(files, moves, portraits=not args.no_portraits)
+    for old, new in report['moved']:
+        print(f'moved: {old} -> {new}')
+    for member, count in sorted(report['updated'].items()):
+        print(f'updated: {member} ({count})')
+    for item in report['unresolved']:
+        text = f": {item['text']}" if item['text'] else ''
+        print(f"not updated: {item['member']}{text} ({item['reason']})")
+    print(f"{len(report['moved'])} moved, {sum(report['updated'].values())} references "
+          f"in {len(report['updated'])} files updated, {len(report['unresolved'])} not updated")
+    if args.report_only:
+        return 0
     _write_map(files, args.output)
     print(f'Wrote {args.output}')
     return 0
@@ -1726,6 +1826,14 @@ def _cmd_dump(args):
         print(f"Wrote {output}")
 
 
+def _cmd_textconv(args):
+    from .textconv import textconv
+    text = textconv(args.path)
+    out = sys.stdout.buffer
+    out.write(text.encode('utf-8'))
+    out.flush()
+
+
 def _cmd_build(args):
     fmt, paths = _format_and_paths('build', args.paths, 1)
     if len(paths) != 2:
@@ -1973,6 +2081,16 @@ def build_parser():
     p_dump.add_argument('--height', type=int, default=None,
                         help='Grid height, as --width.')
     p_dump.set_defaults(func=_cmd_dump)
+
+    p_textconv = subparsers.add_parser(
+        'textconv', help='Print a map file as text for git diff.',
+        description=('Print a map file as text that git diff can compare: the dump '
+                     'JSON with one record per line, scripts and other text files as '
+                     'they are, an MDX model as MDL, and any other file as its size '
+                     'and SHA-256. The format comes from the file name. See '
+                     + _DOCS + '#maps-in-git.'))
+    p_textconv.add_argument('path', help='The file to print (git passes it).')
+    p_textconv.set_defaults(func=_cmd_textconv)
 
     p_build = subparsers.add_parser(
         'build', help='Build a map sub-file back from a dump() JSON file.',
@@ -2294,6 +2412,21 @@ def build_parser():
                            help='Write the old-to-new rawcode table here.')
     p_objects.set_defaults(func=_cmd_objects_merge)
 
+    p_doodads = subparsers.add_parser(
+        'doodads-merge', help='Merge the doodads of several maps or war3map.doo files.',
+        description=('Put every doodad and destructable of the inputs into one '
+                     'war3map.doo. The first input keeps its editor ids and the others '
+                     'are numbered on from its highest. A renumbered destructable that '
+                     "its map's script or triggers name (gg_dest_...) is reported, and "
+                     'the command then exits with 1. See ' + _DOCS + '#merging-doodads.'))
+    p_doodads.add_argument('output', help=('The war3map.doo to write, or a map: the first '
+                                           'input map with the merged war3map.doo.'))
+    p_doodads.add_argument('inputs', nargs='+', help='Maps or war3map.doo files.')
+    p_doodads.add_argument('--renumber-all', action='store_true',
+                           help='Number every record from 0 in order, the first input too.')
+    p_doodads.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_doodads.set_defaults(func=_cmd_doodads_merge)
+
     p_import = subparsers.add_parser(
         'import-folder', help='Import a folder and its subfolders into a map.',
         description=('Add every file under a folder to a map at the same relative '
@@ -2329,6 +2462,35 @@ def build_parser():
                             help='Keep a target file that the source also imports.')
     p_transfer.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_transfer.set_defaults(func=_cmd_transfer)
+
+    p_move = subparsers.add_parser(
+        'import-move', help='Move imported files and rewrite every reference to them.',
+        description=('Rename imported files and rewrite the references to them in '
+                     'object data, the map info, sounds, GUI triggers, the script, '
+                     'war3map.imp, models, FDF and the other text files. A model is '
+                     'matched as .mdl or .mdx, and its _portrait model moves with it. '
+                     'The places a name is still found, such as a path the script '
+                     'builds while it runs, are reported. See ' + _DOCS
+                     + '#imported-files.'))
+    p_move.add_argument('input', help='The .w3x/.w3m map.')
+    p_move.add_argument('output', nargs='?', help='The map to write.')
+    p_move.add_argument('--move', nargs=2, action='append', metavar=('OLD', 'NEW'),
+                        help='Move member OLD to NEW. Can be given more than once.')
+    p_move.add_argument('--strip-prefix', action='store_true',
+                        help='Take war3mapImported\\ off every member under it.')
+    p_move.add_argument('--only', nargs='+', metavar='MEMBER',
+                        help='With --strip-prefix, only these members.')
+    p_move.add_argument('--fix-dots', action='store_true', help=(
+        'Turn each dot but the last of a file name into an underscore, as '
+        'TownHallElfV1.01.mdx to TownHallElfV1_01.mdx: patch 3.0 takes the extension '
+        'from the first dot and does not load such a file. With --report-only, '
+        'lists them.'))
+    p_move.add_argument('--no-portraits', action='store_true',
+                        help="Do not move a model's _portrait model with it.")
+    p_move.add_argument('--report-only', action='store_true',
+                        help='Print what would change and write nothing.')
+    p_move.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_move.set_defaults(func=_cmd_import_move)
 
     p_opt = subparsers.add_parser(
         'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '
