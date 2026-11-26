@@ -333,6 +333,62 @@ def _cmd_model_texture_paths(args):
     return status
 
 
+def _cmd_model_textures(args):
+    """List the textures of models, or of the models of a map (#242)."""
+    from wc3files.mdl.batch import model_paths
+    from wc3files.mdl.model_file import ModelFile
+    from wc3files.mdl.texture_list import game_file_names, list_textures, map_textures
+    game_names = None
+    if args.game:
+        from wc3files.casc import CascStorage
+        storage = CascStorage()
+        storage.open(args.game)
+        game_names = game_file_names(storage)
+    maps = [p for p in args.inputs if p.lower().endswith(('.w3x', '.w3m'))]
+    others = [p for p in args.inputs if p not in maps]
+    out = {}
+    if others:
+        models, failed = [], []
+        for path, _ in model_paths(others):
+            try:
+                models.append((path, ModelFile().read(path)))
+            except Exception as error:  # reported, and the others go on
+                failed.append((path, str(error)))
+        out['models'] = {'textures': list_textures(models), 'unreadable': failed}
+    for path in maps:
+        from wc3files.w3x.modes import archive_files
+        out[path] = map_textures(archive_files(_open_map(path, args.deep)), game_names)
+    if args.json:
+        _write_json(out, '-')
+        return 0
+    for label, report in out.items():
+        print(f'== {label}')
+        for key in sorted(report['textures']):
+            entry = report['textures'][key]
+            print(f"{entry['path']}  ({len(entry['models'])} model(s))")
+            for model in entry['models']:
+                print(f'    {model}')
+        for name, error in report['unreadable']:
+            print(f'unreadable: {name}: {error}')
+        if label == 'models':
+            continue
+        print(f"{report['models']} model(s), {len(report['textures'])} texture(s), "
+              f"{report['imported_images']} imported image(s)")
+        print(f"unused, named by no model and no other file: {len(report['unused'])}")
+        for name in report['unused']:
+            print(f'    {name}')
+        print(f"named only by other files: {len(report['named_elsewhere'])}")
+        for name, users in report['named_elsewhere'].items():
+            print(f"    {name}  ({', '.join(users)})")
+        where = 'the map or the game' if report['checked_game'] else 'the map (give --game to check the game too)'
+        print(f"used by models but not in {where}: {len(report['missing'])}")
+        for entry in report['missing']:
+            print(f"    {entry['path']}  ({', '.join(entry['models'])})")
+        for used, imported in report['other_extension']:
+            print(f'note: {used} is used and {imported} is imported, with another extension')
+    return 0
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2531,6 +2587,20 @@ def build_parser():
                          action=_PathRule, const='pattern', dest='rules',
                          help='Replace each match of REGEX, as "\\.blp$" ".dds".')
     p_paths.set_defaults(func=_cmd_model_texture_paths, rules=[])
+
+    p_textures = subparsers.add_parser(
+        'model-textures', help='List the textures of models, or of the models of a map.',
+        description=('List each texture the models use, with the models that use it. For a '
+                     'map, also the imported images nothing uses, those only other files '
+                     'name, and the textures that are neither in the map nor, with --game, '
+                     'in the game. See ' + _DOCS + '#model-edits.'))
+    p_textures.add_argument('inputs', nargs='+',
+                            help='Models, folders of models, or .w3x/.w3m maps.')
+    p_textures.add_argument('--game', metavar='INSTALL',
+                            help="An installed game, whose files count as found.")
+    p_textures.add_argument('--json', action='store_true', help='Print the report as JSON.')
+    p_textures.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_textures.set_defaults(func=_cmd_model_textures)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '

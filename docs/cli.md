@@ -550,6 +550,36 @@ reported and not written. On 718 real models, `--pattern "\.blp$" ".dds"`
 rewrote 2,802 paths and `--prefix war3mapImported\ ""` 8, and every model came
 out byte for byte as the same model with only those paths changed.
 
+```bash
+wc3files model-textures Models/                     # each texture and its models
+wc3files model-textures MyMap.w3x --game "C:/Games/Warcraft III"
+```
+
+`model-textures` lists each texture that the models use, with the models that
+use it. It takes models, folders and maps, and `--json` prints the report as
+JSON. For a map it reads the map's own models and also lists:
+
+- the imported images that no model uses and no other file of the map names
+  (object data, map info, triggers, scripts, interface files): the imports
+  that can go;
+- the imported images that no model uses but another file names, such as an
+  icon in the object data;
+- the textures that models use but that are not in the map, nor, with `--game`,
+  in the installed game.
+
+Against the game, a texture counts under any image extension, since the game's
+models name `.blp` files that Reforged stores as `.dds`, and a `_hd.w3mod:`
+prefix is dropped. Against the map, only the path given counts. Whether the
+game takes a map's `X.dds` for a model's `X.blp` has not been checked, so such
+pairs are printed as a note.
+
+On 116 corpus maps with the game's files, 85 have models: 8,796 models using
+19,727 textures. Of 15,360 imported images, 7,337 were found unused in 82 maps,
+5,160 named only by other files, and 526 textures used by models were neither
+in the map nor in the game. 212 of the unused images have their file name in
+another file, which a check by hand found to be another folder, another file of
+the same name, a comment or a model's name, not a reference to them.
+
 ## Pathing textures
 
 ```bash
