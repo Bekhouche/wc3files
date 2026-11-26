@@ -288,6 +288,21 @@ def _cmd_model_remove_unused(args):
     return _run_model_batch(args, remove_unused, describe)
 
 
+def _cmd_model_team_glow(args):
+    """Make the team glow of models transparent, or remove it (#240)."""
+    from wc3files.mdl.teamglow import remove_team_glow
+
+    def describe(report):
+        if not report['layers']:
+            return 'no team glow'
+        if args.mode == 'transparent':
+            return f"{report['layers']} team glow layer(s) made transparent"
+        return (f"{report['layers']} team glow layer(s) removed, with {report['geosets']} "
+                f"geoset(s), {report['materials']} material(s) and {report['textures']} "
+                'texture(s) no longer used')
+    return _run_model_batch(args, lambda data: remove_team_glow(data, args.mode), describe)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2459,6 +2474,17 @@ def build_parser():
                      + _DOCS + '#model-edits.'))
     _add_model_batch_args(p_unused)
     p_unused.set_defaults(func=_cmd_model_remove_unused)
+
+    p_glow = subparsers.add_parser(
+        'model-team-glow', help='Make the team glow of models transparent, or remove it.',
+        description=('Find the layers that show the team glow (replaceable texture 2). '
+                     'transparent sets their alpha to 0; remove takes them out, with the '
+                     'geosets that drew only the glow and what nothing uses any more. See '
+                     + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_glow)
+    p_glow.add_argument('--mode', choices=('transparent', 'remove'), default='transparent',
+                        help='transparent (default) or remove.')
+    p_glow.set_defaults(func=_cmd_model_team_glow)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '

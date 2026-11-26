@@ -471,6 +471,7 @@ wc3files model-extents Models/ -o Fixed/           # every model of a folder
 wc3files model-transform Tree.mdx -o Out/ --scale 1.5 --translate 0,0,10
 wc3files model-normals Imported/ -o Fixed/           # normals from the faces
 wc3files model-remove-unused Imported/ --in-place     # drop unused materials
+wc3files model-team-glow Doodads/ -o Out/ --mode remove
 ```
 
 Each model edit takes models and folders, searched with their subfolders, and
@@ -525,6 +526,17 @@ list. Nothing drawn changes. The game's own models have nothing to remove; of
 300 models imported into corpus maps, 48 lost 28 materials, 64 textures and 9
 texture animations, and every geoset, ribbon and particle emitter kept the same
 textures, frames and texture animations.
+
+`model-team-glow` finds the layers that show the team glow, the replaceable
+texture 2, through their texture, their flipbook or their texture list. By
+default it makes them transparent: alpha 0 and no alpha track. With `--mode
+remove` it takes them out; a material left with no layer goes with the geosets
+that use it, the references to later geosets and geoset animations are
+renumbered, and `model-remove-unused` then runs. A ribbon emitter that uses
+such a material keeps one transparent layer. Over 34 of the game's SD models
+and 137 models imported into corpus maps that have team glow, both ways left no
+glow drawn, and every other geoset kept its vertices and geoset animation. The
+game's HD models have no team glow texture.
 
 ## Pathing textures
 
