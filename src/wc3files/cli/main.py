@@ -278,6 +278,16 @@ def _cmd_model_normals(args):
         args, lambda data: recompute_normals(data, args.angle, args.weld), describe)
 
 
+def _cmd_model_remove_unused(args):
+    """Remove the unused materials, textures and texture animations (#232)."""
+    from wc3files.mdl.cleanup import remove_unused
+
+    def describe(report):
+        return (f"removed {report['materials']} material(s), {report['textures']} "
+                f"texture(s), {report['textureAnimations']} texture animation(s)")
+    return _run_model_batch(args, remove_unused, describe)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2439,6 +2449,16 @@ def build_parser():
                            help='With --weld: the widest angle joined (default 60); '
                                 'a sharper edge stays hard.')
     p_normals.set_defaults(func=_cmd_model_normals)
+
+    p_unused = subparsers.add_parser(
+        'model-remove-unused',
+        help='Remove the materials, textures and texture animations nothing uses.',
+        description=('Remove the materials no geoset or ribbon uses, then the textures and '
+                     'texture animations no kept layer or particle emitter uses, and '
+                     'renumber the references. Nothing drawn changes. See '
+                     + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_unused)
+    p_unused.set_defaults(func=_cmd_model_remove_unused)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '

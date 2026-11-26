@@ -470,6 +470,7 @@ wc3files model-extents Footman.mdx --in-place      # recompute the bounds
 wc3files model-extents Models/ -o Fixed/           # every model of a folder
 wc3files model-transform Tree.mdx -o Out/ --scale 1.5 --translate 0,0,10
 wc3files model-normals Imported/ -o Fixed/           # normals from the faces
+wc3files model-remove-unused Imported/ --in-place     # drop unused materials
 ```
 
 Each model edit takes models and folders, searched with their subfolders, and
@@ -515,6 +516,15 @@ stays hard. A vertex in no triangle keeps its normal. Without `--weld`, the
 normals come closest to the game's own: a median of 1.0 degrees from those of
 49 SD models and 1.6 degrees from those of 22 HD models, with 87% and 89%
 within 15 degrees. Welding at 60 degrees gives 2.7 and 2.6 degrees.
+
+`model-remove-unused` removes the materials no geoset or ribbon emitter uses,
+then the textures and texture animations that no kept layer or particle
+emitter uses, and renumbers the references. A layer uses a texture through its
+texture id, its flipbook (`KMTF`) frames and, from version 1100 on, its texture
+list. Nothing drawn changes. The game's own models have nothing to remove; of
+300 models imported into corpus maps, 48 lost 28 materials, 64 textures and 9
+texture animations, and every geoset, ribbon and particle emitter kept the same
+textures, frames and texture animations.
 
 ## Pathing textures
 
