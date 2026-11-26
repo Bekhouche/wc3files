@@ -120,21 +120,30 @@ def _prune(model, tag, track, tolerance, dead_keys=False):
     drop = set()
     for start, end in windows:
         inside = [i for i, k in enumerate(keys) if start <= k['frame'] <= end]
-        last_kept, pending = None, []
+        last_kept, pending, flat = None, [], True
         for position, i in enumerate(inside):
             key = keys[i]
             final = position == len(inside) - 1
             if (last_kept is not None and not final and key['frame'] not in bounds
                     and in_windows[i] == 1):
                 nxt = keys[inside[position + 1]]
+                base = keys[last_kept]['value']
+                same = (_close(key['value'], base, tolerance, rotation)
+                        and _close(nxt['value'], base, tolerance, rotation))
                 # Every key dropped since the last one kept must still lie on
-                # the new segment, so errors do not add up.
-                if all(_redundant(keys[last_kept], keys[j], nxt, interpolation, tolerance,
-                                  rotation) for j in pending + [i]):
+                # the new segment, so errors do not add up. On a run of equal
+                # values they all do, and only the new key needs looking at.
+                if flat and same:
+                    ok = _redundant(keys[last_kept], key, nxt, interpolation, tolerance, rotation)
+                else:
+                    ok = all(_redundant(keys[last_kept], keys[j], nxt, interpolation, tolerance,
+                                        rotation) for j in pending + [i])
+                if ok:
                     pending.append(i)
+                    flat = flat and same
                     continue
             drop.update(pending)
-            pending = []
+            pending, flat = [], True
             last_kept = i
         drop.update(pending)
     dead = set()
