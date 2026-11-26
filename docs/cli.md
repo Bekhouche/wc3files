@@ -463,6 +463,38 @@ wc3files model-convert Footman.mdx Footman.mdl     # direction follows extension
 wc3files model-info Footman.mdx                    # version, sequences, textures
 ```
 
+## Pathing textures
+
+```bash
+wc3files pathing-texture show 12x12Goldmine.tga                   # the cells as digits
+wc3files pathing-texture make cells.txt Barracks.tga              # from rows of digits
+wc3files pathing-texture from-model Barracks.mdx Barracks.tga --size 12x12 --border 2
+```
+
+Buildings, doodads and destructables block pathing with a small TGA. Each
+pixel is one pathing cell, 32 game units across, and the image is centered on
+the object, its top row to the north. A color channel of 128 or more blocks
+one kind of pathing: red walking, green flying, blue building. The game's own
+`PathTextures` follow it: the Unbuildable ones are blue, the Unflyable ones
+white, the SimpleSolid ones magenta, and the Simple ones a magenta core in a
+blue ring. Alpha is not used.
+
+`show` and `make` write a cell as one digit, the sum of 1 (no walking),
+2 (no flying) and 4 (no building): 5 is a building's cell, 4 an unbuildable
+one, 7 blocked to all, 0 open. All 209 textures of the game read and write
+back with the same cells.
+
+`from-model` makes a texture from a model's footprint seen from above: the
+cells under its triangles are 5. They are snapped to 2x2 blocks (`--snap 1`
+for none), since the game's textures follow its 64-unit build grid, and a
+block is blocked when at least half its cells are. `--border N` adds N rings
+of unbuildable cells around it, and `--max-height H` counts only the
+triangles that come within H units of the ground. On the 196 game buildings
+that have a model and a texture with blocked cells, the footprint and the
+game's texture overlap with a median intersection over union of 0.80, and
+180 of them reach 0.5. It is a start to draw on rather than a finished
+texture: the game's are drawn by hand.
+
 ## Scripts and triggers
 
 ```bash
