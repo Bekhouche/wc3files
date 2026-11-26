@@ -412,6 +412,36 @@ that title becomes the map's name in its `war3map.w3i` (color codes are kept
 in the map name and left out of the file name). `--parts` chooses among
 `objects`, `interface`, `constants` and `imports`.
 
+## Map descriptions
+
+```bash
+wc3files map-description MyMap.w3x                          # BBCode, for the Hive Workshop
+wc3files map-description MyMap.w3x --format markdown -o README.md
+wc3files map-description --print-template > mine.txt         # the default, to change
+wc3files map-description MyMap.w3x --template mine.txt
+```
+
+`map-description` writes a submission page from the map's own data:
+
+1. the name, author, description and recommended players of
+   `war3map.w3i`, with their `TRIGSTR_` references read from `war3map.wts`;
+2. the players (controller and race) and the forces;
+3. the playable size and the main tileset;
+4. for a melee map, the start locations and the gold mines placed in
+   `war3mapUnits.doo`, each mine counted at a start location when it is
+   within 1200 game units of one and as an expansion otherwise.
+
+A map counts as melee when its map info says so or when it places both gold
+mines and start locations: of 120 corpus maps, 9 set the melee flag and 36
+more place both without it. Warcraft III color codes become `[COLOR]` tags in
+BBCode and are dropped in Markdown; `|n` becomes a line break.
+
+A template is a Python `string.Template`. Its fields are `$name`, `$author`,
+`$description`, `$players_recommended`, `$player_count`, `$players`,
+`$forces`, `$size`, `$tileset`, `$melee` (empty for a map that is not melee)
+and `$editor_version`; the lists are written in the chosen format, and a
+field the template names that does not exist is left as it is.
+
 ## Images and icons
 
 ```bash

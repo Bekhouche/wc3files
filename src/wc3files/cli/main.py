@@ -611,6 +611,30 @@ def _cmd_campaign_split(args):
     return 0
 
 
+def _cmd_map_description(args):
+    """A Hive Workshop or GitHub description of a map (#253)."""
+    from wc3files.w3x.description import TEMPLATES, map_summary, render
+    from wc3files.w3x.modes import archive_files
+    if args.print_template:
+        sys.stdout.write(TEMPLATES[args.format] + '\n')
+        return 0
+    if not args.input:
+        raise ValueError('map-description: give the map')
+    template = None
+    if args.template:
+        with open(args.template, encoding='utf-8') as handle:
+            template = handle.read()
+    files = archive_files(_open_map(args.input, args.deep))
+    text = render(map_summary(files), args.format, template)
+    if args.output:
+        with open(args.output, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(text)
+        print(f'Wrote {args.output}')
+    else:
+        sys.stdout.buffer.write(text.encode('utf-8'))
+    return 0
+
+
 def _cmd_trigger_ui(args):
     """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
     from wc3files.wtg import ydwe_ui
@@ -2529,6 +2553,26 @@ def build_parser():
                         help='Print what would change and write nothing.')
     p_move.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_move.set_defaults(func=_cmd_import_move)
+
+    p_description = subparsers.add_parser(
+        'map-description', help='Write a Hive Workshop (BBCode) or Markdown map description.',
+        description=('Write a description of a map from its own data: name, author, '
+                     'players and forces, playable size, tileset and description, and for '
+                     'a melee map its start locations and gold mines. --template takes a '
+                     'string.Template with $name, $author, $description, '
+                     '$players_recommended, $player_count, $players, $forces, $size, '
+                     '$tileset, $melee and $editor_version. See ' + _DOCS
+                     + '#map-descriptions.'))
+    p_description.add_argument('input', nargs='?', help='The .w3x/.w3m map.')
+    p_description.add_argument('--format', choices=('bbcode', 'markdown'), default='bbcode',
+                               help='BBCode for the Hive Workshop (default) or Markdown.')
+    p_description.add_argument('--template', metavar='FILE',
+                               help='A template to fill instead of the default one.')
+    p_description.add_argument('--print-template', action='store_true',
+                               help="Print the format's default template, to start from.")
+    p_description.add_argument('-o', '--output', help='Write here instead of to stdout.')
+    p_description.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_description.set_defaults(func=_cmd_map_description)
 
     p_opt = subparsers.add_parser(
         'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '
