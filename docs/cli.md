@@ -472,6 +472,7 @@ wc3files model-transform Tree.mdx -o Out/ --scale 1.5 --translate 0,0,10
 wc3files model-normals Imported/ -o Fixed/           # normals from the faces
 wc3files model-remove-unused Imported/ --in-place     # drop unused materials
 wc3files model-team-glow Doodads/ -o Out/ --mode remove
+wc3files model-texture-paths Models/ --in-place --pattern "\.blp$" ".dds"
 ```
 
 Each model edit takes models and folders, searched with their subfolders, and
@@ -537,6 +538,17 @@ such a material keeps one transparent layer. Over 34 of the game's SD models
 and 137 models imported into corpus maps that have team glow, both ways left no
 glow drawn, and every other geoset kept its vertices and geoset animation. The
 game's HD models have no team glow texture.
+
+`model-texture-paths` rewrites texture paths with `--replace OLD NEW` (the
+whole path), `--prefix OLD NEW` (its start) and `--pattern REGEX REPLACEMENT`
+(each match of a regular expression, `\1` and the like allowed). The rules are
+tried in the order given, and the first that matches a path rewrites it. Paths
+compare as the game reads them, without regard to case or to `\` against `/`.
+Each change is printed. A replaceable texture has no path and is left alone,
+and a new path of 260 bytes or more, which would not fit its MDX field, is
+reported and not written. On 718 real models, `--pattern "\.blp$" ".dds"`
+rewrote 2,802 paths and `--prefix war3mapImported\ ""` 8, and every model came
+out byte for byte as the same model with only those paths changed.
 
 ## Pathing textures
 
