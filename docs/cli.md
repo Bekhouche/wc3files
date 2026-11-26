@@ -468,6 +468,7 @@ wc3files model-info Footman.mdx                    # version, sequences, texture
 ```bash
 wc3files model-extents Footman.mdx --in-place      # recompute the bounds
 wc3files model-extents Models/ -o Fixed/           # every model of a folder
+wc3files model-transform Tree.mdx -o Out/ --scale 1.5 --translate 0,0,10
 ```
 
 Each model edit takes models and folders, searched with their subfolders, and
@@ -493,6 +494,17 @@ over 23 HD models, a sequence's box is within 2% in 83% and within 10% in 98%. W
 mostly the larger one, since it holds every posed vertex. That is the safe
 side: a box that is too small is what makes a model vanish at the edge of
 the screen.
+
+`model-transform` scales a model about its origin by `--scale`, then moves it
+by `--translate`. Scaling changes every length together: vertices, pivots,
+translation keys, extents, cameras, collision shapes, particle speeds, gravity
+and sizes, ribbon heights, light attenuation and the sequences' move speed.
+Rotations, scaling keys, lifespans and emission rates stay as they are, and so
+do PopcornFX emitters, whose effect files hold their own sizes; their number is
+reported. Moving changes vertices, pivots, extents, cameras and collision
+shapes, since translation keys are offsets from the pivot. On 163 real models,
+the vertices posed at the start, middle and end of each sequence came out as
+the original ones times 2.5, or plus the offset, to within 1e-13.
 
 ## Pathing textures
 
