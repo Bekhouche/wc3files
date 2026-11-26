@@ -1,6 +1,6 @@
 """
-Keyframes of a model removed when they change nothing (#230), as MDX/M3
-Optimizer and Model Optimizer do.
+Keyframes of a model removed when they change nothing (#230), and curved
+tracks made linear (#231), as MDX/M3 Optimizer and Model Optimizer do.
 
 `tracks(model)` walks every keyframe track of a model: nodes, layers and
 their textures, texture and geoset animations, emitters, ribbons, lights,
@@ -26,6 +26,14 @@ sequences above, which model viewers follow but which was not checked in
 the game, so it is not done by default: models imported into maps hold
 many such keys (7,684 of 45,900 on 50 sampled corpus imports, against 17 of
 19,606 on 35 game models).
+
+`linearize(model, tolerance=None)` turns Hermite and Bezier tracks into
+linear ones and drops their tangents. That is lossy: the track then moves
+in straight lines between its keys. With `tolerance`, keys are added where
+the straight line moves away from the curve by more than that, at the frame
+of the largest difference, until no segment does (frames are whole
+milliseconds; a rotation is measured as the largest difference of its
+quaternion's components).
 """
 from .animation import interpolate
 from .batch import model_data
@@ -150,3 +158,69 @@ def remove_redundant_keys(model, tolerance=0.0, dead=False):
         redundant += r
         never += d
     return {'keys': before, 'redundant': redundant, 'dead': never}
+
+
+def _difference(a, b):
+    if isinstance(a, (int, float)):
+        return abs(a - b)
+    return max(abs(x - y) for x, y in zip(a, b))
+
+
+def _refine(left, right, curve, rotation, tolerance, out, depth=0):
+    """Keys to add between `left` and `right` so that the straight line
+    stays within `tolerance` of the curve."""
+    if right['frame'] - left['frame'] < 2 or depth > 32:
+        return
+    worst, worst_frame = 0.0, None
+    for frame in range(left['frame'] + 1, right['frame']):
+        line = interpolate(left, right, frame, 1, rotation)
+        d = _difference(line, curve(frame))
+        if rotation:
+            d = min(d, _difference([-x for x in line], curve(frame)))
+        if d > worst:
+            worst, worst_frame = d, frame
+    if worst <= tolerance or worst_frame is None:
+        return
+    middle = {'frame': worst_frame, 'value': curve(worst_frame)}
+    _refine(left, middle, curve, rotation, tolerance, out, depth + 1)
+    out.append(middle)
+    _refine(middle, right, curve, rotation, tolerance, out, depth + 1)
+
+
+def linearize(model, tolerance=None):
+    """Make every Hermite and Bezier track of `model` linear. Returns the
+    number of tracks changed and of keys added."""
+    model = model_data(model)
+    changed = added = 0
+    for tag, track in tracks(model):
+        interpolation = track.get('interpolationType', 0)
+        if interpolation not in (2, 3):
+            continue
+        keys = track.get('keys') or []
+        rotation = tag in ROTATIONS
+        new_keys = []
+        if tolerance is not None and len(keys) > 1:
+            original = [dict(k) for k in keys]
+            windows, _ = _windows(model, track)
+
+            for left, right in zip(original, original[1:]):
+                new_keys.append({'frame': left['frame'], 'value': left['value']})
+                # Only a stretch some sequence plays is worth keys.
+                if not any(s <= left['frame'] and right['frame'] <= e for s, e in windows):
+                    continue
+
+                def curve(frame, left=left, right=right):
+                    return interpolate(left, right, frame, interpolation, rotation)
+                extra = []
+                _refine({'frame': left['frame'], 'value': left['value']},
+                        {'frame': right['frame'], 'value': right['value']},
+                        curve, rotation, tolerance, extra)
+                new_keys.extend(extra)
+                added += len(extra)
+            new_keys.append({'frame': original[-1]['frame'], 'value': original[-1]['value']})
+        else:
+            new_keys = [{'frame': k['frame'], 'value': k['value']} for k in keys]
+        track['keys'] = new_keys
+        track['interpolationType'] = 1
+        changed += 1
+    return {'tracks': changed, 'added': added}

@@ -604,6 +604,23 @@ than 0.001. At tolerance 0, the pass removed 1,210 of 45,900 keys on 50 corpus
 imports, 77 of 19,606 on 35 SD game models and 376 of 383,820 on 36 HD ones.
 `--dead` removed 7,684 more on the corpus imports, and 17 on the SD models.
 
+```bash
+wc3files model-linear Models/ -o Out/                  # curves to lines (lossy)
+wc3files model-linear Models/ -o Out/ --tolerance 0.5  # with keys where needed
+```
+
+`model-linear` turns Hermite and Bezier tracks into linear ones and drops their
+tangents, which halves the size of their keys. It is lossy: the track then moves
+in straight lines between its keys. With `--tolerance`, keys are added at the
+frame where the line moves furthest from the curve, until it is that close
+everywhere a sequence plays (a rotation is measured on its quaternion's
+components). Each model's MDX size before and after is printed. Without a
+tolerance, 50 corpus imports went from 4,679,255 to 4,336,183 bytes and 35 SD
+game models from 3,750,186 to 3,240,666; the game's HD models have no curved
+tracks. At `--tolerance 0.01`, every played frame stayed within 0.01 of the
+curve, but the 113,865 keys added made both sets larger than before, so a
+tolerance pays only when it is loose.
+
 ## Pathing textures
 
 ```bash
