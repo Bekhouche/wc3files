@@ -419,6 +419,41 @@ def _cmd_import_folder(args):
     return 0
 
 
+def _cmd_import_move(args):
+    """Move imported files and rewrite the references to them (#214)."""
+    from wc3files.w3x.imports import move_imports, strip_prefix_moves
+    from wc3files.w3x.modes import archive_files, _write_map
+    if not (args.move or args.strip_prefix):
+        raise ValueError('give --move OLD NEW or --strip-prefix')
+    if args.output is None and not args.report_only:
+        raise ValueError('give the map to write, or --report-only')
+    files = archive_files(_open_map(args.input, args.deep))
+    moves = {old: new for old, new in args.move or ()}
+    if args.strip_prefix:
+        stripped, skipped = strip_prefix_moves(files, names=args.only or None)
+        for old, new in skipped:
+            print(f'skipped: {old} (the map already has {new})')
+        moves.update({old: new for old, new in stripped.items() if old not in moves})
+    if not moves:
+        print('nothing to move')
+        return 0
+    files, report = move_imports(files, moves, portraits=not args.no_portraits)
+    for old, new in report['moved']:
+        print(f'moved: {old} -> {new}')
+    for member, count in sorted(report['updated'].items()):
+        print(f'updated: {member} ({count})')
+    for item in report['unresolved']:
+        text = f": {item['text']}" if item['text'] else ''
+        print(f"not updated: {item['member']}{text} ({item['reason']})")
+    print(f"{len(report['moved'])} moved, {sum(report['updated'].values())} references "
+          f"in {len(report['updated'])} files updated, {len(report['unresolved'])} not updated")
+    if args.report_only:
+        return 0
+    _write_map(files, args.output)
+    print(f'Wrote {args.output}')
+    return 0
+
+
 def _cmd_trigger_ui(args):
     """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
     from wc3files.wtg import ydwe_ui
@@ -2236,6 +2271,30 @@ def build_parser():
                           help='Keep a member the map already has instead of replacing it.')
     p_import.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_import.set_defaults(func=_cmd_import_folder)
+
+    p_move = subparsers.add_parser(
+        'import-move', help='Move imported files and rewrite every reference to them.',
+        description=('Rename imported files and rewrite the references to them in '
+                     'object data, the map info, sounds, GUI triggers, the script, '
+                     'war3map.imp, models, FDF and the other text files. A model is '
+                     'matched as .mdl or .mdx, and its _portrait model moves with it. '
+                     'The places a name is still found, such as a path the script '
+                     'builds while it runs, are reported. See ' + _DOCS
+                     + '#imported-files.'))
+    p_move.add_argument('input', help='The .w3x/.w3m map.')
+    p_move.add_argument('output', nargs='?', help='The map to write.')
+    p_move.add_argument('--move', nargs=2, action='append', metavar=('OLD', 'NEW'),
+                        help='Move member OLD to NEW. Can be given more than once.')
+    p_move.add_argument('--strip-prefix', action='store_true',
+                        help='Take war3mapImported\\ off every member under it.')
+    p_move.add_argument('--only', nargs='+', metavar='MEMBER',
+                        help='With --strip-prefix, only these members.')
+    p_move.add_argument('--no-portraits', action='store_true',
+                        help="Do not move a model's _portrait model with it.")
+    p_move.add_argument('--report-only', action='store_true',
+                        help='Print what would change and write nothing.')
+    p_move.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_move.set_defaults(func=_cmd_import_move)
 
     p_opt = subparsers.add_parser(
         'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '

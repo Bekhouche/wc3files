@@ -58,6 +58,37 @@ data (`war3map.w3i`, `war3map.j`, `war3mapUnits.doo`, ...) is skipped and
 reported, since the map owns these files and `war3map.imp` does not list
 them.
 
+```bash
+wc3files import-move MyMap.w3x Out.w3x --move war3mapImported\\BTNHero.blp ReplaceableTextures\\CommandButtons\\BTNHero.blp
+wc3files import-move MyMap.w3x Out.w3x --strip-prefix         # every war3mapImported\ member
+wc3files import-move MyMap.w3x --strip-prefix --report-only   # print what would change
+```
+
+`import-move` renames imported files and rewrites every reference to them:
+
+1. the object data (`war3map.w3u` and the others, `war3mapSkin.*`), the map
+   info, the sounds and the GUI triggers;
+2. the script, the custom-text triggers of `war3map.wct`, FDF, TOC, TXT, SLK,
+   MDL and `war3map.wts`;
+3. the texture, attachment and particle paths inside MDX models;
+4. the entries of `war3map.imp`.
+
+Names are matched ignoring case and with either separator, and a reference
+keeps its own separator. A model is matched as `.mdl` or `.mdx`, since the
+game loads either, and its `_portrait` model moves with it (`--no-portraits`
+to leave it). `--strip-prefix` takes `war3mapImported\` off every member
+under it, or off the members `--only` names; a member whose new name the map
+already has is skipped.
+
+What it cannot update is printed as `not updated`:
+
+- the old path, or the file name alone, where a reference was not rewritten;
+- a script string that ends in a moved file's old folder, such as
+  `"war3mapImported\\" + name`, which builds the path while the script runs;
+- a path an MDX field has no room for: the field is 260 bytes;
+- a binary file that does not read before or after the edit, which is left
+  as it was.
+
 ## Inspecting map sub-files
 
 ```bash
