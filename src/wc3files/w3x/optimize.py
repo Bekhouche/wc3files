@@ -194,7 +194,7 @@ def remove_unused_objects(files):
 
 
 def squeeze_models(files):
-     """(files, report): every version 800 .mdx squeezed (see
+     """(files, report): every .mdx squeezed (see
      wc3files.mdl.squeeze: lossy, about 0.8% precision, a third smaller once
      compressed)."""
      from wc3files.mdl.squeeze import squeeze_mdx

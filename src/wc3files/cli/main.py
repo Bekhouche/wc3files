@@ -2971,7 +2971,7 @@ def build_parser():
     p_opt.add_argument('--remove-we-only', action='store_true',
                        help='Drop the files only the World Editor reads.')
     p_opt.add_argument('--mdx-squeeze', action='store_true',
-                       help='Cut the precision of version 800 models so they compress '
+                       help='Cut the precision of the models so they compress '
                             'about a third better (lossy, about 0.8%%).')
     p_opt.add_argument('--computed-text', action='store_true',
                        help='Write the values of <A000,DataA1> references into the text.')
