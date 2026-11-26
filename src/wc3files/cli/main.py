@@ -401,6 +401,41 @@ def _cmd_optimize(args):
     return 0
 
 
+def _cmd_objects_merge(args):
+    """Merge two object files of one type (#217)."""
+    from wc3files.w3o.merge import merge_objects
+    ext = args.first.rsplit('.', 1)[-1].lower()
+    if args.second.rsplit('.', 1)[-1].lower() != ext \
+            or args.output.rsplit('.', 1)[-1].lower() != ext:
+        raise ValueError('objects-merge: the three files must be of one type '
+                         '(war3map.w3u, war3map.w3a, ...)')
+    sides = []
+    for path in (args.first, args.second):
+        handler = ObjectFile()
+        handler.read(path)
+        sides.append(handler.export_data())
+    merged, report = merge_objects(*sides, on_conflict=args.on_conflict,
+                                   on_edit_conflict=args.on_edit_conflict)
+    for old, new in report['table'].items():
+        print(f'remapped: {old} -> {new}')
+    for label in ('kept_first', 'kept_second'):
+        for _, object_id in report[label]:
+            print(f"{label.replace('_', ' ')}: {object_id}")
+    print(f"{report['added']} added, {len(report['remapped'])} remapped, "
+          f"{len(report['kept_first'])} kept from the first, {len(report['kept_second'])} "
+          f"taken from the second; {report['references_rewritten']} references rewritten")
+    if report['strings']:
+        print(f"{len(report['strings'])} TRIGSTR_ references of the second file point into "
+              f"its own war3map.wts")
+    handler = ObjectFile()
+    handler.import_data({ext: merged[ext]})
+    handler.write(args.output)
+    if args.table:
+        _write_json(report['table'], args.table)
+    print(f'Wrote {args.output}')
+    return 0
+
+
 def _cmd_trigger_ui(args):
     """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
     from wc3files.wtg import ydwe_ui
@@ -2183,6 +2218,26 @@ def build_parser():
     p_obj.add_argument('output', help='The map to write.')
     p_obj.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_obj.set_defaults(func=_cmd_obj_mode)
+
+    p_objects = subparsers.add_parser(
+        'objects-merge', help='Merge two object files of one type, remapping rawcodes.',
+        description=('Put the objects of SECOND into FIRST. A custom object whose '
+                     'rawcode FIRST uses too, and an edit of a default object both '
+                     'change, take a policy: remap (the second object takes a free '
+                     'rawcode; an edit becomes a new custom object), first, or second. '
+                     "The second file's ability, build and train lists follow its "
+                     'remapped rawcodes. See ' + _DOCS + '#merging-object-data.'))
+    p_objects.add_argument('output', help='The object file to write.')
+    p_objects.add_argument('first', help='The object file to merge into.')
+    p_objects.add_argument('second', help='The object file to merge from.')
+    p_objects.add_argument('--on-conflict', choices=('remap', 'first', 'second'),
+                           default='remap', help='For a custom rawcode both use (default remap).')
+    p_objects.add_argument('--on-edit-conflict', choices=('remap', 'first', 'second'),
+                           default='remap',
+                           help='For a default object both edit (default remap).')
+    p_objects.add_argument('--table', metavar='JSON',
+                           help='Write the old-to-new rawcode table here.')
+    p_objects.set_defaults(func=_cmd_objects_merge)
 
     p_opt = subparsers.add_parser(
         'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '
