@@ -618,7 +618,7 @@ components). Each model's MDX size before and after is printed. Without a
 tolerance, 50 corpus imports went from 4,679,255 to 4,336,183 bytes and 35 SD
 game models from 3,750,186 to 3,240,666; the game's HD models have no curved
 tracks. At `--tolerance 0.01`, every played frame stayed within 0.01 of the
-curve, but the 113,865 keys added made both sets larger than before, so a
+curve, but the 80,475 keys added made both sets larger than before, so a
 tolerance pays only when it is loose.
 
 ```bash
