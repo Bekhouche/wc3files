@@ -491,6 +491,26 @@ def _cmd_transfer(args):
     return 1 if failed else 0
 
 
+def _cmd_campaign_split(args):
+    """Write each map of a campaign as a standalone map (#249)."""
+    from wc3files.w3x.campaign import PARTS, split_campaign
+    from wc3files.w3x.modes import archive_files, _write_map
+    parts = PARTS if not args.parts else tuple(p.strip() for p in args.parts.split(','))
+    members = archive_files(_open_map(args.campaign, args.deep))
+    os.makedirs(args.out_dir, exist_ok=True)
+    for name, files, report in split_campaign(members, parts=parts,
+                                              rename=not args.keep_names):
+        output = os.path.join(args.out_dir, name)
+        _write_map(files, output)
+        renumbered = sum(1 for old, new in report['strings'].items() if old != new)
+        print(f"{report['member']}: {len(report['copied'])} files copied, "
+              f"{len(report['strings'])} campaign strings ({renumbered} renumbered)"
+              + ('' if report['renamed'] or args.keep_names
+                 else '; war3map.w3i kept its name, since it does not read'))
+        print(f'Wrote {output}')
+    return 0
+
+
 def _cmd_trigger_ui(args):
     """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
     from wc3files.wtg import ydwe_ui
@@ -2329,6 +2349,24 @@ def build_parser():
                             help='Keep a target file that the source also imports.')
     p_transfer.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_transfer.set_defaults(func=_cmd_transfer)
+
+    p_campaign = subparsers.add_parser(
+        'campaign-split', help='Write each map of a .w3n campaign as a standalone map.',
+        description=("Write each map of a campaign to OUT_DIR, with the campaign's "
+                     "object data merged under the map's own, the campaign's gameplay "
+                     'constants and interface where the map has none, its imported '
+                     'files, and the strings those use. Each file is named after its '
+                     'mission index and campaign button. See ' + _DOCS
+                     + '#splitting-a-campaign.'))
+    p_campaign.add_argument('campaign', help='The .w3n campaign.')
+    p_campaign.add_argument('out_dir', help='The folder to write the maps to.')
+    p_campaign.add_argument('--parts', default='', help=(
+        'Comma-separated parts to copy (default all): objects, interface, constants, '
+        'imports.'))
+    p_campaign.add_argument('--keep-names', action='store_true',
+                            help="Keep each map's own name in its war3map.w3i.")
+    p_campaign.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_campaign.set_defaults(func=_cmd_campaign_split)
 
     p_opt = subparsers.add_parser(
         'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '

@@ -267,6 +267,33 @@ write into the Lua script on its next save; a Lua source cannot go into a
 JASS target. When the World Editor saves the result, it writes the script
 again from the copied triggers and the target's map info and placed objects.
 
+## Splitting a campaign
+
+```bash
+wc3files campaign-split MyCampaign.w3n maps/                # one map per mission
+wc3files campaign-split MyCampaign.w3n maps/ --keep-names   # leave each map's own name
+```
+
+`campaign-split` writes each map of a `.w3n` campaign as a standalone map, so
+the missions can be played on their own or in co-op. A campaign keeps its
+object data, strings, gameplay constants, interface and imported files in
+`war3campaign.*` members beside its maps; each map gets:
+
+1. the campaign's object data merged under its own: on a rawcode both have,
+   the map's object is kept, as the game applies a map's object data over the
+   campaign's;
+2. the campaign's gameplay constants (`war3campaignMisc.txt`) and interface
+   (`war3campaignSkin.txt`) when it has none of its own;
+3. the campaign's imported files, where it has no file of the same name;
+4. the campaign strings these use, added to its `war3map.wts` and renumbered
+   where the map uses the number.
+
+Each file is named after its mission index and campaign button, as
+`01 Chapter One - The Gate.w3x`, in the order of the campaign's map list, and
+that title becomes the map's name in its `war3map.w3i` (color codes are kept
+in the map name and left out of the file name). `--parts` chooses among
+`objects`, `interface`, `constants` and `imports`.
+
 ## Images and icons
 
 ```bash
