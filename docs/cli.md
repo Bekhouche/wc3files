@@ -493,7 +493,7 @@ vertex, keeps its extents, since an empty box would hide it.
 
 The game's own extents were not all made by one rule, so they are matched
 only roughly. Over 49 of the game's SD models, the box of a geoset in a
-sequence is within 2% of the game's in 60% of cases and within 10% in 77%;
+sequence is within 2% of the game's in 72% of cases and within 10% in 87%;
 over 23 HD models, a sequence's box is within 2% in 83% and within 10% in 98%. Where the two differ, the box made here is
 mostly the larger one, since it holds every posed vertex. That is the safe
 side: a box that is too small is what makes a model vanish at the edge of
