@@ -611,6 +611,36 @@ def _cmd_campaign_split(args):
     return 0
 
 
+def _cmd_pathing_texture(args):
+    """Pathing textures: show, make from text, or make from a model (#262)."""
+    from wc3files.wpm.texture import PathingTexture, from_model
+    if args.action == 'show':
+        texture = PathingTexture().read(args.input)
+        for row in texture.get_data()['rows']:
+            print(row)
+        return 0
+    if args.action == 'make':
+        with open(args.input, encoding='utf-8') as handle:
+            rows = [line.strip() for line in handle if line.strip()]
+        texture = PathingTexture().import_data({'rows': rows})
+    else:
+        import re
+        from wc3files.mdl import ModelFile
+        match = re.fullmatch(r'(\d+)x(\d+)', args.size or '')
+        if not match:
+            raise ValueError('from-model: give --size as WIDTHxHEIGHT in cells, as 8x8')
+        model = ModelFile()
+        model.read(args.input)
+        texture = from_model(model, int(match.group(1)), int(match.group(2)),
+                             max_height=args.max_height, border=args.border,
+                             snap=args.snap)
+    texture.write(args.output)
+    for row in texture.get_data()['rows']:
+        print(row)
+    print(f'Wrote {args.output} ({texture.width}x{texture.height})')
+    return 0
+
+
 def _cmd_trigger_ui(args):
     """TriggerData.txt <-> YDWE ui folder (wc3files.wtg.ydwe_ui)."""
     from wc3files.wtg import ydwe_ui
@@ -2529,6 +2559,29 @@ def build_parser():
                         help='Print what would change and write nothing.')
     p_move.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_move.set_defaults(func=_cmd_import_move)
+
+    p_pathing = subparsers.add_parser(
+        'pathing-texture', help='Show, make, or make from a model a pathing texture (TGA).',
+        description=('A pathing texture is a small TGA, one pixel per 32-unit cell, whose '
+                     'red, green and blue block walking, flying and building. Cells are '
+                     'written as digits: 1 no walk, 2 no fly, 4 no build, added up (5 is '
+                     "a building's cell, 4 unbuildable, 7 blocked). show prints a "
+                     'texture; make writes one from such rows of digits; from-model '
+                     "writes one from a model's footprint. See " + _DOCS
+                     + '#pathing-textures.'))
+    p_pathing.add_argument('action', choices=('show', 'make', 'from-model'))
+    p_pathing.add_argument('input', help='The texture (show), a text file of rows (make), '
+                                         'or a model (from-model).')
+    p_pathing.add_argument('output', nargs='?', help='The TGA to write (make, from-model).')
+    p_pathing.add_argument('--size', help='from-model: the size in cells, as 8x8.')
+    p_pathing.add_argument('--border', type=int, default=0,
+                           help='from-model: rings of unbuildable cells around the footprint.')
+    p_pathing.add_argument('--snap', type=int, default=2, help=(
+        'from-model: cells per block side, as the game draws on its 64-unit build grid '
+        '(default 2; 1 for none).'))
+    p_pathing.add_argument('--max-height', type=float, default=None, help=(
+        'from-model: only the triangles that come this close to the ground.'))
+    p_pathing.set_defaults(func=_cmd_pathing_texture)
 
     p_opt = subparsers.add_parser(
         'optimize', help=('Optimize a map for release, as w3x2lni\'s Slk mode does: '
