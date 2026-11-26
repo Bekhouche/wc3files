@@ -621,6 +621,23 @@ tracks. At `--tolerance 0.01`, every played frame stayed within 0.01 of the
 curve, but the 113,865 keys added made both sets larger than before, so a
 tolerance pays only when it is loose.
 
+```bash
+wc3files model-remove-sequences Doodads/ -o Out/ --sequence "Stand Victory" --sequence Death
+```
+
+`model-remove-sequences` removes the sequences named by `--sequence` (repeat
+it; names compare without regard to case) with each geoset's extent for them,
+the keys that no kept sequence plays and the event frames inside them. A name
+the model does not have is reported. Keys outside every sequence, which nothing
+played before either, stay, and so do global sequence tracks, which run on
+their own clock. With `--pack`, the kept sequences move up in time, in the
+order they start, each after the one before with the smallest gap the model
+had between two sequences; their keys and event frames move with them, and
+keys outside every kept sequence go. Removing every other sequence of 41 corpus
+imports and 25 SD game models removed 27,709 keys and event frames, and every
+kept sequence played the same on every track, sampled at every 10 ms, packed
+or not.
+
 ## Pathing textures
 
 ```bash
