@@ -463,6 +463,36 @@ wc3files model-convert Footman.mdx Footman.mdl     # direction follows extension
 wc3files model-info Footman.mdx                    # version, sequences, textures
 ```
 
+### Model edits
+
+```bash
+wc3files model-extents Footman.mdx --in-place      # recompute the bounds
+wc3files model-extents Models/ -o Fixed/           # every model of a folder
+```
+
+Each model edit takes models and folders, searched with their subfolders, and
+writes the results to `-o` under the same layout, or over the models with
+`--in-place`. A model is written back in its own format, MDX or MDL. One that
+cannot be read or edited is reported, and the others go on; the command then
+exits with status 1.
+
+`model-extents` sets the extents of each geoset, sequence and model from the
+vertices. Each sequence is posed by its bones at `--frames` frames spread
+over it (default 24), and a geoset counts only at the frames where its
+geoset animation shows it. A geoset never seen in a sequence gets the empty
+box the game's models use. The radius is the farthest vertex from the box's
+center, as the game's SD models store it, or half the box's diagonal with
+`--radius diagonal`, as its HD models do. A model of particles only, with no
+vertex, keeps its extents, since an empty box would hide it.
+
+The game's own extents were not all made by one rule, so they are matched
+only roughly. Over 49 of the game's SD models, the box of a geoset in a
+sequence is within 2% of the game's in 60% of cases and within 10% in 77%;
+over 23 HD models, a sequence's box is within 2% in 83% and within 10% in 98%. Where the two differ, the box made here is
+mostly the larger one, since it holds every posed vertex. That is the safe
+side: a box that is too small is what makes a model vanish at the edge of
+the screen.
+
 ## Pathing textures
 
 ```bash
