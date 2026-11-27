@@ -781,6 +781,38 @@ game's texture overlap with a median intersection over union of 0.80, and
 180 of them reach 0.5. It is a start to draw on rather than a finished
 texture: the game's are drawn by hand.
 
+## Terrain
+
+### Terrain images
+
+```bash
+wc3files terrain-image export MyMap.w3x height height.png               # 16-bit, as stored
+wc3files terrain-image export MyMap.w3x height view.png --stretch       # to look at
+wc3files terrain-image import MyMap.w3x height height.png Edited.w3x
+wc3files terrain-image import MyMap.w3x height drawn.png Edited.w3x --range 7000 9500
+```
+
+`terrain-image` writes one layer of `war3map.w3e` as a grayscale PNG, or sets
+it from one. The input and output are a map or a `war3map.w3e`. The image has
+one pixel per tile corner (the map's tiles plus one in each direction), north
+up as the World Editor shows the map. The layers are:
+
+- `height`: the ground height as the file stores it, 0 to 65535, where 8192 is
+  the ground of cliff level 0;
+- `water`: the water level as stored, 0 to 16383;
+- `water-flag`: black where a corner has no water and white where it has.
+
+`height` and `water` are written as 16-bit PNGs of the values themselves, so
+exporting and importing leaves `war3map.w3e` byte for byte as it was; this held
+on all 342 readable corpus maps. These images are dark, since the values are
+small next to 65535: `--stretch` spreads them from black to white and prints
+the range it used, and `--range` with that range brings the values back
+exactly. An image with other values, such as an 8-bit one drawn in an image
+editor, is mapped from black to white onto `--range LOW HIGH`, or onto the
+layer's lowest and highest values in the terrain it goes into. A colour image
+counts as the mean of its red, green and blue. For `water-flag`, a pixel
+brighter than half is water.
+
 ## Scripts and triggers
 
 ```bash

@@ -978,6 +978,59 @@ def _cmd_pathing_texture(args):
     return 0
 
 
+def _read_member(path, name, deep=False):
+    """(map files or None, member key, bytes) of the member `name` of a map,
+    or of `path` itself when it is not a map, for a command that edits it."""
+    if not path.lower().endswith(_MAP_EXTENSIONS):
+        with open(path, 'rb') as handle:
+            return None, None, handle.read()
+    from wc3files.w3x.modes import archive_files, _find
+    files = archive_files(_open_map(path, deep))
+    key = _find(files, name)
+    if key is None:
+        raise ValueError(f'{path} has no {name}')
+    return files, key, files[key]
+
+
+def _write_member(files, key, data, output):
+    """Write a member edited after _read_member: into a copy of the map, or
+    as a file of its own."""
+    if files is None or not output.lower().endswith(_MAP_EXTENSIONS):
+        with open(output, 'wb') as handle:
+            handle.write(data)
+        return
+    from wc3files.w3x.modes import _write_map
+    files = dict(files)
+    files[key] = data
+    _write_map(files, output)
+
+
+def _cmd_terrain_image(args):
+    """Terrain layers of war3map.w3e as grayscale PNG, and back (#205)."""
+    from wc3files.w3e import TerrainFile
+    from wc3files.w3e.images import export_layer, import_layer
+    files, key, data = _read_member(args.input, 'war3map.w3e', args.deep)
+    terrain = TerrainFile()
+    terrain.read(data)
+    d = terrain.get_data()
+    size = f"{d['width']}x{d['height']}"
+    if args.action == 'export':
+        png, value_range = export_layer(d, args.layer, stretch=args.stretch)
+        with open(args.image, 'wb') as handle:
+            handle.write(png)
+        note = (f'; values {value_range[0]} to {value_range[1]}, give --range '
+                f'{value_range[0]} {value_range[1]} to import it back' if value_range else '')
+        print(f'Wrote {args.image} ({size}, {args.layer}{note})')
+        return 0
+    if not args.output:
+        raise ValueError('terrain-image import: give the map or war3map.w3e to write')
+    changed = import_layer(d, args.layer, args.image,
+                           tuple(args.range) if args.range else None)
+    _write_member(files, key, terrain.to_bytes(), args.output)
+    print(f'{changed} of {len(d["tiles"])} tile corners changed; wrote {args.output}')
+    return 0
+
+
 def _cmd_map_description(args):
     """A Hive Workshop or GitHub description of a map (#253)."""
     from wc3files.w3x.description import TEMPLATES, map_summary, render
@@ -3119,6 +3172,28 @@ def build_parser():
     p_pathing.add_argument('--max-height', type=float, default=None, help=(
         'from-model: only the triangles that come this close to the ground.'))
     p_pathing.set_defaults(func=_cmd_pathing_texture)
+
+    p_terrain_image = subparsers.add_parser(
+        'terrain-image', help='Export or import terrain heights and water as grayscale PNG.',
+        description=('One pixel per tile corner, north up. height and water are 16-bit '
+                     'PNGs of the values as stored, so export then import leaves '
+                     'war3map.w3e as it was; water-flag is black or white. An image of '
+                     'other values (8-bit, or with --range) is mapped from black to '
+                     "white onto a range of values, by default the layer's lowest to "
+                     'highest in the terrain. See ' + _DOCS + '#terrain-images.'))
+    p_terrain_image.add_argument('action', choices=('export', 'import'))
+    p_terrain_image.add_argument('input', help='The .w3x/.w3m map, or a war3map.w3e.')
+    p_terrain_image.add_argument('layer', choices=('height', 'water', 'water-flag'))
+    p_terrain_image.add_argument('image', help='The PNG to write (export) or read (import).')
+    p_terrain_image.add_argument('output', nargs='?',
+                                 help='import: the map or war3map.w3e to write.')
+    p_terrain_image.add_argument('--stretch', action='store_true', help=(
+        'export: spread the values from black to white, to look at; the range used is '
+        'printed for --range.'))
+    p_terrain_image.add_argument('--range', nargs=2, type=int, metavar=('LOW', 'HIGH'),
+                                 help='import: the values black and white stand for.')
+    p_terrain_image.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_terrain_image.set_defaults(func=_cmd_terrain_image)
 
     p_description = subparsers.add_parser(
         'map-description', help='Write a Hive Workshop (BBCode) or Markdown map description.',
