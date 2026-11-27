@@ -1175,6 +1175,86 @@ def _cmd_shadow_compute(args):
     return 0
 
 
+def _custom_bases(files, names):
+    """{custom id: base id} from the map's object data files `names`."""
+    import tempfile as _tempfile
+    from wc3files.w3o import ObjectFile
+    from wc3files.w3x.modes import _find
+    out = {}
+    for name in names:
+        key = _find(files, name)
+        if key is None:
+            continue
+        with _tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, name)
+            with open(path, 'wb') as handle:
+                handle.write(files[key])
+            objects = ObjectFile()
+            try:
+                objects.read(path)
+            except Exception:
+                continue
+            for kind in (objects.get_data() or {}).values():
+                for custom, entry in ((kind or {}).get('custom') or {}).items():
+                    if entry.get('ID'):
+                        out[custom] = entry['ID']
+    return out
+
+
+def _cmd_minimap(args):
+    """war3mapMap.blp rendered from the terrain (#209)."""
+    from wc3files.casc import CascStorage
+    from wc3files.doo import MapDoodadsFile
+    from wc3files.w3e import TerrainFile
+    from wc3files.w3e.minimap import (GameMinimapColours, minimap_blp, object_colours,
+                                      render_minimap)
+    from wc3files.w3i import W3iFile
+    from wc3files.w3x.modes import archive_files, _find, _write_map
+    files = archive_files(_open_map(args.input, args.deep))
+    parts = {}
+    for name in ('war3map.w3e', 'war3map.w3i'):
+        key = _find(files, name)
+        if key is None:
+            raise ValueError(f'{args.input} has no {name}')
+        parts[name] = files[key]
+    terrain = TerrainFile()
+    terrain.read(parts['war3map.w3e'])
+    info = W3iFile()
+    info.read(parts['war3map.w3i'])
+    d = terrain.get_data()
+    doodads = []
+    doo_key = _find(files, 'war3map.doo')
+    if doo_key is not None:
+        doo = MapDoodadsFile()
+        doo.read(files[doo_key])
+        doodads = doo.get_data()['doodads']
+    if not os.path.isdir(os.path.join(args.game, 'Data')):
+        raise ValueError(f'{args.game} is not a CASC install (Warcraft III 1.32 or later)')
+    game = GameMinimapColours(CascStorage().open(args.game))
+    colours = object_colours()
+    for custom, base in _custom_bases(files, ('war3map.w3b', 'war3map.w3d')).items():
+        if base in colours and custom not in colours:
+            colours[custom] = colours[base]
+    rgba = render_minimap(d, info.get_data(), doodads, game.tile_colours(d['ground_tilesets']),
+                          game.water_tint(d['main_tileset']), colours)
+    for code in sorted(game.missing):
+        print(f'no texture for ground tileset {code}; drawn grey')
+    lower = args.output.lower()
+    if lower.endswith('.png'):
+        from wc3files.img import write_png
+        data = write_png(256, 256, rgba)
+    else:
+        data = minimap_blp(rgba, quality=args.quality)
+    if lower.endswith(_MAP_EXTENSIONS):
+        files[_find(files, 'war3mapMap.blp') or 'war3mapMap.blp'] = data
+        _write_map(files, args.output)
+    else:
+        with open(args.output, 'wb') as handle:
+            handle.write(data)
+    print(f'Wrote {args.output}')
+    return 0
+
+
 def _cmd_map_description(args):
     """A Hive Workshop or GitHub description of a map (#253)."""
     from wc3files.w3x.description import TEMPLATES, map_summary, render
@@ -3416,6 +3496,22 @@ def build_parser():
                                   help='The light above the horizon, in degrees (default 30).')
     p_shadow_compute.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_shadow_compute.set_defaults(func=_cmd_shadow_compute)
+
+    p_minimap = subparsers.add_parser(
+        'minimap', help="Render a map's minimap (war3mapMap.blp) from its terrain.",
+        description=('The playable area, 256 by 256, ground coloured by its tileset '
+                     'textures, water tinted, and trees and other objects that show on the '
+                     'minimap as dots. The textures come from the installed game. See '
+                     + _DOCS + '#minimaps.'))
+    p_minimap.add_argument('input', help='The .w3x/.w3m map.')
+    p_minimap.add_argument('output', help=(
+        'A map to write with the new war3mapMap.blp, or a .blp or .png to write it to.'))
+    p_minimap.add_argument('--game', required=True,
+                           help='The Warcraft III install (1.32 or later).')
+    p_minimap.add_argument('--quality', type=int, default=40, help=(
+        'The JPEG quality of the .blp (default 40, as the World Editor writes it).'))
+    p_minimap.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_minimap.set_defaults(func=_cmd_minimap)
 
     p_description = subparsers.add_parser(
         'map-description', help='Write a Hive Workshop (BBCode) or Markdown map description.',
