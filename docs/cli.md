@@ -984,6 +984,50 @@ not loop and an unshaded, two-sided, unfogged layer per quad, as the corpus
 models have. Neither layout has been checked in the game from this tool; both
 are copied from models that ship in maps and in the game.
 
+## Placed objects as code
+
+```bash
+wc3files placed-code Hard.w3x hard_layout.j --function CreateHardLayout
+wc3files placed-code Hard.w3x hard_layout.lua --lua --parts units,regions
+```
+
+`placed-code` writes a function that creates a map's placed units and items
+(`war3mapUnits.doo`), destructables (`war3map.doo`) and regions
+(`war3map.w3r`) at run time, for example to keep several layouts in one map.
+The statements are the ones the World Editor writes into `war3map.j` for the
+same objects: `BlzCreateUnitWithSkin` and the calls after it (items in slots,
+gold, life and mana, acquisition range, hero level, attributes and skills,
+autocast orders, waygates), `BlzCreateItemWithSkin`,
+`BlzCreateDestructableWithSkin` (the dead and `Z` kinds where the editor uses
+them, and the life), and a `rect` variable per region named as the editor names
+it (`gg_rct_` and the name), with its weather. `--classic` uses `CreateUnit`,
+`CreateItem` and `CreateDestructable`, for patches before 1.32, and `--lua`
+writes Lua.
+
+Over 256 corpus maps whose script the editor wrote with these natives, 91.5% of
+the editor's statements for their placed objects come out the same, and 97.2%
+of the statements written here are in the editor's scripts. The editor creates
+only the destructables its triggers name, so the others are left out of that
+count. What does not match is mostly the colour the editor gives some neutral
+buildings, which is not in the unit's record, and what this leaves out.
+
+Left out, and listed when the command runs:
+
+- doodads: the game has no native that places one;
+- start locations, which the map info defines;
+- random units and items, and item drop tables, which the editor makes
+  triggers for;
+- terrain: `SetTerrainType` sets the texture around one point, but no native
+  sets a height, a cliff level or water, and one call per tile corner would be
+  far past what a script can run.
+
+A JASS thread stops after a fixed number of operations, so a long JASS
+function is cut into parts of about 2000 statements, each run with
+`ExecuteFunc` in a thread of its own, never between an object and the calls
+that follow it. The output for all 342 readable corpus maps (1.16 million JASS
+statements, with and without `--classic`, and the same in Lua) passes this
+package's JASS and Lua checks (`jass --check`) with no issue.
+
 ## Scripts and triggers
 
 ```bash

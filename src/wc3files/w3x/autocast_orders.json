@@ -1,0 +1,269 @@
+{
+ "source": "Orderon and Orderoff of the *AbilityFunc.txt files of Warcraft III (War3.w3mod:Units), read from a Reforged install with casc-extract",
+ "orders": {
+  "ACbb": [
+   "bloodluston",
+   "bloodlustoff"
+  ],
+  "ACbk": [
+   "blackarrowon",
+   "blackarrowoff"
+  ],
+  "ACbl": [
+   "bloodluston",
+   "bloodlustoff"
+  ],
+  "ACcs": [
+   "curseon",
+   "curseoff"
+  ],
+  "ACd2": [
+   "autodispelon",
+   "autodispeloff"
+  ],
+  "ACdm": [
+   "autodispelon",
+   "autodispeloff"
+  ],
+  "ACf2": [
+   "frostarmoron",
+   "frostarmoroff"
+  ],
+  "ACff": [
+   "faeriefireon",
+   "faeriefireoff"
+  ],
+  "ACfu": [
+   "frostarmoron",
+   "frostarmoroff"
+  ],
+  "ACif": [
+   "innerfireon",
+   "innerfireoff"
+  ],
+  "ACpa": [
+   "parasiteon",
+   "parasiteoff"
+  ],
+  "ACrd": [
+   "raisedeadon",
+   "raisedeadoff"
+  ],
+  "ACsw": [
+   "slowon",
+   "slowoff"
+  ],
+  "ACwb": [
+   "webon",
+   "weboff"
+  ],
+  "AEpa": [
+   "poisonarrows",
+   "unpoisonarrows"
+  ],
+  "AHgh": [
+   "guidinghand",
+   "unguidinghand"
+  ],
+  "AHq1": [
+   "guidinghand",
+   "unguidinghand"
+  ],
+  "AHq2": [
+   "guidinghand",
+   "unguidinghand"
+  ],
+  "AHq3": [
+   "guidinghand",
+   "unguidinghand"
+  ],
+  "AIee": [
+   "faeriefireon",
+   "faeriefireoff"
+  ],
+  "ALmt": [
+   "slowon",
+   "slowoff"
+  ],
+  "ANba": [
+   "blackarrowon",
+   "blackarrowoff"
+  ],
+  "ANia": [
+   "incineratearrowon",
+   "incineratearrowon"
+  ],
+  "ANms": [
+   "manashieldon",
+   "manashieldoff"
+  ],
+  "ANpa": [
+   "parasiteon",
+   "parasiteoff"
+  ],
+  "AUcb": [
+   "Carrionscarabson",
+   "Carrionscarabsoff"
+  ],
+  "AUfu": [
+   "frostarmoron",
+   "frostarmoroff"
+  ],
+  "AUl1": [
+   "soullantern",
+   "unsoullantern"
+  ],
+  "AUl2": [
+   "soullantern",
+   "unsoullantern"
+  ],
+  "AUl3": [
+   "soullantern",
+   "unsoullantern"
+  ],
+  "AUla": [
+   "soullantern",
+   "unsoullantern"
+  ],
+  "Aadm": [
+   "autodispelon",
+   "autodispeloff"
+  ],
+  "Aagt": [
+   "frenzyon",
+   "frenzyoff"
+  ],
+  "Ablo": [
+   "bloodluston",
+   "bloodlustoff"
+  ],
+  "Acrs": [
+   "curseon",
+   "curseoff"
+  ],
+  "Adbl": [
+   "raisedeadon",
+   "raisedeadoff"
+  ],
+  "Afa2": [
+   "faeriefireon",
+   "faeriefireoff"
+  ],
+  "Afae": [
+   "faeriefireon",
+   "faeriefireoff"
+  ],
+  "Affl": [
+   "frostarmoron",
+   "frostarmoroff"
+  ],
+  "Afzy": [
+   "frenzyon",
+   "frenzyoff"
+  ],
+  "Ahea": [
+   "healon",
+   "healoff"
+  ],
+  "Ahrp": [
+   "repairon",
+   "repairoff"
+  ],
+  "Ainf": [
+   "innerfireon",
+   "innerfireoff"
+  ],
+  "Andm": [
+   "autodispelon",
+   "autodispeloff"
+  ],
+  "Anh1": [
+   "healon",
+   "healoff"
+  ],
+  "Anh2": [
+   "healon",
+   "healoff"
+  ],
+  "Anhe": [
+   "healon",
+   "healoff"
+  ],
+  "Aohl": [
+   "curseon",
+   "curseoff"
+  ],
+  "Aomb": [
+   "bloodluston",
+   "bloodlustoff"
+  ],
+  "Apsh": [
+   "phaseshifton",
+   "phaseshiftoff"
+  ],
+  "Arai": [
+   "raisedeadon",
+   "raisedeadoff"
+  ],
+  "Aren": [
+   "renewon",
+   "renewoff"
+  ],
+  "Arep": [
+   "repairon",
+   "repairoff"
+  ],
+  "Arpb": [
+   "replenishon",
+   "replenishoff"
+  ],
+  "Arpl": [
+   "replenishlifeon",
+   "replenishlifeoff"
+  ],
+  "Arpm": [
+   "replenishmanaon",
+   "replenishmanaoff"
+  ],
+  "Arst": [
+   "restorationon",
+   "restorationoff"
+  ],
+  "Asea": [
+   "healon",
+   "healoff"
+  ],
+  "Asif": [
+   "innerfireon",
+   "innerfireoff"
+  ],
+  "Aslo": [
+   "slowon",
+   "slowoff"
+  ],
+  "Asps": [
+   "spellstealon",
+   "spellstealoff"
+  ],
+  "Atbd": [
+   "curseon",
+   "curseoff"
+  ],
+  "Auco": [
+   "unstableconcoctionon",
+   "unstableconcoctionoff"
+  ],
+  "Avng": [
+   "Vengeanceon",
+   "Vengeanceoff"
+  ],
+  "Aweb": [
+   "webon",
+   "weboff"
+  ],
+  "Awhe": [
+   "wisphealon",
+   "wisphealoff"
+  ]
+ }
+}
