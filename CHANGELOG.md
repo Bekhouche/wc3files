@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Added
+
+- `wc3files model-extents` and `wc3files.mdl.extents.compute_extents`: the extents of each geoset, sequence and model recomputed from the vertices, posed by the bones at frames spread over each sequence, with a geoset counted only while its geoset animation shows it. A geoset never seen in a sequence gets the game's empty box, and a model with no vertex keeps its extents. The radius is the farthest vertex from the box's center, or half the diagonal with `--radius diagonal`. `wc3files.mdl.animation` samples tracks and poses vertices, and `wc3files.mdl.batch` runs an edit over models and folders, to `-o` or `--in-place`, for every model command. Over 49 of the game's SD models, a geoset's box in a sequence is within 2% of the stored one in 60% of cases and within 10% in 77%; over 23 HD models, a sequence's box is within 2% in 83% and within 10% in 98%. Where they differ, the box made here is mostly the larger one (#236).
+
 ## [0.7.0] - 2026-11-26
 
 ### Added

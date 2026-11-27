@@ -200,6 +200,45 @@ def _cmd_casc_extract(args):
         print(f"Wrote {dest} ({len(data)} bytes)")
 
 
+def _add_model_batch_args(parser):
+    """The inputs and outputs every model edit command takes (#234)."""
+    parser.add_argument('inputs', nargs='+',
+                        help='Models (.mdx, .mdl), or folders searched with their subfolders.')
+    where = parser.add_mutually_exclusive_group(required=True)
+    where.add_argument('-o', '--out-dir', help='Write the edited models here, as they were laid out.')
+    where.add_argument('--in-place', action='store_true', help='Overwrite the models.')
+
+
+def _run_model_batch(args, edit, describe):
+    """Run `edit` over the models and print a line per model; 1 if any failed."""
+    from wc3files.mdl.batch import edit_models
+    failed = done = 0
+    for source, target, result in edit_models(args.inputs, edit, args.out_dir, args.in_place):
+        if target is None:
+            failed += 1
+            print(f'{source}: not edited: {result}', file=sys.stderr)
+            continue
+        done += 1
+        print(f'{target}: {describe(result)}')
+    print(f'{done} model(s) edited' + (f', {failed} failed' if failed else ''))
+    return 1 if failed else 0
+
+
+def _cmd_model_extents(args):
+    """Recompute the extents of models from their posed vertices (#236)."""
+    from wc3files.mdl.extents import compute_extents
+
+    def describe(report):
+        if report.get('unchanged'):
+            return 'no vertices, extents kept'
+        new = report['new']
+        return ('extent ' + ' '.join(f'{v:.1f}' for v in new['minimum'] + new['maximum'])
+                + f", radius {new['boundsRadius']:.1f}")
+    return _run_model_batch(
+        args, lambda data: compute_extents(data, frames=args.frames, radius=args.radius),
+        describe)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2321,6 +2360,21 @@ def build_parser():
     p_model_info.add_argument('--limit', type=int, default=20,
                               help='Cap long lists in the readable summary.')
     p_model_info.set_defaults(func=_cmd_model_info)
+
+    p_extents = subparsers.add_parser(
+        'model-extents', help='Recompute the extents of models from their vertices.',
+        description=('Set the extents of each geoset, sequence and model from the '
+                     'vertices, posed by the bones at frames spread over each sequence. '
+                     'A geoset counts only while its geoset animation shows it. See '
+                     + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_extents)
+    p_extents.add_argument('--frames', type=int, default=24,
+                           help='Frames posed per sequence (default 24; 1 for the first only).')
+    p_extents.add_argument('--radius', choices=('center', 'diagonal'), default='center',
+                           help=("The bounds radius: the farthest vertex from the box's "
+                                 'center (default, as SD models), or half the diagonal '
+                                 '(as HD models).'))
+    p_extents.set_defaults(func=_cmd_model_extents)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
