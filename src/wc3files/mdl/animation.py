@@ -14,8 +14,11 @@ animation, as model viewers do:
 - a track with a global sequence runs on that sequence's own clock;
 - interpolation 0 holds each value until the next key, 1 is linear (a
   rotation is a quaternion slerp), 2 is Hermite and 3 Bezier, each with the
-  key's in and out tangents (a rotation is the same curve on the
-  quaternion's components, normalized);
+  key's in and out tangents. A Hermite or Bezier rotation is a squad, as
+  model viewers take it: slerp(slerp(a, b, t), slerp(a.out, b.in, t),
+  2t(1 - t)), each slerp the short way. A cubic on the quaternion's
+  components would swing far from both keys when they have opposite signs,
+  which the game's models have (q and -q are the same rotation);
 - a node's matrix is its pivot, translation, rotation, scaling and pivot
   back again, after its parent's;
 - a classic (version 800) vertex takes the mean of the matrices of its
@@ -96,9 +99,12 @@ def interpolate(left, right, frame, interpolation, rotation=False):
     if interpolation == 1:
         return _slerp(left['value'], right['value'], t) if rotation \
             else _lerp(left['value'], right['value'], t)
-    value = _cubic(left['value'], left.get('outTan', left['value']),
-                   right.get('inTan', right['value']), right['value'], t, interpolation)
-    return _normalize(value) if rotation else value
+    if rotation:
+        outer = _slerp(left['value'], right['value'], t)
+        inner = _slerp(left.get('outTan', left['value']), right.get('inTan', right['value']), t)
+        return _slerp(outer, inner, 2 * t * (1 - t))
+    return _cubic(left['value'], left.get('outTan', left['value']),
+                  right.get('inTan', right['value']), right['value'], t, interpolation)
 
 
 def sample(track, frame, interval=None, global_sequences=(), default=None,
@@ -122,8 +128,10 @@ def sample(track, frame, interval=None, global_sequences=(), default=None,
         return keys[0]['value']
     if frame >= keys[-1]['frame']:
         return keys[-1]['value']
+    # A frame on a key takes that key: on a step track the pair before it
+    # would still hold the value before.
     for left, right in zip(keys, keys[1:]):
-        if left['frame'] <= frame <= right['frame']:
+        if left['frame'] <= frame < right['frame']:
             return interpolate(left, right, frame, track.get('interpolationType', 0), rotation)
     return keys[-1]['value']
 
@@ -142,8 +150,13 @@ def _multiply(a, b):
 
 
 def compose(pivot, translation, rotation, scaling):
-    """The matrix of pivot + translation, rotation and scaling about the pivot."""
+    """The matrix of pivot + translation, rotation and scaling about the pivot.
+    The rotation is made unit length first: squeezed models (`squeeze.py`)
+    keep quaternions a little off it, and a rotation is all it stands for."""
     x, y, z, w = rotation
+    norm = math.sqrt(x * x + y * y + z * z + w * w)
+    if norm > 0 and abs(norm - 1.0) > 1e-12:
+        x, y, z, w = x / norm, y / norm, z / norm, w / norm
     sx, sy, sz = scaling
     r = (1 - 2 * (y * y + z * z), 2 * (x * y - z * w), 2 * (x * z + y * w),
          2 * (x * y + z * w), 1 - 2 * (x * x + z * z), 2 * (y * z - x * w),
