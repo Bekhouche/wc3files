@@ -1,0 +1,35 @@
+# if/elif/else, while, for ranges, foreach, loop/break, compound assignment,
+# increment and decrement.
+
+public integer SumTo(integer count):
+    local integer total = 0
+
+    for i in 1..count:
+        total += i
+
+    return total
+
+public nothing ControlFlowDemo(integer count = 3):
+    local integer i = count
+
+    if count < 0:
+        print("negative")
+    elif count == 0:
+        print("zero")
+    else:
+        print("positive")
+
+    while i > 0:
+        print("while: " + i)
+        i--
+
+    foreach(index, count):
+        print("foreach index: " + index)
+
+    local integer manual = 0
+    loop:
+        manual++
+        if manual >= count:
+            break
+
+    print("sum = " + SumTo(count))

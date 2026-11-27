@@ -1,0 +1,9 @@
+# Explicit locals plus inferred let/var locals.
+from "./functions.luck" import Add
+
+public integer VariableExamples(integer input):
+    local integer explicitValue = input
+    let inferredInteger = Add(explicitValue, 1)
+    var mutableInteger = inferredInteger
+    mutableInteger += 10
+    return mutableInteger

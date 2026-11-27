@@ -1,0 +1,24 @@
+# library, module and scope namespaces. Functions inside a namespace are private
+# unless marked public. Public functions keep stable JASS names for interop.
+
+library LibraryExample:
+    nothing LibraryHelper():
+        print("private library helper")
+
+    public nothing LibraryHello():
+        LibraryHelper()
+        print("public library function")
+
+module ModuleExample:
+    nothing ModuleHelper():
+        print("private module helper")
+
+    public nothing ModuleHello():
+        ModuleHelper()
+
+scope ScopeExample:
+    nothing ScopeHelper():
+        print("private scope helper")
+
+    public nothing ScopeHello():
+        ScopeHelper()

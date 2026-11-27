@@ -1,0 +1,26 @@
+# Array-backed structs, fields, static methods, instance methods, allocation,
+# deallocation, default/named arguments and typed member completion.
+
+struct Missile:
+    unit target
+    real speed
+
+    static Missile create(unit target, real speed = 900.0):
+        local Missile this = Missile.allocate()
+        this.target = target
+        this.speed = speed
+        return this
+
+    nothing accelerate(real amount = 100.0):
+        this.speed += amount
+
+    real getSpeed():
+        return this.speed
+
+    nothing destroy():
+        Missile.deallocate(this)
+
+public Missile CreateDemoMissile(unit target):
+    local Missile missile = Missile.create(target = target, speed = 900.0)
+    print("Missile speed = " + missile.getSpeed())
+    return missile

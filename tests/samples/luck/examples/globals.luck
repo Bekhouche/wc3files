@@ -1,0 +1,16 @@
+# Luck globals are collected into ONE generated JASS globals/endglobals block.
+# Constants become JASS constant globals.
+
+globals:
+    global integer TourCounter = 0
+    constant integer TOUR_STEP = 1
+    readonly string TourLabel = "LuckyParser"
+
+public nothing IncrementCounter():
+    TourCounter += TOUR_STEP
+
+public integer GetCounter():
+    return TourCounter
+
+public string GetTourLabel():
+    return TourLabel

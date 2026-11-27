@@ -1,0 +1,24 @@
+# Functions, return values, default arguments, named arguments, grouped parameters,
+# the alternate fn -> return-type form, print conversion and handle.id.
+
+public nothing Greet(string name = "mapper"):
+    print("Hello " + name)
+
+public integer Add(integer a, integer b = 1):
+    return a + b
+
+public fn Clamp(integer value, integer minimum = 0, integer maximum = 100) -> integer:
+    if value < minimum:
+        return minimum
+    elif value > maximum:
+        return maximum
+    else:
+        return value
+
+    return value
+
+public real GroupedCoordinates(real(x = 0.0, y = 0.0, z = 0.0)):
+    return x + y + z
+
+public nothing ShowHandleId(unit whichUnit):
+    print("Unit handle id = " + whichUnit.id)

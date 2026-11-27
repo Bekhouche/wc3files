@@ -1,0 +1,44 @@
+# LuckyParser language tour entry point.
+#
+# This project uses explicit imports. Type an unresolved exported symbol and
+# completion can add its import automatically. Ctrl/Cmd-click an import path to
+# open the source file.
+
+from "examples/functions.luck" import Greet, Add, Clamp, GroupedCoordinates
+from "examples/control-flow.luck" import ControlFlowDemo
+from "examples/globals.luck" import IncrementCounter, GetCounter
+from "examples/structs.luck" import Missile, CreateDemoMissile
+from "examples/namespaces.luck" import LibraryHello, ModuleHello, ScopeHello
+from "interop.j" import JassMultiply, LuckInsideJassFile
+
+library Main:
+    public nothing RunTour():
+        Greet(name = "LuckyParser")
+
+        local integer sum = Add(20, 22)
+        local integer clamped = Clamp(value = 125, minimum = 0, maximum = 100)
+        local real coords = GroupedCoordinates(x = 1.0, y = 2.0, z = 3.0)
+
+        print("20 + 22 = " + sum)
+        print("Clamp result = " + clamped)
+        print("Grouped parameter sum = " + coords)
+
+        ControlFlowDemo(4)
+        IncrementCounter()
+        print("Global counter = " + GetCounter())
+
+        LibraryHello()
+        ModuleHello()
+        ScopeHello()
+
+        print("JASS multiply = " + JassMultiply(6, 7))
+        LuckInsideJassFile()
+
+        local unit target = GetTriggerUnit()
+        if target != null:
+            local Missile missile = CreateDemoMissile(target)
+            missile.accelerate(amount = 125.0)
+            missile.destroy()
+
+    onInit:
+        RunTour()

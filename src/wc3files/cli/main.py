@@ -1014,6 +1014,38 @@ def _write_member(files, key, data, output):
     _write_map(files, output)
 
 
+def _cmd_luck(args):
+    """Luck (LuckyParser) to plain JASS, alone or into a map (#228)."""
+    from wc3files.luck import compile_project, merge_into_script
+    result = compile_project(args.sources, debug=args.debug)
+    for warning in result.warnings:
+        print(f'warning: {warning}', file=sys.stderr)
+    text = result.jass
+    files = key = None
+    if args.map is not None:
+        if not args.output:
+            raise ValueError('--map needs -o, the map or .j file to write')
+        files, key, data = _read_member(args.map, 'war3map.j', args.deep)
+        text = merge_into_script(data.decode('utf-8', 'replace'), result)
+    elif result.init_function:
+        print(f'note: call {result.init_function}() from main to run the init blocks',
+              file=sys.stderr)
+    if args.check:
+        from wc3files.scripts.checker import check_program
+        from wc3files.scripts.jass_parser import parse
+        issues = [f for f in check_program(parse(text)) if f['severity'] == 'issue']
+        for finding in issues:
+            print(f"check: line {finding.get('line')}: {finding['message']}", file=sys.stderr)
+        if issues:
+            raise ValueError(f'{len(issues)} issue(s) in the compiled script')
+    if files is not None or (args.output and args.output != '-'):
+        _write_member(files, key, text.encode('utf-8'), args.output)
+        print(f'Wrote {args.output}', file=sys.stderr)
+        return 0
+    sys.stdout.write(text)
+    return 0
+
+
 def _cmd_cjass(args):
     """cJass to JASS, through vJass (#227)."""
     from wc3files.cjass import compile_cjass
@@ -3694,6 +3726,24 @@ def build_parser():
     p_pathing.add_argument('--max-height', type=float, default=None, help=(
         'from-model: only the triangles that come this close to the ground.'))
     p_pathing.set_defaults(func=_cmd_pathing_texture)
+
+    p_luck = subparsers.add_parser(
+        'luck', help=('Compile Luck, the indentation-based language of LuckyParser, to '
+                      'plain JASS: source files and folders, alone or into a map.'))
+    p_luck.add_argument('sources', nargs='+',
+                        help=('Luck files and folders (every .luck, .j, .vj, .zn and .cj '
+                              'file under a folder), compiled as one program.'))
+    p_luck.add_argument('-o', '--output', default=None,
+                        help='Where to write the JASS, or the map with --map (default: stdout).')
+    p_luck.add_argument('--map', default=None,
+                        help=("A map (or its war3map.j) to put the code into; main then "
+                              'calls the init blocks.'))
+    p_luck.add_argument('--debug', action='store_true',
+                        help='Keep debug lines of vJass and cJass islands.')
+    p_luck.add_argument('--check', action='store_true',
+                        help='Check the result with the JASS checker; exit 1 on an issue.')
+    p_luck.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_luck.set_defaults(func=_cmd_luck)
 
     p_cjass = subparsers.add_parser(
         'cjass', help=('Compile cJass (AdicHelper) to plain JASS, through the vJass '

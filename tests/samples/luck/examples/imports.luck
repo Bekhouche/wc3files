@@ -1,0 +1,16 @@
+# IMPORT TOUR
+#
+# New projects use lucky.json -> imports.mode = "explicit".
+# Every source file under src is still part of the build. Import statements do
+# not paste or compile a file twice; they control which public declarations are
+# visible to this Luck file.
+#
+# Import every public declaration from a file:
+import "./functions.luck"
+
+# Import selected declarations:
+from "./structs.luck" import Missile, CreateDemoMissile
+
+public integer ImportExample(integer a, integer b):
+    Greet(name = "imports")
+    return Add(a, b)

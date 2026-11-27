@@ -281,6 +281,74 @@ projectile library of 10) compile through vJass with no issue from the JASS
 checker; one file of the survival map refers to a method that does not exist
 in its own struct and was left out.
 
+## Luck
+
+`wc3files.luck` compiles Luck, the indentation-based language of LuckyParser,
+to plain JASS. It follows LuckyParser's language reference
+(`docs/LUCK_LANGUAGE.md` of https://github.com/SinisterLuffy5/LuckyParser,
+compiler 0.3), and lowers each construct as LuckyParser does, with the same
+generated names, so JASS that calls them keeps working.
+
+```bash
+wc3files luck src/ -o luck.j                    # a folder of sources, as one program
+wc3files luck src/ --map MyMap.w3x -o Built.w3x # into a map; main runs the init blocks
+wc3files luck main.luck --check                 # check the JASS it writes
+```
+
+```luck
+library Example:
+    public nothing Hello(integer count = 3):
+        local integer i = 0
+        while i < count:
+            print("Hello " + i)
+            i++
+
+    onInit:
+        Hello(count = 2)
+```
+
+What is covered:
+
+- `library`, `scope` and `module`: a function inside one is named
+  `<namespace>_<name>` unless it is `public`, and a global
+  `<namespace>_<name>`;
+- `nothing Name(...)` and `fn Name(...) -> nothing`; typed parameters,
+  grouped ones (`real(x = 0.0, y = 0.0)`), default values and named
+  arguments, filled in at each call;
+- `local`, typed or inferred `let` and `var`, moved to the top of the
+  function; `global`, `constant` and `readonly`, in one `globals` block;
+- `if`/`elif`/`else`, `while`, `loop`, `foreach(i, count)`, `for i in a..b`,
+  `break`, `return`, `throw`; assignments, `+=` and the others, `++` and
+  `--`; calls and assignments without `call` and `set`;
+- `print(...)`, which turns integers, reals and booleans into strings (a
+  boolean through a small `LuckyParser_B2S` function);
+- `onInit`, `onInit.priority` and `onLoad`, run in order by
+  `LuckyParser_InitAll`, priority blocks first. With `--map`, the call goes
+  at the end of `main`;
+- array-backed structs: fields, static and instance methods, `allocate`
+  and `deallocate`, as `<Struct>_<name>` functions and arrays;
+- `handle.id` for `GetHandleId(handle)`;
+- `//! language jass|vjass|zinc|cjass|luck` islands, in any file. vJass,
+  Zinc and cJass go through this package's compilers;
+- imports are read and every given file is compiled into one program, as
+  LuckyParser does; they decide what is visible in its IDE, not what is
+  compiled.
+
+The JASS is ordered so that every function comes after the functions it
+calls; two functions that call each other are an error, as in LuckyParser.
+
+Not covered, as LuckyParser does not lower them either: classes, interfaces,
+extensions, enums, events, closures, `define`/`comptime` and hooks (a
+warning each), and `continue` (an error). Two differences: a boolean in
+`print` becomes `"true"` or `"false"` (LuckyParser writes `I2S(R2I(...))`,
+which JASS rejects), and a statement the compiler cannot read is an error
+rather than a comment.
+
+The tests compile LuckyParser's own example project, the one its project
+generator writes (`tests/samples/luck`, MIT): the JASS passes the checker,
+and run in the JASS interpreter, the tour prints every line the source
+says it prints, in the documented order.
+
 ## Credits
 
 JassHelper, vJass and Zinc are by Victor Hugo Soliz Kuncar (Vexorian), released
