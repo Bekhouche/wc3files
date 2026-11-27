@@ -118,6 +118,8 @@ def load_mdl(text):
             model['bindPose'] = _parse_bind_pose(tokens)
         elif token == 'ParticleEmitterPopcorn':
             model['particleEmittersPopcorn'].append(_parse_popcorn_emitter(tokens))
+        elif token == 'FaceFX':
+            model['faceEffects'].append(_parse_face_effect(tokens))
         else:
             # Skip unknown top-level blocks conservatively.
             tokens.next()
@@ -254,6 +256,12 @@ def save_mdl(model):
         out.extend(_write_ribbon_emitter_lines(emitter))
     for emitter in model.get('particleEmittersPopcorn') or []:
         out.extend(_write_popcorn_emitter_lines(emitter))
+    # Face effects (FAFX) of version 900 and later, as mdx-m3-viewer writes
+    # them: `FaceFX "<target>" { Path "...", }`. They were left out (#377).
+    for effect in model.get('faceEffects') or []:
+        out.append(f'FaceFX "{_escape(effect.get("target", ""))}" {{')
+        out.append(f'\tPath "{_escape(effect.get("path", ""))}",')
+        out.append('}')
     for event in model.get('eventObjects') or []:
         out.extend(_write_event_object_lines(event))
     for camera in model.get('cameras') or []:
@@ -1411,6 +1419,23 @@ def _parse_popcorn_emitter(tokens):
     tokens.expect('}')
     emitter['color'] = list(emitter.pop('_rgb')) + [emitter.pop('_alpha')]
     return emitter
+
+
+def _parse_face_effect(tokens):
+    tokens.expect('FaceFX')
+    target = _parse_string(tokens.next()) if tokens.peek().startswith('"') else ''
+    tokens.expect('{')
+    effect = {'target': target, 'path': ''}
+    while tokens.peek() != '}':
+        key = tokens.next()
+        if key == 'Path':
+            effect['path'] = _parse_string(tokens.next())
+        elif tokens.peek() == '{':
+            _skip_block(tokens)
+        if tokens.peek() == ',':
+            tokens.next()
+    tokens.expect('}')
+    return effect
 
 
 def _parse_bind_pose(tokens):

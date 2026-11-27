@@ -776,6 +776,14 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertIn('// wc3files: UnnamedFlags 4096,', save_mdl(model))
         self.assertSurvives(model)
 
+    def test_face_effects(self):
+        model = self.hd_model(
+            'FaceFX "Head" {\n\tPath "Units\\\\Human\\\\Arthas\\\\Arthas.facefx",\n}\n'
+            'FaceFX "Head_Ingame" {\n\tPath "Units\\\\Human\\\\Arthas\\\\Arthas_ingame.facefx",\n}\n')
+        self.assertEqual([effect['target'] for effect in model['faceEffects']], ['Head', 'Head_Ingame'])
+        self.assertEqual(model['faceEffects'][0]['path'], 'Units\\Human\\Arthas\\Arthas.facefx')
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):
