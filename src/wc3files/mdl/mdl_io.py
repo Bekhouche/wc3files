@@ -195,6 +195,21 @@ def save_mdl(model):
             out.extend(_write_material_lines(material))
         out.append('}')
 
+    # The reader knew TextureAnims, but they were never written, so every
+    # texture animation was lost through MDL (#360). Tracks are written in
+    # the order the model has them, which is the order MDX writes them in.
+    texture_anims = model.get('textureAnimations') or []
+    if texture_anims:
+        out.append(f'TextureAnims {len(texture_anims)} {{')
+        for anim in texture_anims:
+            out.append('\tTVertexAnim {')
+            for tag, track in (anim.get('tracks') or {}).items():
+                if tag in _TEXTURE_ANIM_TRACKS:
+                    name, kind = _TEXTURE_ANIM_TRACKS[tag]
+                    out.extend(_write_track_lines(name, track, kind, indent=2))
+            out.append('\t}')
+        out.append('}')
+
     for geoset in model.get('geosets') or []:
         out.extend(_write_geoset_lines(geoset))
     for anim in model.get('geosetAnimations') or []:
@@ -721,6 +736,13 @@ def _parse_texture_anims(tokens):
         anims.append(anim)
     tokens.expect('}')
     return anims
+
+
+_TEXTURE_ANIM_TRACKS = {
+    'KTAT': ('Translation', 'f32x3'),
+    'KTAR': ('Rotation', 'f32x4'),
+    'KTAS': ('Scaling', 'f32x3'),
+}
 
 
 def _parse_float_list_block(tokens):
