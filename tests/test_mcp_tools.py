@@ -295,3 +295,45 @@ class TestCompileScript(ToolTestCase):
                 T.compile_script(self.roots, **bad)
         with self.assertRaises(PermissionError):
             T.compile_script(self.roots, path=os.path.dirname(self.root))
+
+
+class TestRunScript(ToolTestCase):
+    """run_script (#335)."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.lua = os.path.join(cls.root, 'war3map.lua')
+        with open(cls.lua, 'w', encoding='utf-8') as handle:
+            handle.write('function main()\n'
+                         '    print("started")\n'
+                         '    TimerStart(CreateTimer(), 2.0, false, function()\n'
+                         '        print("two seconds")\n'
+                         '        MissingFunction()\n'
+                         '    end)\n'
+                         'end\n'
+                         'function config() end\n')
+
+    def test_lua(self):
+        result = T.run_script(self.roots, 'war3map.lua', seconds=5)
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['messages'], ['started', 'two seconds'])
+        self.assertEqual(len(result['errors']), 1)
+        self.assertIn('MissingFunction', result['errors'][0])
+        self.assertGreaterEqual(result['callbacks'], 1)
+        early = T.run_script(self.roots, 'war3map.lua', seconds=1)
+        self.assertEqual((early['ok'], early['messages']), (True, ['started']))
+
+    def test_jass_map_and_limits(self):
+        result = T.run_script(self.roots, 'sample.w3x', seconds=0)
+        self.assertEqual(result['script'], 'war3map.j (as Lua)')
+        loop = os.path.join(self.root, 'loop.lua')
+        with open(loop, 'w', encoding='utf-8') as handle:
+            handle.write('function main() while true do end end\n')
+        stopped = T.run_script(self.roots, 'loop.lua', max_steps=10_000)
+        self.assertIsNotNone(stopped['stopped'])
+        for bad in ({'seconds': -1}, {'seconds': 601}, {'players': 0}, {'max_steps': 0}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                T.run_script(self.roots, 'war3map.lua', **bad)
+        with self.assertRaises(ProtectedMapError):
+            T.run_script(self.roots, self.protected)

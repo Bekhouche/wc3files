@@ -446,6 +446,34 @@ def _compile_error(error):
     return {'message': str(message), 'line': line, 'file': source}
 
 
+RUN_MAX_SECONDS = 600.0
+RUN_MAX_STEPS = 50_000_000
+
+
+def run_script(roots, path, seconds=10.0, players=1, max_steps=RUN_MAX_STEPS,
+               max_chars=DEFAULT_MAX_CHARS):
+    """Run a map's script, or a .lua or .j file, against stubs of the game
+    API, as `wc3files run-map` does: config and main, then `seconds` of
+    game time with its timers and triggers. A JASS script is translated to
+    Lua first. Returns what failed and what the map displayed."""
+    from wc3files.scripts.wc3_runtime import MapRuntime, load_map_script
+    path = roots.resolve(path)
+    if not (0 <= seconds <= RUN_MAX_SECONDS):
+        raise ValueError(f'seconds is between 0 and {RUN_MAX_SECONDS:g}')
+    if not (1 <= players <= 24):
+        raise ValueError('players is between 1 and 24')
+    if not (1 <= max_steps <= RUN_MAX_STEPS):
+        raise ValueError(f'max_steps is between 1 and {RUN_MAX_STEPS}')
+    source, chunkname, natives = load_map_script(path)    # refuses a protected map
+    runtime = MapRuntime(players=players, max_steps=max_steps)
+    runtime.declare_natives(natives)
+    report = runtime.run(source, chunkname, seconds=seconds)
+    return limited({'path': path, 'script': chunkname, 'ok': not report.errors,
+                    'errors': list(report.errors), 'warnings': list(report.warnings),
+                    'messages': list(report.messages), 'game_time': report.game_time,
+                    'callbacks': report.callbacks, 'stopped': report.stopped}, max_chars)
+
+
 def model_info(roots, path, member=''):
     """A model's name, format, version, sequences, textures and counts. For
     a map, `member` names the model inside it."""

@@ -19,7 +19,7 @@ except ImportError:  # pragma: no cover
 
 TOOLS = ['check_script', 'compile_script', 'list_files', 'list_members', 'map_info', 'map_overview',
          'map_records', 'model_info', 'object_data', 'placed_objects', 'read_member',
-         'replay_info', 'trigger_text']
+         'replay_info', 'run_script', 'trigger_text']
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # A script with a compile error, which compile_script returns as data.
 BROKEN = 'function F takes nothing returns nothing\ncall\nendfunction\n'
@@ -104,6 +104,8 @@ class TestMcpServer(unittest.TestCase):
             ('check_script', {'path': 'sample.j'}, lambda: T.check_script(roots, 'sample.j')),
             ('compile_script', {'path': 'sample.j'}, lambda: T.compile_script(roots, path='sample.j')),
             ('compile_script', {'code': BROKEN}, lambda: T.compile_script(roots, code=BROKEN)),
+            ('run_script', {'path': 'sample.w3x', 'seconds': 0},
+             lambda: T.run_script(roots, 'sample.w3x', seconds=0)),
             ('model_info', {'path': 'sample.mdx'}, lambda: T.model_info(roots, 'sample.mdx')),
             ('map_overview', {'path': 'sample.w3x'}, lambda: T.map_overview(roots, 'sample.w3x')),
             ('placed_objects', {'path': 'sample.w3x'},
