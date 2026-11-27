@@ -20,7 +20,7 @@ section to the new version and its date.
 
 ### Changed
 
-- The README and the MCP guide link the server's pages on Glama and MCP Rush (#332).
+- The README and the MCP guide link the server's pages on Glama and MCP Rush, and the README shows the MCP Rush card (#332).
 
 ## [0.9.0] - 2026-11-27
 

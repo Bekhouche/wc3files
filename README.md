@@ -79,6 +79,8 @@ What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 - With `--allow-write`, edits maps too, writing each result as a new map: object data, placed units and doodads, regions, cameras, strings, the script and imported files
 - Listed on [Glama](https://glama.ai/mcp/servers/Bekhouche/wc3files) and [MCP Rush](https://mcprush.com/bekhouche/wc3files-mcp)
 
+<a href="https://mcprush.com/to/wc3files-mcp"><img width="380" height="200" src="https://mcprush.com/badge/wc3files-mcp/card.svg" alt="wc3files MCP server" loading="lazy" /></a>
+
 <!-- mcp-name: io.github.Bekhouche/wc3files -->
 
 ### External tools and Lua
