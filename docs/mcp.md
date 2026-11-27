@@ -27,6 +27,14 @@ wc3files-mcp --root D:/Maps
 wc3files-mcp --root D:/Maps --root "C:/Users/me/Documents/Warcraft III/BattleNet"
 ```
 
+`--game` gives the installed Warcraft III (1.32 or later, the folder with
+`.build.info`): the `game_` tools read its files, and `map_image` draws a
+minimap in its tileset colours. Without it, those tools say so.
+
+```bash
+wc3files-mcp --root D:/Maps --game "C:/Program Files/Warcraft III"
+```
+
 The server talks over stdin and stdout, so it is started by the client, not
 by hand. `--root` can be given more than once; a relative path in a tool
 call is taken from the first root. `python -m wc3files.mcp` is the same
@@ -110,7 +118,10 @@ and [MCP Rush](https://mcprush.com/bekhouche/wc3files-mcp).
 | `object_data(path, object_type, ids)` | The objects a map changes or adds (units, items, destructables, doodads, abilities, buffs, upgrades), with readable field names, for the whole map or one object type or some ids |
 | `trigger_text(path, name, names_only)` | GUI triggers as the World Editor shows them; `names_only` lists the trigger names first, which is the way to start on a large map |
 | `check_script(path)` | JASS or Lua findings for the map's script, as `wc3files jass --check` reports them |
-| `map_image(path, kind, render)` | A picture of the map as a PNG image, which the assistant sees: the map's own minimap (`war3mapMap.blp`) or lobby preview (`war3mapPreview.tga`, else the minimap), or a minimap drawn from the terrain when the map has none or `render` asks for it (ground in grey, water in blue, trees and doodads as dots). A text part names the source. It returns an image, so it has no output schema |
+| `map_image(path, kind, render)` | A picture of the map as a PNG image, which the assistant sees: the map's own minimap (`war3mapMap.blp`) or lobby preview (`war3mapPreview.tga`, else the minimap), or a minimap drawn from the terrain when the map has none or `render` asks for it, with water, trees and doodads, the ground in the game's tileset colours with `--game` and grey without. A text part names the source. It returns an image, so it has no output schema |
+| `game_files(pattern, limit)` | Files of the installed game (`--game`) whose path contains the text, or matches a pattern with `*` and `?`, with their size and locale, such as `War3.w3mod:Units/UnitData.slk` |
+| `game_file(path)` | One file of the installed game: a table or object file as data, a model's name, sequences and textures, or a text file as text |
+| `game_image(path)` | A texture of the installed game (`.blp`, `.dds`, `.tga`), such as an icon, as a PNG image |
 | `compare_maps(old, new, part)` | What changed between two versions of a map: members added, removed and changed; objects added, removed and changed, with each field's old and new value; strings added, removed and changed by the stable keys of `map-translate`, which do not depend on `TRIGSTR_` numbers. `summary` has the counts, and `part` asks for `members`, `objects` or `strings` alone when the whole is too large. Between two versions of Balanced Hero Survival in the corpus it takes 3.5 s |
 | `compile_script(code, path, language, include_jass)` | vJass, Zinc, cJass or Luck compiled to plain JASS, as `wc3files vjass`, `cjass` and `luck` do, with the compile error and its line, and the JASS checker's findings on the result (leaks included). `code` is source text; `path` a source file, a folder of Luck sources or a map. `language: jass` only checks JASS. A compile error is part of the result, so an assistant can fix the code and try again |
 | `run_script(path, seconds, players, max_steps)` | A map's script, or a `.lua` or `.j` file, run without the game against stubs of the game API, as `wc3files run-map` does: config and main, then up to 600 seconds of game time with its timers and triggers. Returns the runtime errors with their Lua positions, argument warnings, the messages the map displayed and how far the clock got. A JASS script is translated to Lua first; `max_steps` stops a script that never ends |

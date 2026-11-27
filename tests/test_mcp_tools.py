@@ -419,3 +419,63 @@ class TestMapImage(ToolTestCase):
             T.map_image(self.roots, 'sample.j')
         with self.assertRaises(ProtectedMapError):
             T.map_image(self.roots, self.protected)
+
+
+class TestGameFiles(unittest.TestCase):
+    """game_files, game_file and game_image (#338), on a tiny CASC install."""
+
+    @classmethod
+    def setUpClass(cls):
+        from test_casc import MiniStorage
+        from wc3files.img import BlpFile
+        cls.folder = tempfile.mkdtemp()
+        storage = MiniStorage(os.path.join(cls.folder, 'game'))
+        storage.add('War3.w3mod:Units/UnitData.slk',
+                    b'ID;PWXL;N;E\r\nC;Y1;X1;K"unitID"\r\nC;X2;K"name"\r\n'
+                    b'C;Y2;X1;K"hfoo"\r\nC;X2;K"footman"\r\nE\r\n')
+        storage.add('War3.w3mod:Units/HumanUnitStrings.txt', b'[hfoo]\r\nName=Footman\r\n')
+        storage.add('War3.w3mod:UI/Icon.blp',
+                    BlpFile.from_rgba(8, 8, bytes([200, 10, 10, 255]) * 64,
+                                      mipmaps=False).to_bytes())
+        storage.add('War3.w3mod:Other.bin', b'\x00\x01')
+        storage.build()
+        cls.game = T.Game(os.path.join(cls.folder, 'game'))
+
+    @classmethod
+    def tearDownClass(cls):
+        shutil.rmtree(cls.folder, ignore_errors=True)
+
+    def test_search_and_read(self):
+        found = T.game_files(self.game, 'units/')
+        self.assertEqual([f['path'] for f in found['files']],
+                         ['War3.w3mod:Units/UnitData.slk', 'War3.w3mod:Units/HumanUnitStrings.txt'])
+        self.assertFalse(found['truncated'])
+        self.assertTrue(T.game_files(self.game, '*.slk', limit=1)['files'])
+        self.assertTrue(T.game_files(self.game, 'u', limit=1)['truncated'])
+        table = T.game_file(self.game, 'War3.w3mod:Units/UnitData.slk')
+        self.assertEqual(table['format'], 'slk')
+        self.assertEqual(table['data']['rows']['hfoo']['name'], 'footman')
+        self.assertIn('Name=Footman', T.game_file(self.game,
+                                                  'War3.w3mod:Units/HumanUnitStrings.txt')['text'])
+        self.assertEqual(T.game_file(self.game, 'War3.w3mod:Other.bin')['note'],
+                         'binary file with no reader')
+
+    def test_image(self):
+        from wc3files.img import read_png
+        image = T.game_image(self.game, 'War3.w3mod:UI/Icon.blp')
+        width, height, rgba = read_png(image['png'])[:3]
+        self.assertEqual((width, height, bytes(rgba[:3])), (8, 8, bytes([200, 10, 10])))
+        with self.assertRaises(ValueError):
+            T.game_file(self.game, 'War3.w3mod:UI/Icon.blp')
+        with self.assertRaises(ValueError):
+            T.game_image(self.game, 'War3.w3mod:Units/UnitData.slk')
+
+    def test_without_a_game(self):
+        for call in (lambda: T.game_files(T.Game(), 'x'), lambda: T.game_file(T.Game(), 'x.txt')):
+            with self.assertRaises(ValueError) as caught:
+                call()
+            self.assertIn('--game', str(caught.exception))
+        with self.assertRaises(ValueError):
+            T.Game(self.folder)                    # no .build.info
+        with self.assertRaises(ValueError):
+            T.game_files(self.game, '')
