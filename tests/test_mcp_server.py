@@ -19,9 +19,10 @@ except ImportError:  # pragma: no cover
     Client = None
 
 TOOLS = ['check_script', 'compare_maps', 'compile_script', 'game_file', 'game_files',
-         'game_image', 'list_files', 'list_members', 'map_image', 'map_info', 'map_overview',
-         'map_records', 'model_info', 'object_data', 'placed_objects', 'read_member',
-         'replay_actions', 'replay_info', 'run_script', 'trigger_text']
+         'game_image', 'list_files', 'list_members', 'map_image', 'map_info',
+         'map_overview', 'map_records', 'missing_files', 'model_info', 'object_data',
+         'placed_objects', 'read_member', 'replay_actions', 'replay_info', 'run_script',
+         'trigger_text']
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Tools that return an image, which has no output schema.
 IMAGE_TOOLS = ('game_image', 'map_image')

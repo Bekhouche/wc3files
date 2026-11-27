@@ -645,6 +645,13 @@ class Game(object):
             self._storage = CascStorage().open(self.folder)
         return self._storage
 
+    def names(self):
+        """The keys the game's files are found by, read once."""
+        if getattr(self, '_names', None) is None:
+            from wc3files.mdl.texture_list import game_file_names
+            self._names = game_file_names(self.storage)
+        return self._names
+
 
 GAME_SEARCH_LIMIT = 200
 _GAME_TEXT = TEXT_EXTENSIONS + ('.ini', '.csv', '.xml', '.json', '.html', '.toc', '.pld')
@@ -711,6 +718,60 @@ def game_image(game, path):
     width, height, rgba = _decode_image(base, game.storage.read(path))
     return {'png': write_png(width, height, rgba), 'width': width, 'height': height,
             'path': path}
+
+
+def missing_files(roots, path, game=None, max_chars=DEFAULT_MAX_CHARS):
+    """Textures a map's models use that neither the map nor (with the game)
+    the installed game has, and imported files that nothing refers to, as
+    `wc3files model-textures` finds them for images, extended to models,
+    sounds and the other imports."""
+    from wc3files.mdl.texture_list import (IMAGE_EXTENSIONS, _named_elsewhere, canonical,
+                                           map_textures)
+    from wc3files.w3x.imports import is_map_data
+    path = roots.resolve(path)
+    if not _is_map(path):
+        raise ValueError(f'{path} is not a .w3x or .w3m map')
+    files = {name: bytes(data) for name, data in read_map(path).files.items()
+             if data is not None}
+    names = None
+    if game is not None and game.folder is not None:
+        names = game.names()
+    report = map_textures(files, names)
+    extension = lambda name: name.rsplit('.', 1)[-1].lower() if '.' in name else ''
+    unused = [{'name': name, 'size': len(files[name]), 'kind': 'image'}
+              for name in report['unused']]
+    # conversation.json is the Reforged editor's own file, not an import.
+    others = [name for name in files if not is_map_data(name)
+              and extension(name) not in IMAGE_EXTENSIONS
+              and canonical(name) != 'conversation.json']
+    named = _named_elsewhere(files, others, model_namers=True)
+    stems = {canonical(n).rsplit('.', 1)[0]: n for n in others}
+
+    def used(name):
+        key = canonical(name)
+        if key in named:
+            return True
+        # The game loads X_Portrait.mdx itself wherever it shows X.mdx.
+        stem = key.rsplit('.', 1)[0]
+        if stem.endswith('_portrait') and extension(name) in ('mdx', 'mdl'):
+            base = stems.get(stem[:-len('_portrait')])
+            return base is not None and canonical(base) in named
+        return False
+
+    for name in sorted(others):
+        if not used(name):
+            kind = ('model' if extension(name) in ('mdx', 'mdl') else
+                    'sound' if extension(name) in ('wav', 'mp3', 'flac', 'ogg') else 'other')
+            unused.append({'name': name, 'size': len(files[name]), 'kind': kind})
+    return limited({
+        'path': path, 'models': report['models'],
+        'imports': sum(1 for name in files if not is_map_data(name)),
+        'checked_game': report['checked_game'],
+        'missing': [{'texture': e['path'], 'models': e['models']} for e in report['missing']],
+        'other_extension': [{'used': used, 'imported': imported}
+                            for used, imported in report['other_extension']],
+        'unused': unused, 'unused_size': sum(u['size'] for u in unused),
+        'unreadable': [{'name': n, 'error': e} for n, e in report['unreadable']]}, max_chars)
 
 
 ACTIONS_LIMIT = 200
