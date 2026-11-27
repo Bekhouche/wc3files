@@ -863,6 +863,39 @@ maps came back byte for byte. The map is rebuilt without its old
 `(attributes)`, which would no longer match it, so it does not need to be
 deleted by hand.
 
+```bash
+wc3files shadow-compute MyMap.w3x Shaded.w3x --game "C:/Program Files/Warcraft III"
+wc3files shadow-compute MyMap.w3x Shaded.w3x               # the terrain only
+```
+
+`shadow-compute` makes the shadow map from the map itself, in place of the
+World Editor's Calculate Shadows. The editor's algorithm is not documented, so
+this one is a model of it, fitted to the shadow maps the editor wrote into 64
+corpus maps:
+
+- the terrain casts, and so do the doodads whose shadow flag is set in the
+  game's `DoodadSkins.txt` or in the map's object data. Destructables, trees
+  among them, do not: counting them shadowed most of a forested map where the
+  editor's shadow map has a few strokes;
+- the light comes from the south-west at 30 degrees above the horizon
+  (`--azimuth 225 --elevation 30`), the best of the directions tried;
+- a cliff is a wall in the middle of its tile, and a doodad is its model at
+  rest, placed, turned and scaled as on the map, and solid from the ground to
+  the model's top.
+
+The doodad table and models come from the installed game (`--game`, 1.32 or
+later), and a model imported into the map is read from the map first. Without
+`--game`, only the terrain casts. The doodads that cast, those that do not and
+why, and the models not found are printed.
+
+Against the editor's own shadow maps of the 64 corpus maps that have one (one
+copy of each), the shadow cells overlap with a median intersection over union
+of 0.67 (a quarter of the maps below 0.58, a quarter above 0.73), and a median
+of 96% of all cells agree; the terrain alone gives 0.55. On 9 maps the doodads
+make it worse than the terrain alone. A map's shadow map is only as fresh as
+the last time its author ran Calculate Shadows, so some of the difference may
+be the maps, not the model. A map of 256 by 256 tiles takes a few seconds.
+
 ## Scripts and triggers
 
 ```bash

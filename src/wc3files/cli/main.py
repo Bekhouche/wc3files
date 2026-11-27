@@ -1122,6 +1122,59 @@ def _cmd_shadow_image(args):
     return 0
 
 
+def _cmd_shadow_compute(args):
+    """war3map.shd computed from the terrain and doodads (#202)."""
+    import tempfile as _tempfile
+    from wc3files.doo import MapDoodadsFile
+    from wc3files.shd.compute import compute_shadow_map, game_casters
+    from wc3files.w3e import TerrainFile
+    from wc3files.w3x.modes import archive_files, _find, _write_map
+    files = archive_files(_open_map(args.input, args.deep))
+    key = _find(files, 'war3map.w3e')
+    if key is None:
+        raise ValueError(f'{args.input} has no war3map.w3e')
+    terrain = TerrainFile()
+    terrain.read(files[key])
+    doodads, casters = [], None
+    if args.game:
+        from wc3files.casc import CascStorage
+        if not os.path.isdir(os.path.join(args.game, 'Data')):
+            raise ValueError(f'{args.game} is not a CASC install (Warcraft III 1.32 or '
+                             f'later); classic installs are not read for this yet')
+        doo_key = _find(files, 'war3map.doo')
+        if doo_key is not None:
+            doo = MapDoodadsFile()
+            doo.read(files[doo_key])
+            doodads = doo.get_data()['doodads']
+        object_data = None
+        w3d_key = _find(files, 'war3map.w3d')
+        if w3d_key is not None:
+            from wc3files.w3o import ObjectFile
+            with _tempfile.TemporaryDirectory() as tmp:
+                path = os.path.join(tmp, 'war3map.w3d')
+                with open(path, 'wb') as handle:
+                    handle.write(files[w3d_key])
+                objects = ObjectFile()
+                objects.read(path)
+                object_data = objects.get_data().get('w3d')
+        casters = game_casters(CascStorage().open(args.game), files, object_data)
+    else:
+        print('note: without --game only the terrain casts shadows; doodads need the '
+              "game's doodad table and models", file=sys.stderr)
+    shadow = compute_shadow_map(terrain.get_data(), doodads, casters,
+                                azimuth=args.azimuth, elevation=args.elevation)
+    cells = shadow.get_data()['cells']
+    if casters is not None:
+        for what, count in sorted(casters.counts.items()):
+            print(f'{count} doodads: {what}')
+        for path in sorted(casters.missing_models):
+            print(f'model not found: {path}')
+    files[_find(files, 'war3map.shd') or 'war3map.shd'] = shadow.to_bytes()
+    _write_map(files, args.output)
+    print(f'{sum(1 for c in cells if c)} of {len(cells)} cells in shadow; wrote {args.output}')
+    return 0
+
+
 def _cmd_map_description(args):
     """A Hive Workshop or GitHub description of a map (#253)."""
     from wc3files.w3x.description import TEMPLATES, map_summary, render
@@ -3320,6 +3373,27 @@ def build_parser():
                                                'war3map.shd.')
     p_shadow_image.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_shadow_image.set_defaults(func=_cmd_shadow_image)
+
+    p_shadow_compute = subparsers.add_parser(
+        'shadow-compute', help="Compute a map's shadow map (war3map.shd) from its terrain "
+                               'and doodads.',
+        description=('In place of the World Editor\'s Calculate Shadows: the terrain and '
+                     'the doodads whose shadow flag is set cast shadows from a light in '
+                     'the south-west. The editor\'s algorithm is not documented; this one '
+                     'was fitted to the shadow maps it wrote, and differs from them. See '
+                     + _DOCS + '#shadow-maps.'))
+    p_shadow_compute.add_argument('input', help='The .w3x/.w3m map.')
+    p_shadow_compute.add_argument('output', help='The map to write.')
+    p_shadow_compute.add_argument('--game', help=(
+        'The Warcraft III install (1.32 or later), for the doodad table and models. '
+        'Without it, only the terrain casts.'))
+    p_shadow_compute.add_argument('--azimuth', type=float, default=225.0, help=(
+        'The direction toward the light, in degrees from east toward north (default 225, '
+        'the south-west).'))
+    p_shadow_compute.add_argument('--elevation', type=float, default=30.0,
+                                  help='The light above the horizon, in degrees (default 30).')
+    p_shadow_compute.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_shadow_compute.set_defaults(func=_cmd_shadow_compute)
 
     p_description = subparsers.add_parser(
         'map-description', help='Write a Hive Workshop (BBCode) or Markdown map description.',
