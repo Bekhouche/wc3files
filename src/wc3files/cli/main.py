@@ -1324,6 +1324,22 @@ def _cmd_map_preview(args):
     return 0
 
 
+def _cmd_loading_screen(args):
+    """A custom loading screen from one picture (#211)."""
+    from wc3files.w3x.loading_screen import add_loading_screen
+    from wc3files.w3x.modes import archive_files, _write_map
+    files = archive_files(_open_map(args.input, args.deep))
+    width, height, rgba = _read_any_image(args.image)
+    files, report = add_loading_screen(files, rgba, width, height, layout=args.layout,
+                                       prefix=args.prefix, quality=args.quality)
+    for label in ('added', 'replaced'):
+        for name in report[label]:
+            print(f'{label}: {name}')
+    _write_map(files, args.output)
+    print(f"Wrote {args.output}; its loading screen is {report['model']} ({args.layout})")
+    return 0
+
+
 def _cmd_map_description(args):
     """A Hive Workshop or GitHub description of a map (#253)."""
     from wc3files.w3x.description import TEMPLATES, map_summary, render
@@ -3599,6 +3615,25 @@ def build_parser():
                            help='Leave the icons of war3map.mmp off the minimap.')
     p_preview.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_preview.set_defaults(func=_cmd_map_preview)
+
+    p_loading = subparsers.add_parser(
+        'loading-screen', help='Give a map a custom loading screen made from one picture.',
+        description=('Cut the picture into the textures of a loading screen, write the '
+                     'model that shows them, import them into the map and point its map '
+                     "info at the model. classic is the game's own layout (four tiles of a "
+                     '1024 by 768 picture); reforged is one full-screen texture. See '
+                     + _DOCS + '#loading-screens.'))
+    p_loading.add_argument('input', help='The .w3x/.w3m map.')
+    p_loading.add_argument('image', help='The picture (.png, .blp, .tga, ...).')
+    p_loading.add_argument('output', help='The map to write.')
+    p_loading.add_argument('--layout', choices=('classic', 'reforged'), default='classic')
+    p_loading.add_argument('--quality', type=int, default=85,
+                           help='The JPEG quality of the textures (default 85).')
+    p_loading.add_argument('--prefix', default='war3mapImported\\LoadingScreen', help=(
+        'The path of the model without .mdx, and the start of the textures\' names '
+        '(default war3mapImported\\LoadingScreen).'))
+    p_loading.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_loading.set_defaults(func=_cmd_loading_screen)
 
     p_description = subparsers.add_parser(
         'map-description', help='Write a Hive Workshop (BBCode) or Markdown map description.',
