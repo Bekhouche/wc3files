@@ -479,3 +479,49 @@ class TestGameFiles(unittest.TestCase):
             T.Game(self.folder)                    # no .build.info
         with self.assertRaises(ValueError):
             T.game_files(self.game, '')
+
+
+class TestReplayActions(unittest.TestCase):
+    """replay_actions (#339), on replay data built as the replay tests do."""
+
+    @staticmethod
+    def data():
+        from test_actions import command_block, four_cc
+        from test_mmd import record
+        from wc3files.w3g import blocks
+        train = b'\x11' + b'\x00\x00' + four_cc('hfoo') + b'\xff' * 8   # 0x11 needs more
+        slots = [
+            (1000, command_block(1, b'\x1a', b'\x61') + command_block(2, b'\x61')),
+            (2000, command_block(1, b'\x61', b'\x61')),
+            (500, command_block(2, record('val:0', 'init version 1 1'),
+                                record('val:1', 'init pid 1 Alice'),
+                                record('val:2', 'FlagP 1 winner'))),
+        ]
+        del train
+        return {'header': {'sub': {'replay_length': 60000}},
+                'compressed_data': {
+                    'Players': [{'name': 'Alice'}, {'name': 'Bob'}],
+                    'blocks': [{'id': blocks.TIME_SLOT, 'time_increment': step,
+                                'command_data': payload} for step, payload in slots]}}
+
+    def test_counts_and_filters(self):
+        result = T.summarize_replay(self.data())
+        self.assertEqual(result['minutes'], 1.0)
+        self.assertEqual([(p['name'], p['actions'], p['apm_actions'], p['apm'])
+                          for p in result['players']],
+                         [('Alice', 4, 3, 3.0), ('Bob', 4, 1, 1.0)])
+        self.assertEqual(result['by_action'][0]['id'], 0x61)
+        self.assertEqual((result['matched'], result['actions']), (0, []))
+        mine = T.summarize_replay(self.data(), player=1, action='0x61')
+        self.assertEqual((mine['matched'], [a['time_ms'] for a in mine['actions']]),
+                         (3, [1000, 3000, 3000]))
+        name = result['by_action'][0]['name']
+        self.assertEqual(T.summarize_replay(self.data(), action=name, limit=1)['truncated'], True)
+        self.assertEqual(result['w3mmd']['winners'], [1])
+        with self.assertRaises(ValueError):
+            T.summarize_replay(self.data(), action='no such action')
+
+    def test_path_checks(self):
+        roots = T.Roots([tempfile.gettempdir()])
+        with self.assertRaises(ValueError):
+            T.replay_actions(roots, os.path.join(tempfile.gettempdir(), 'x.w3x'))

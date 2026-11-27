@@ -713,6 +713,97 @@ def game_image(game, path):
             'path': path}
 
 
+ACTIONS_LIMIT = 200
+
+
+def replay_actions(roots, path, player=None, action='', rawcode='', limit=ACTIONS_LIMIT,
+                   max_chars=DEFAULT_MAX_CHARS):
+    """The player actions of a replay, as `wc3files replay-actions` counts
+    them, and its W3MMD stats, as `replay-mmd` reads them."""
+    from wc3files import ReplayFile
+    path = roots.resolve(path)
+    if not path.lower().endswith('.w3g'):
+        raise ValueError(f'{path} is not a .w3g replay')
+    replay = ReplayFile()
+    replay.read(path)
+    result = summarize_replay(replay.get_data(), player, action, rawcode, limit,
+                              unfinished=getattr(replay, 'unfinished', False))
+    return limited(dict({'path': path}, **result), max_chars)
+
+
+def summarize_replay(data, player=None, action='', rawcode='', limit=ACTIONS_LIMIT,
+                     unfinished=False):
+    """replay_actions on parsed replay data (ReplayFile.get_data())."""
+    import collections
+    from wc3files.w3g import actions as _actions
+    from wc3files.w3g import blocks as _blocks
+    from wc3files.w3g import mmd as _mmd
+    from wc3files.w3g.names import action_name, describe_action
+    if not (1 <= limit <= 2000):
+        raise ValueError('limit is between 1 and 2000')
+    wanted_id = None
+    if action:
+        names = {action_name(i, '').lower(): i for i in range(256) if action_name(i, '')}
+        text = str(action).strip().lower()
+        if text.startswith('0x'):
+            wanted_id = int(text, 16)
+        elif text in names:
+            wanted_id = names[text]
+        else:
+            raise ValueError(f'unknown action {action!r}: give its name, such as '
+                             f'"{action_name(0x10)}", or its id, such as 0x10')
+    compressed = data.get('compressed_data') or {}
+    blocks = compressed.get('blocks') or []
+    names = {index + 1: p.get('name') for index, p in enumerate(compressed.get('Players') or [])}
+    threshold = _actions.detect_shift_threshold(blocks) if blocks else None
+    totals, apm, by_id = collections.Counter(), collections.Counter(), collections.Counter()
+    found, matched, clock = [], 0, 0
+    for block in blocks:
+        if block.get('id') not in (_blocks.TIME_SLOT, _blocks.TIME_SLOT_OLD):
+            continue
+        clock += block.get('time_increment') or 0
+        for command in _actions.parse_command_data(block.get('command_data') or b'',
+                                                   shift_threshold=threshold, strict=False):
+            pid = command['player_id']
+            for item in command.get('actions') or ():
+                totals[pid] += 1
+                by_id[item.get('id')] += 1
+                if _actions.is_apm_action(item):
+                    apm[pid] += 1
+                if not (player is not None or wanted_id is not None or rawcode):
+                    continue
+                if player is not None and pid != player:
+                    continue
+                if wanted_id is not None and item.get('id') != wanted_id:
+                    continue
+                if rawcode and rawcode not in _actions.action_rawcodes(item):
+                    continue
+                matched += 1
+                if len(found) < limit:
+                    found.append({'time_ms': clock, 'player': pid,
+                                  'action': describe_action(item)})
+    header = (data.get('header') or {}).get('sub') or {}
+    minutes = (header.get('replay_length') or 0) / 60000.0
+    if unfinished or not minutes:
+        minutes = clock / 60000.0
+    players = [{'id': pid, 'name': names.get(pid), 'actions': totals[pid],
+                'apm_actions': apm[pid],
+                'apm': round(apm[pid] / minutes, 1) if minutes else None}
+               for pid in sorted(totals, key=lambda p: -apm[p])]
+    stats = _mmd.from_replay(data)
+    w3mmd = None
+    if stats.messages:
+        w3mmd = {'players': {str(k): v for k, v in stats.players.items()},
+                 'variables': plain(stats.variables), 'winners': stats.winners(),
+                 'losers': stats.losers(), 'events': len(stats.events)}
+    return {'minutes': round(minutes, 2), 'unfinished': bool(unfinished),
+            'players': players,
+            'by_action': [{'id': i, 'name': action_name(i, f'0x{i:02X}'), 'count': n}
+                          for i, n in by_id.most_common(30)],
+            'matched': matched, 'actions': found, 'truncated': matched > len(found),
+            'w3mmd': w3mmd}
+
+
 RUN_MAX_SECONDS = 600.0
 RUN_MAX_STEPS = 50_000_000
 

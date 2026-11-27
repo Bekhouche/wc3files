@@ -22,7 +22,8 @@ INSTRUCTIONS = (
     'check_script answer questions about placed units, regions, objects, '
     'triggers and scripts; compare_maps says what changed between two '
     'versions; map_image shows a map; game_files, game_file and game_image read '
-    'the installed game; compile_script compiles and checks vJass, Zinc, '
+    'the installed game; replay_actions lists what players did; '
+    'compile_script compiles and checks vJass, Zinc, '
     'cJass and Luck code, and run_script runs a map script without the game; '
     'read_member gives any member as data. Every tool '
     'only reads. Files outside '
@@ -296,6 +297,28 @@ def build_server(folders, allow_write=False, game=None):
         about = {'path': path, 'width': found['width'], 'height': found['height']}
         return [TextContent(type='text', text=json.dumps(about)),
                 Image(data=found['png'], format='png')]
+
+    @tool('Replay actions')
+    def replay_actions(
+            path: Annotated[str, Field(description='A .w3g replay. ' + _PATH)],
+            player: Annotated[int | None, Field(description=(
+                'Keep the actions of this player id (from 1, as players lists them).'))] = None,
+            action: Annotated[str, Field(description=(
+                'Keep one kind of action, by name as by_action gives it, such as '
+                '"Unit/building ability (no target)", or by id, such as 0x10.'))] = '',
+            rawcode: Annotated[str, Field(description=(
+                'Keep actions naming this object id, such as hfoo or AHbz.'))] = '',
+            limit: Annotated[int, Field(description='Return at most this many actions.',
+                                        ge=1, le=2000)] = _tools.ACTIONS_LIMIT,
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.ReplayActionsResult:
+        """Count and list the actions in a replay, as wc3files
+        replay-actions does: actions and APM per player, the most frequent
+        kinds of action, and with a filter (player, action or object id)
+        the matching actions with their game time. Also the stats the map
+        recorded with W3MMD (winners, losers, variables), when it did. Use
+        replay_info for the game and its players; this tool for what they
+        did."""
+        return _tools.replay_actions(roots, path, player, action, rawcode, limit, max_chars)
 
     @tool('Compare two versions of a map')
     def compare_maps(
