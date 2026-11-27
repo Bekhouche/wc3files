@@ -523,3 +523,57 @@ class TestReplayActions(unittest.TestCase):
         roots = T.Roots([tempfile.gettempdir()])
         with self.assertRaises(ValueError):
             T.replay_actions(roots, os.path.join(tempfile.gettempdir(), 'x.w3x'))
+
+
+class TestMissingFiles(ToolTestCase):
+    """missing_files (#340)."""
+
+    @staticmethod
+    def model_bytes(folder):
+        """An MDX that uses the texture war3mapImported\Hero.blp."""
+        from wc3files.mdl import obj
+        from wc3files.mdl.model_file import ModelFile
+        data = obj.obj_to_model('v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\n'
+                                'usemtl skin\nf 1/1 2/2 3/3\n',
+                                obj.read_mtl('newmtl skin\nmap_Kd Hero.png\n'),
+                                texture_dir='war3mapImported')
+        path = os.path.join(folder, 'hero.mdx')
+        ModelFile().import_data(data).write(path)
+        with open(path, 'rb') as handle:
+            return handle.read()
+
+    def test_missing_and_unused(self):
+        from wc3files.w3o.object_file import ObjectFile
+        archive = W3xFile()
+        archive.read(sample_path('sample.w3x'))
+        files = dict(archive.files)
+        model = self.model_bytes(self.root)
+        units = ObjectFile()
+        units.import_data({'w3u': {'original': {}, 'custom': {'h000': {
+            'ID': 'hfoo', 'umdl': {'value': 'war3mapImported\Hero.mdl', 'type': 3,
+                                   'end': 'h000'}}}}})
+        files.update({'war3map.w3u': units.to_bytes('w3u'),
+                      'war3mapImported\Hero.mdx': model,             # named as .mdl
+                      'war3mapImported\Hero_Portrait.mdx': model,    # goes with Hero
+                      'war3mapImported\Old.mdx': model,              # named nowhere
+                      'war3mapImported\Old.blp': b'BLP1',            # named nowhere
+                      'war3mapImported\click.wav': b'RIFF',          # named nowhere
+                      'conversation.json': b'{}'})                    # the editor's own
+        archive.build_from_files(files, os.path.join(self.root, 'imports.w3x'))
+        result = T.missing_files(self.roots, 'imports.w3x')
+        self.assertEqual((result['models'], result['checked_game']), (3, False))
+        self.assertEqual(result['missing'], [{'texture': 'war3mapImported\Hero.blp',
+                                              'models': ['war3mapImported\Hero.mdx',
+                                                         'war3mapImported\Hero_Portrait.mdx',
+                                                         'war3mapImported\Old.mdx']}])
+        self.assertEqual([(u['name'], u['kind']) for u in result['unused']],
+                         [('war3mapImported\Old.blp', 'image'),
+                          ('war3mapImported\Old.mdx', 'model'),
+                          ('war3mapImported\click.wav', 'sound')])
+        self.assertEqual(result['unused_size'], 4 + len(model) + 4)
+
+    def test_refusals(self):
+        with self.assertRaises(ValueError):
+            T.missing_files(self.roots, 'sample.j')
+        with self.assertRaises(ProtectedMapError):
+            T.missing_files(self.roots, self.protected)

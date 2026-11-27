@@ -51,6 +51,13 @@ def _game_key(path):
     return path
 
 
+def _stem(path):
+    """A path with no prefix and no extension at all: a map names a model
+    imported as X.mdx as X.mdl, and the game takes either."""
+    path = canonical(path).rsplit(':', 1)[-1]
+    return path.rsplit('.', 1)[0] if _extension(path) else path
+
+
 def texture_paths(model):
     """The texture paths of `model` (a ModelFile or its data), each once,
     in order; replaceable textures have none."""
@@ -79,9 +86,13 @@ def game_file_names(storage):
     return {_game_key(path) for path in storage.root.paths()}
 
 
-def _named_elsewhere(files, candidates):
+def _named_elsewhere(files, candidates, model_namers=False):
     """{member: [files naming it]} for the candidate members, from the map's
-    other files: text, object data, map info, sounds and triggers."""
+    other files: text, object data, map info, sounds and triggers. With
+    `model_namers`, for imports other than images: models count as naming
+    files too (a particle emitter names a model), and a file is named with
+    any extension (a map names X.mdx as X.mdl)."""
+    key_of = _stem if model_namers else _game_key
     import re
 
     from wc3files.w3x import imports
@@ -96,7 +107,7 @@ def _named_elsewhere(files, candidates):
     # extension at all.
     by_stem = {}
     for name in candidates:
-        by_stem.setdefault(_game_key(name), []).append(canonical(name))
+        by_stem.setdefault(key_of(name), []).append(canonical(name))
     separator = rb'(?:\\\\|\\|/)'
     alternatives = b'|'.join(
         separator.join(re.escape(part.encode('utf-8')) for part in stem.split(BS))
@@ -105,12 +116,14 @@ def _named_elsewhere(files, candidates):
                        + imports._AFTER, re.IGNORECASE)
     named = {}
     for member, data in files.items():
-        if _extension(member) not in kinds or _extension(member) in MODEL_EXTENSIONS:
+        is_model = _extension(member) in MODEL_EXTENSIONS
+        if is_model and not model_namers or not is_model and _extension(member) not in kinds:
             continue
         for match in regex.finditer(data):
             found = match.group(0).decode('utf-8', errors='replace').replace(BS + BS, BS)
-            for key in by_stem.get(_game_key(found), []):
-                named.setdefault(key, set()).add(member)
+            for key in by_stem.get(key_of(found), []):
+                if key != canonical(member):          # a model names itself
+                    named.setdefault(key, set()).add(member)
     return {key: sorted(members) for key, members in named.items()}
 
 

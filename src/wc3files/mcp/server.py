@@ -23,6 +23,7 @@ INSTRUCTIONS = (
     'triggers and scripts; compare_maps says what changed between two '
     'versions; map_image shows a map; game_files, game_file and game_image read '
     'the installed game; replay_actions lists what players did; '
+    'missing_files finds missing textures and unused imports; '
     'compile_script compiles and checks vJass, Zinc, '
     'cJass and Luck code, and run_script runs a map script without the game; '
     'read_member gives any member as data. Every tool '
@@ -319,6 +320,19 @@ def build_server(folders, allow_write=False, game=None):
         replay_info for the game and its players; this tool for what they
         did."""
         return _tools.replay_actions(roots, path, player, action, rawcode, limit, max_chars)
+
+    @tool('Missing and unused files')
+    def missing_files(
+            path: MapPath,
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.MissingFilesResult:
+        """Find the textures a map's models use that the map does not have
+        (nor the installed game, when the server has --game), which show as
+        green or black in game, and the imported files nothing in the map
+        names (no model, object data, script, trigger or other file), which
+        only make it larger. A model's _Portrait counts as used with the
+        model. Use it when a model looks wrong or a map is too large. A map
+        with thousands of imports takes a minute or more."""
+        return _tools.missing_files(roots, path, installed, max_chars)
 
     @tool('Compare two versions of a map')
     def compare_maps(

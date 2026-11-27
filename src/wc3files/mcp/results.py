@@ -196,6 +196,44 @@ class ReplayActionsResult(TypedDict):
         'when it recorded none.'))]
 
 
+class MissingTexture(TypedDict):
+    texture: Annotated[str, Field(description='The texture path a model uses.')]
+    models: Annotated[list[str], Field(description='The models of the map that use it.')]
+
+
+class OtherExtension(TypedDict):
+    used: str
+    imported: Annotated[str, Field(description='The import of the same name with another extension.')]
+
+
+class UnusedFile(TypedDict):
+    name: str
+    size: int
+    kind: Annotated[str, Field(description='image, model, sound or other.')]
+
+
+class UnreadableModel(TypedDict):
+    name: str
+    error: str
+
+
+class MissingFilesResult(TypedDict):
+    path: str
+    models: Annotated[int, Field(description='Models in the map.')]
+    imports: Annotated[int, Field(description="Files in the map that are not the map's own data.")]
+    checked_game: Annotated[bool, Field(description=(
+        'True when the installed game was checked too (--game); otherwise game textures '
+        'count as missing.'))]
+    missing: Annotated[list[MissingTexture], Field(description=(
+        'Textures models use that the map has not, nor the game when checked: shown green '
+        'or black in game.'))]
+    other_extension: list[OtherExtension]
+    unused: Annotated[list[UnusedFile], Field(description=(
+        'Imports that nothing names: no model, object data, script, trigger or other file.'))]
+    unused_size: Annotated[int, Field(description='Bytes of the unused imports.')]
+    unreadable: list[UnreadableModel]
+
+
 ComparePart = Literal['all', 'members', 'objects', 'strings']
 ImageKind = Literal['minimap', 'preview']
 

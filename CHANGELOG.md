@@ -18,6 +18,7 @@ section to the new version and its date.
 - MCP tool `map_image`: a map's minimap or lobby preview as a PNG image the assistant sees, the map's own or drawn from the terrain, with a text part naming the source (#337).
 - MCP tools `game_files`, `game_file` and `game_image`, and the server option `--game`: the installed game's files found by path, read as data, a model summary or text, and its textures shown as PNG; `map_image` draws a minimap in the game's tileset colours when the server has the game (#338).
 - MCP tool `replay_actions`: actions and APM per player, the most frequent kinds of action, the actions matching a player, action or object id with their game time, and the replay's W3MMD stats (#339).
+- MCP tool `missing_files`: textures a map's models use that neither the map nor the installed game has, and imports nothing in the map names, images, models, sounds and other files alike, a model named with either extension and its `_Portrait` counted with it (#340).
 
 ## [0.10.0] - 2026-11-27
 
