@@ -138,6 +138,76 @@ class CompileScriptResult(TypedDict):
     lines: Annotated[int, Field(description='Lines of compiled JASS.')]
 
 
+ComparePart = Literal['all', 'members', 'objects', 'strings']
+
+
+class MemberAdded(TypedDict):
+    name: str
+    size: int
+
+
+class MemberChanged(TypedDict):
+    name: str
+    old_size: int
+    new_size: int
+
+
+class MembersDiff(TypedDict):
+    added: list[MemberAdded]
+    removed: list[MemberAdded]
+    changed: Annotated[list[MemberChanged], Field(description='Members whose bytes differ.')]
+
+
+class ObjectRef(TypedDict):
+    type: Annotated[str, Field(description='w3u, w3t, ... with @skin for war3mapSkin files.')]
+    id: str
+    base: Annotated[str, Field(description='The object it was copied from; its own id if standard.')]
+
+
+class FieldChange(TypedDict):
+    field: Annotated[str, Field(description='The field code, such as unam or Hbz2.')]
+    old: Annotated[Any, Field(description='Old value, per level for a field with levels; null if unset.')]
+    new: Annotated[Any, Field(description='New value; null if unset.')]
+
+
+class ObjectChanged(ObjectRef):
+    fields: list[FieldChange]
+
+
+class ObjectsDiff(TypedDict):
+    added: list[ObjectRef]
+    removed: list[ObjectRef]
+    changed: list[ObjectChanged]
+
+
+class StringAdded(TypedDict):
+    key: Annotated[str, Field(description='The stable key, such as w3u/h000/Name.')]
+    text: str
+
+
+class StringChanged(TypedDict):
+    key: str
+    old: str
+    new: str
+
+
+class StringsDiff(TypedDict):
+    added: list[StringAdded]
+    removed: list[StringAdded]
+    changed: list[StringChanged]
+    unchanged: int
+
+
+class CompareMapsResult(TypedDict):
+    old: str
+    new: str
+    members: NotRequired[MembersDiff]
+    objects: NotRequired[ObjectsDiff]
+    strings: NotRequired[StringsDiff]
+    summary: Annotated[dict[str, dict[str, int]], Field(description=(
+        'Counts of each part, to ask for one part when the whole is too large.'))]
+
+
 class RunScriptResult(TypedDict):
     path: str
     script: Annotated[str, Field(description=(

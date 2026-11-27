@@ -17,7 +17,7 @@ try:
 except ImportError:  # pragma: no cover
     Client = None
 
-TOOLS = ['check_script', 'compile_script', 'list_files', 'list_members', 'map_info', 'map_overview',
+TOOLS = ['check_script', 'compare_maps', 'compile_script', 'list_files', 'list_members', 'map_info', 'map_overview',
          'map_records', 'model_info', 'object_data', 'placed_objects', 'read_member',
          'replay_info', 'run_script', 'trigger_text']
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -104,6 +104,8 @@ class TestMcpServer(unittest.TestCase):
             ('check_script', {'path': 'sample.j'}, lambda: T.check_script(roots, 'sample.j')),
             ('compile_script', {'path': 'sample.j'}, lambda: T.compile_script(roots, path='sample.j')),
             ('compile_script', {'code': BROKEN}, lambda: T.compile_script(roots, code=BROKEN)),
+            ('compare_maps', {'old': 'sample.w3x', 'new': 'sample.w3x'},
+             lambda: T.compare_maps(roots, 'sample.w3x', 'sample.w3x')),
             ('run_script', {'path': 'sample.w3x', 'seconds': 0},
              lambda: T.run_script(roots, 'sample.w3x', seconds=0)),
             ('model_info', {'path': 'sample.mdx'}, lambda: T.model_info(roots, 'sample.mdx')),

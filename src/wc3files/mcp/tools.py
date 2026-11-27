@@ -446,6 +446,104 @@ def _compile_error(error):
     return {'message': str(message), 'line': line, 'file': source}
 
 
+COMPARE_PARTS = ('all', 'members', 'objects', 'strings')
+
+
+def compare_maps(roots, old, new, part='all', max_chars=DEFAULT_MAX_CHARS):
+    """What changed between two versions of a map: members added, removed
+    and changed; custom and changed objects added, removed and changed,
+    with their fields; and strings by the stable keys of `map-translate`
+    (#224), which do not depend on TRIGSTR numbers."""
+    import hashlib
+    if part not in COMPARE_PARTS:
+        raise ValueError(f"part is one of {', '.join(COMPARE_PARTS)}, not {part!r}")
+    paths = [roots.resolve(old), roots.resolve(new)]
+    for path in paths:
+        if not _is_map(path):
+            raise ValueError(f'{path} is not a .w3x or .w3m map')
+    files = []
+    for path in paths:
+        members = read_map(path).files
+        files.append({name: bytes(data) for name, data in members.items()
+                      if data is not None and name != '(listfile)'})
+    result = {'old': paths[0], 'new': paths[1]}
+    summary = {}
+    if part in ('all', 'members'):
+        before = {n.lower(): (n, d) for n, d in files[0].items()}
+        after = {n.lower(): (n, d) for n, d in files[1].items()}
+        digest = lambda data: hashlib.sha1(data).hexdigest()
+        members = {
+            'added': [{'name': after[k][0], 'size': len(after[k][1])}
+                      for k in sorted(after) if k not in before],
+            'removed': [{'name': before[k][0], 'size': len(before[k][1])}
+                        for k in sorted(before) if k not in after],
+            'changed': [{'name': after[k][0], 'old_size': len(before[k][1]),
+                         'new_size': len(after[k][1])}
+                        for k in sorted(after) if k in before
+                        and digest(before[k][1]) != digest(after[k][1])]}
+        result['members'] = members
+        summary['members'] = {k: len(v) for k, v in members.items()}
+    if part in ('all', 'objects'):
+        objects = _compare_objects(files[0], files[1])
+        result['objects'] = objects
+        summary['objects'] = {k: len(v) for k, v in objects.items()}
+    if part in ('all', 'strings'):
+        from wc3files.w3x.translation import diff_strings
+        found = diff_strings(files[0], files[1])
+        result['strings'] = {
+            'added': [{'key': k, 'text': v} for k, v in found['added'].items()],
+            'removed': [{'key': k, 'text': v} for k, v in found['removed'].items()],
+            'changed': [{'key': k, 'old': v['old'], 'new': v['new']}
+                        for k, v in found['changed'].items()],
+            'unchanged': found['unchanged']}
+        summary['strings'] = {k: (len(v) if isinstance(v, list) else v)
+                              for k, v in result['strings'].items()}
+    result['summary'] = summary
+    return limited(result, max_chars)
+
+
+def _object_tables(files):
+    """{(file kind, object id): (base id, {field: value})} for the objects of
+    a map's object files, custom and changed standard ones."""
+    from wc3files.w3o.object_file import ObjectFile
+    out = {}
+    lowered = {n.lower(): d for n, d in files.items()}
+    for ext in OBJECT_TYPES:
+        for prefix in ('war3map', 'war3mapskin'):
+            data = lowered.get(f'{prefix}.{ext}')
+            if not data:
+                continue
+            reader = ObjectFile()
+            reader.read(data, ext)
+            table = reader.export_data().get(ext) or {}
+            kind = ext + ('@skin' if prefix == 'war3mapskin' else '')
+            for section in ('original', 'custom'):
+                for object_id, mods in (table.get(section) or {}).items():
+                    fields = {mod: plain(value.get('value')) for mod, value in mods.items()
+                              if mod != 'ID'}
+                    out[(kind, object_id)] = (mods.get('ID', object_id), fields)
+    return out
+
+
+def _compare_objects(old_files, new_files):
+    before, after = _object_tables(old_files), _object_tables(new_files)
+    entry = lambda key, base: {'type': key[0], 'id': key[1], 'base': base}
+    changed = []
+    for key in sorted(k for k in after if k in before):
+        old_base, old_fields = before[key]
+        new_base, new_fields = after[key]
+        fields = [{'field': f, 'old': old_fields.get(f), 'new': new_fields.get(f)}
+                  for f in sorted(set(old_fields) | set(new_fields))
+                  if old_fields.get(f) != new_fields.get(f)]
+        if fields or old_base != new_base:
+            item = entry(key, new_base)
+            item['fields'] = fields
+            changed.append(item)
+    return {'added': [entry(k, after[k][0]) for k in sorted(after) if k not in before],
+            'removed': [entry(k, before[k][0]) for k in sorted(before) if k not in after],
+            'changed': changed}
+
+
 RUN_MAX_SECONDS = 600.0
 RUN_MAX_STEPS = 50_000_000
 

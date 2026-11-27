@@ -19,7 +19,8 @@ INSTRUCTIONS = (
     '(.w3g) with wc3files. list_files finds files; map_overview says what a '
     'map holds. placed_objects, map_records, object_data, trigger_text and '
     'check_script answer questions about placed units, regions, objects, '
-    'triggers and scripts; compile_script compiles and checks vJass, Zinc, '
+    'triggers and scripts; compare_maps says what changed between two '
+    'versions; compile_script compiles and checks vJass, Zinc, '
     'cJass and Luck code, and run_script runs a map script without the game; '
     'read_member gives any member as data. Every tool '
     'only reads. Files outside '
@@ -227,6 +228,24 @@ def build_server(folders, allow_write=False):
         correctly before it goes into the map; edit_script then adds it. A
         compile error is returned in errors, with its line."""
         return _tools.compile_script(roots, code, path, language, include_jass, max_chars)
+
+    @tool('Compare two versions of a map')
+    def compare_maps(
+            old: Annotated[str, Field(description='The older .w3x or .w3m map. ' + _PATH)],
+            new: Annotated[str, Field(description='The newer .w3x or .w3m map. ' + _PATH)],
+            part: Annotated[R.ComparePart, Field(description=(
+                'all, or one part: members (files added, removed, changed), objects '
+                '(custom and changed objects, with the fields that changed) or strings '
+                '(names, tooltips, map info and script text by stable key).'))] = 'all',
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.CompareMapsResult:
+        """Compare two versions of a map: the files added, removed and
+        changed, the objects added, removed and changed with each field's
+        old and new value, and the strings by keys that do not depend on
+        TRIGSTR numbers, as wc3files map-translate diff gives them. Use it
+        to answer what changed in a new version. The summary has the
+        counts; for a large map, ask for one part. Fails on a protected
+        map."""
+        return _tools.compare_maps(roots, old, new, part, max_chars)
 
     @tool('Run a map script')
     def run_script(
