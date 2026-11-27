@@ -28,6 +28,7 @@ print(sorted(archive.files))          # war3map.w3i, war3map.j, war3map.doo, ...
 | [Triggers and scripts](triggers.md) | GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script |
 | [In-game UI frames](ui.md) | Frames as data, written as JASS, Lua, .fdf or a map trigger |
 | [MCP server](mcp.md) | `wc3files-mcp`: read-only tools that let an AI assistant read your maps, models and replays |
+| [Language server](lsp.md) | `wc3files-lsp`: JASS and Lua checks in your editor as you type |
 
 ## What a Warcraft III map is
 

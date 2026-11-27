@@ -9,6 +9,7 @@ class JassParseError(ValueError):
                             f'at line {token.line}, column {token.col}')
           self.line = token.line
           self.col = token.col
+          self.token = token
 
 
 _LITERAL_KINDS = {'INT', 'HEXINT', 'REAL', 'STRING', 'RAWCODE'}

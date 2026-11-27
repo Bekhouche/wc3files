@@ -54,7 +54,9 @@ setup(
     },
     entry_points={
         'console_scripts': ['wc3files=wc3files.cli.main:main',
-                            'wc3files-mcp=wc3files.mcp:main'],
+                            'wc3files-mcp=wc3files.mcp:main',
+                            # The language server, standard library only (#387).
+                            'wc3files-lsp=wc3files.lsp:main'],
     },
     author='Salah Eddine Bekhouche',
     author_email='bekhouchesalah@gmail.com',

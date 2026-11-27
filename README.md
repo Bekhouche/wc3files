@@ -35,6 +35,7 @@ Full documentation lives in [docs/](docs/README.md):
 - [Triggers and scripts](docs/triggers.md) - GUI triggers, JASS/Lua, and rebuilding editor triggers from a compiled script
 - [In-game UI frames](docs/ui.md) - describe a UI as data, and write the JASS, Lua, .fdf or map trigger that creates it
 - [MCP server](docs/mcp.md) - `wc3files-mcp`, which lets an AI assistant such as Claude read your maps, models and replays
+- [Language server](docs/lsp.md) - `wc3files-lsp`, which shows script errors and leaks in your editor as you type
 
 What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 
@@ -82,6 +83,10 @@ What changed in each release is in [CHANGELOG.md](CHANGELOG.md).
 <a href="https://mcprush.com/to/wc3files-mcp"><img width="380" height="200" src="https://mcprush.com/badge/wc3files-mcp/card.svg" alt="wc3files MCP server" loading="lazy" /></a>
 
 <!-- mcp-name: io.github.Bekhouche/wc3files -->
+
+### Language server
+- `wc3files-lsp`: JASS and Lua checks in any editor with a Language Server Protocol client, as you type: syntax errors, unknown functions, wrong arguments, handle leaks
+- Comes with the package, no extra needed
 
 ### External tools and Lua
 - Run the `//! external` calls and Lua `//! externalblock` blocks of a vJass map (ObjectMerger, FileImporter, FileExporter, ConstantMerger), as the World Editor does when saving
