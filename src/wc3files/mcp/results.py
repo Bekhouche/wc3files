@@ -161,6 +161,41 @@ class GameFileResult(TypedDict):
     note: NotRequired[str]
 
 
+class ActionPlayer(TypedDict):
+    id: Annotated[int, Field(description='Player id in the action stream, from 1.')]
+    name: str | None
+    actions: int
+    apm_actions: Annotated[int, Field(description='Actions that count for APM.')]
+    apm: Annotated[float | None, Field(description='APM actions per minute of the game.')]
+
+
+class ActionCount(TypedDict):
+    id: int
+    name: str
+    count: int
+
+
+class ActionEntry(TypedDict):
+    time_ms: Annotated[int, Field(description='Game time of the action, in milliseconds.')]
+    player: int
+    action: Annotated[str, Field(description='The action, readable: name, object, order.')]
+
+
+class ReplayActionsResult(TypedDict):
+    path: str
+    minutes: Annotated[float, Field(description='Length of the game.')]
+    unfinished: Annotated[bool, Field(description='A replay the game never finished writing.')]
+    players: list[ActionPlayer]
+    by_action: Annotated[list[ActionCount], Field(description='The 30 most frequent actions.')]
+    matched: Annotated[int, Field(description='Actions matching the filters; 0 without any.')]
+    actions: Annotated[list[ActionEntry], Field(description=(
+        'The matching actions in order, up to limit; empty without a filter.'))]
+    truncated: bool
+    w3mmd: Annotated[dict[str, Any] | None, Field(description=(
+        'Stats the map recorded with W3MMD: players, variables, winners, losers; null '
+        'when it recorded none.'))]
+
+
 ComparePart = Literal['all', 'members', 'objects', 'strings']
 ImageKind = Literal['minimap', 'preview']
 

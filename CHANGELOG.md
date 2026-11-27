@@ -17,6 +17,7 @@ section to the new version and its date.
 - MCP tool `compare_maps`: what changed between two versions of a map: members added, removed and changed, objects with each changed field's old and new value, and strings by the stable keys of #224; one part at a time for a large map (#336).
 - MCP tool `map_image`: a map's minimap or lobby preview as a PNG image the assistant sees, the map's own or drawn from the terrain, with a text part naming the source (#337).
 - MCP tools `game_files`, `game_file` and `game_image`, and the server option `--game`: the installed game's files found by path, read as data, a model summary or text, and its textures shown as PNG; `map_image` draws a minimap in the game's tileset colours when the server has the game (#338).
+- MCP tool `replay_actions`: actions and APM per player, the most frequent kinds of action, the actions matching a player, action or object id with their game time, and the replay's W3MMD stats (#339).
 
 ## [0.10.0] - 2026-11-27
 
