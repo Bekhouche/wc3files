@@ -1014,6 +1014,45 @@ def _write_member(files, key, data, output):
     _write_map(files, output)
 
 
+def _cmd_cjass(args):
+    """cJass to JASS, through vJass (#227)."""
+    from wc3files.cjass import compile_cjass
+    files = key = None
+    if len(args.input) == 1 and args.input[0].lower().endswith(_MAP_EXTENSIONS):
+        files, key, data = _read_member(args.input[0], 'war3map.j', args.deep)
+        sources = [(args.input[0], data.decode('utf-8', 'replace'))]
+    else:
+        sources = []
+        for path in args.input:
+            with open(path, 'rb') as handle:
+                sources.append((path, handle.read().decode('utf-8-sig', 'replace')))
+    include_paths = list(args.include or ()) + [os.path.dirname(os.path.abspath(p))
+                                                for p, _ in sources if files is None]
+    # Compiled as one text, so a define of one file reaches the next.
+    result = compile_cjass('\n'.join(text for _, text in sources), sources[0][0],
+                           include_paths=include_paths, debug=args.debug, vjass=False)
+    if not args.no_vjass:
+        from wc3files.vjass import VJassCompiler
+        result = VJassCompiler(debug=args.debug).compile(result, sources[0][0]).jass
+    if args.check and not args.no_vjass:
+        from wc3files.scripts.checker import check_program
+        from wc3files.scripts.jass_parser import parse
+        issues = [f for f in check_program(parse(result)) if f['severity'] == 'issue']
+        for finding in issues:
+            print(f"check: compiled line {finding.get('line')}: {finding['message']}",
+                  file=sys.stderr)
+        if issues:
+            raise ValueError(f'{len(issues)} issue(s) in the compiled script')
+    if files is not None:
+        if not args.output:
+            raise ValueError('a map needs -o, the map to write')
+        _write_member(files, key, result.encode('utf-8'), args.output)
+        print(f'Compiled {args.input[0]} -> {args.output}')
+        return 0
+    _write_or_print(result, args.output or '-')
+    return 0
+
+
 def _cmd_lua_bundle(args):
     """A Lua project bundled into one war3map.lua, alone or in a map (#256)."""
     from wc3files.scripts.lua_bundle import bundle, insert_bundle
@@ -3655,6 +3694,26 @@ def build_parser():
     p_pathing.add_argument('--max-height', type=float, default=None, help=(
         'from-model: only the triangles that come this close to the ground.'))
     p_pathing.set_defaults(func=_cmd_pathing_texture)
+
+    p_cjass = subparsers.add_parser(
+        'cjass', help=('Compile cJass (AdicHelper) to plain JASS, through the vJass '
+                       'compiler: scripts, or the war3map.j of a map.'))
+    p_cjass.add_argument('input', nargs='+',
+                         help='cJass file(s), compiled together in order; or one map.')
+    p_cjass.add_argument('-o', '--output', default=None,
+                         help="Where to write the JASS (default: stdout; a map needs -o).")
+    p_cjass.add_argument('-I', '--include', action='append', default=None,
+                         help=('A folder include looks in (repeatable), before the '
+                               "bundled cj_*.j libraries. The source's own folder "
+                               'is searched first.'))
+    p_cjass.add_argument('--debug', action='store_true',
+                         help='DEBUG is 1 and debug lines are kept.')
+    p_cjass.add_argument('--no-vjass', action='store_true',
+                         help='Stop after cJass: write the JASS with vJass blocks.')
+    p_cjass.add_argument('--check', action='store_true',
+                         help='Check the compiled JASS with the JASS checker; exit 1 on an issue.')
+    p_cjass.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_cjass.set_defaults(func=_cmd_cjass)
 
     p_lua_bundle = subparsers.add_parser(
         'lua-bundle', help=('Bundle a Lua project of modules joined by require into one '

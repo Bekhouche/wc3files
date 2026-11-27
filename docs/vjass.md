@@ -211,6 +211,76 @@ immediately. A native it does not implement raises `JassRuntimeError`.
   nothing.
 - Errors stop at the first one, as JassHelper's do.
 
+## cJass
+
+`wc3files.cjass` compiles cJass, the C-like JASS dialect of AdicHelper, to
+JASS with vJass blocks, and then through the vJass compiler to plain JASS, as
+AdicHelper runs before JassHelper. It follows the cJass 1.4.0.2 manual
+(https://cjass.xgm.guru/manual-en).
+
+```bash
+wc3files cjass code.j -o war3map.j            # cJass (and vJass) to plain JASS
+wc3files cjass a.j b.j -o war3map.j --check   # several files, as one; check the result
+wc3files cjass code.j --no-vjass              # stop after cJass
+wc3files cjass MyMap.w3x -o Built.w3x         # the war3map.j of a map
+```
+
+```python
+from wc3files.cjass import compile_cjass, cjass_to_vjass
+
+jass = compile_cjass(open('code.j').read(), 'code.j', include_paths=['lib'])
+```
+
+What is covered:
+
+- **Syntax.** Blocks in braces (`if (c) { } elseif (c) { } else { }`,
+  `else if`, `loop { }`, `library A { }`, `struct S { }` and the other vJass
+  blocks); functions written return type first (`void f(int x) { }`), which
+  are methods inside a struct, module or interface, with their modifiers;
+  locals declared anywhere and several on a line, moved to the top of the
+  function, a literal initializer staying with the declaration and any other
+  becoming a `set` where it was; `call`, `set` and `local` left out; `+=`,
+  `-=`, `*=`, `/=`; `++` and `--` as statements and in expressions, a prefix
+  one run before the statement and a postfix one after; `whilenot (c) { }`,
+  `while (c) { }`, `do { } whilenot (c)`, `do { } while (c)`, `break`; `&&`,
+  `||` and `!`; declarations outside functions, gathered into a `globals`
+  block; `;` between statements and `\` at the end of a line, inside a
+  string too.
+- **Preprocessor.** `define` and `#define`, one at a time, in blocks (`define
+  { }`, `define ... enddefine`), with arguments, overloaded by the number of
+  arguments, with names in angle brackets (`define <new timer> = ...`,
+  arguments too); `private` defines, seen only inside their library, scope,
+  struct or module; `setdef` and `undef`; `` `arg` `` to make a string and
+  `##` to join names, anywhere; `DATE`, `TIME`, `COUNTER`, `DEBUG`,
+  `FUNCNAME` and `WAR3VER`; `#if`, `#elseif`, `#else`, `#endif` with `==`,
+  `!=` and flags; `#error`; `include` and `#include`, looked for beside the
+  source, in the `-I` folders and in the bundled libraries, with `#guard`;
+  `enum`, unnamed (one counter shared by all of them) or named, with braces
+  or `endenum`.
+- **Debug lines.** A line starting with `debug` is kept, without the word,
+  only with `--debug`, as JassHelper does.
+- **Libraries.** `cj_types.j` (`int`, `bool`, `void`, `float`) and
+  `cj_typesEx.j` (`new timer`, `new unit(p, id, x, y)` and the other
+  handle types), with their `_priv` versions, written for this package from
+  the names AdicHelper's files define.
+
+What is not covered:
+
+- the other libraries of AdicHelper (`cj_print`, `cj_order`,
+  `cj_antibj_base`, ...), which a project can still pass with `-I` from an
+  AdicHelper install;
+- a `++` or `--` in the condition of an `if` that has an `elseif`, which is
+  an error;
+- cJass after 1.4.0.2 (lambdas, `for`): the manual does not describe them;
+- the line numbers of errors after a line joined by `\`, which are off by
+  the lines joined.
+
+The tests are the examples of the manual, compiled to the JASS it gives for
+them. Two real cJass projects from GitHub (a survival map of 40 files and a
+projectile library of 10) compile through vJass with no issue from the JASS
+checker; one file of the survival map refers to a method that does not exist
+in its own struct and was left out.
+
 ## Credits
 
 JassHelper, vJass and Zinc are by Victor Hugo Soliz Kuncar (Vexorian), released
