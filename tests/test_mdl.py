@@ -645,6 +645,57 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertIn(f'\t// wc3files: ChunkOrder {" ".join(order)},\n', save_mdl(model))
         self.assertSurvives(model)
 
+    HD_LAYER = (
+        'Materials 1 {\n'
+        '\tMaterial {\n'
+        '\t\tLayer {\n'
+        '\t\t\tFilterMode None,\n'
+        '\t\t\tShaderTypeId 1,\n'
+        '\t\t\tstatic TextureID 3,\n'
+        '\t\t\tstatic NormalTextureID 4,\n'
+        '\t\t\tstatic ORMTextureID 5,\n'
+        '\t\t\tstatic EmissiveTextureID 6,\n'
+        '\t\t\tstatic TeamColorTextureID 7,\n'
+        '\t\t\tstatic ReflectionsTextureID 8,\n'
+        '\t\t}\n'
+        '\t}\n'
+        '}\n')
+
+    def hd_model(self, text):
+        with open(_helpers.sample_path('sample.mdl'), encoding='utf-8') as handle:
+            sample = handle.read().replace('FormatVersion 800', 'FormatVersion 1100')
+        return load_mdl(sample + text)
+
+    def test_hd_layer_texture_list(self):
+        # As Retera's Model Studio writes an HD layer of version 1100.
+        model = self.hd_model(self.HD_LAYER)
+        layer = model['materials'][0]['layers'][0]
+        self.assertEqual(layer['hd'], 1)
+        self.assertEqual([(entry['textureId'], entry['slot']) for entry in layer['textures']],
+                         [(3, 0), (4, 1), (5, 2), (6, 3), (7, 4), (8, 5)])
+        self.assertEqual(layer['textureId'], 3)
+        self.assertSurvives(model)
+        # The game's HD layers have 0 in their own texture field.
+        layer['textureId'] = 0
+        self.assertIn('// wc3files: LayerTextureID 0,', save_mdl(model))
+        self.assertSurvives(model)
+
+    def test_hd_layer_animated_texture(self):
+        model = self.hd_model(self.HD_LAYER)
+        layer = model['materials'][0]['layers'][0]
+        # An animated normal map stores slot 0, as in the game's own models;
+        # its position in the list gives its type.
+        layer['textures'][1]['slot'] = 0
+        layer['textures'][1]['tracks'] = {'KMTF': {
+            'interpolationType': 0, 'globalSequenceId': 0xFFFFFFFF,
+            'keys': [{'frame': 0, 'value': 4}, {'frame': 100, 'value': 9}]}}
+        text = save_mdl(model)
+        self.assertIn('\t\t\tNormalTextureID 2 {', text)
+        self.assertIn('// wc3files: NormalTextureSlot 0,', text)
+        again = load_mdl(text)['materials'][0]['layers'][0]['textures'][1]
+        self.assertEqual((again['slot'], len(again['tracks']['KMTF']['keys'])), (0, 2))
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):

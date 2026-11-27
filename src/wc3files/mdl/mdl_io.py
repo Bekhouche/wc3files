@@ -81,7 +81,7 @@ def load_mdl(text):
         elif token == 'Textures':
             model['textures'] = _parse_textures(tokens)
         elif token == 'Materials':
-            model['materials'] = _parse_materials(tokens)
+            model['materials'] = _parse_materials(tokens, model.get('version', 800))
         elif token == 'TextureAnims':
             model['textureAnimations'] = _parse_texture_anims(tokens)
         elif token == 'Geoset':
@@ -518,7 +518,7 @@ _FILTER_MODES = {
 }
 
 
-def _parse_materials(tokens):
+def _parse_materials(tokens, version=800):
     tokens.expect('Materials')
     if tokens.peek() != '{':
         tokens.next()
@@ -537,7 +537,7 @@ def _parse_materials(tokens):
             elif key == 'Shader':
                 material['shader'] = _parse_string(tokens.next())
             elif key == 'Layer':
-                material['layers'].append(_parse_layer(tokens))
+                material['layers'].append(_parse_layer(tokens, version >= 1100))
             elif tokens.peek() == '{':
                 _skip_block(tokens)
             elif tokens.peek() not in (None, '}'):
@@ -550,7 +550,9 @@ def _parse_materials(tokens):
     return materials
 
 
-def _parse_layer(tokens):
+def _parse_layer(tokens, texture_list=False):
+    """A layer; with `texture_list` (version 1100 and later), its textures
+    are read into the list of #302."""
     # Caller already consumed 'Layer'
     tokens.expect('{')
     layer = {
@@ -562,9 +564,15 @@ def _parse_layer(tokens):
         'alpha': 1.0,
         'tracks': {},
     }
+    entries = {}          # texture type -> entry, in the order they come
+    own_texture = None    # the layer's own texture field, when written apart
     while tokens.peek() != '}':
         key = tokens.next()
-        if _parse_field(tokens, key, layer, _LAYER_FIELDS):
+        if texture_list and _parse_hd_texture(tokens, key, layer, entries):
+            continue
+        if texture_list and key == 'LayerTextureID':
+            own_texture = int(_parse_number(tokens.next()))
+        elif _parse_field(tokens, key, layer, _LAYER_FIELDS):
             pass
         elif key == 'FilterMode':
             mode = tokens.next()
@@ -603,7 +611,49 @@ def _parse_layer(tokens):
         if tokens.peek() == ',':
             tokens.next()
     tokens.expect('}')
+    if texture_list:
+        layer.setdefault('hd', 0)
+        layer['textures'] = list(entries.values())
+        diffuse = entries[0]['textureId'] if 0 in entries else 0
+        layer['textureId'] = diffuse if own_texture is None else own_texture
     return layer
+
+
+# The texture list of a layer of version 1100 and later (#302), in the
+# syntax of Retera's Model Studio (craft3data .../mdl/Layer.java): the HD
+# flag as `ShaderTypeId`, and each texture as `static <Type>TextureID n`,
+# or an animated one as a `<Type>TextureID` track, where the type is the
+# texture's slot. Diffuse has no prefix.
+HD_TEXTURE_TYPES = ('', 'Normal', 'ORM', 'Emissive', 'TeamColor', 'Reflections')
+_HD_TEXTURE_KEYS = {name + 'TextureID': kind for kind, name in enumerate(HD_TEXTURE_TYPES)}
+_HD_SLOT_KEYS = {name + 'TextureSlot': kind for kind, name in enumerate(HD_TEXTURE_TYPES)}
+
+
+def _parse_hd_texture(tokens, key, layer, entries):
+    """One entry of a version 1100 layer's texture list (see
+    _write_hd_texture_lines), or False when `key` is not one; it takes its
+    own trailing comma."""
+    static = key == 'static' and tokens.peek() in _HD_TEXTURE_KEYS
+    if static:
+        key = tokens.next()
+    if key == 'ShaderTypeId':
+        layer['hd'] = int(_parse_number(tokens.next()))
+    elif key in _HD_SLOT_KEYS:
+        entry = entries.setdefault(_HD_SLOT_KEYS[key], {'textureId': 0, 'slot': _HD_SLOT_KEYS[key], 'tracks': {}})
+        entry['slot'] = int(_parse_number(tokens.next()))
+    elif key in _HD_TEXTURE_KEYS:
+        kind = _HD_TEXTURE_KEYS[key]
+        entry = entries.setdefault(kind, {'textureId': 0, 'slot': kind, 'tracks': {}})
+        if not static and _is_animated_track(tokens):
+            tokens.next()  # keyframe count
+            entry['tracks']['KMTF'] = _parse_track_block(tokens, 'u32')
+        else:
+            entry['textureId'] = int(_parse_number(tokens.next()))
+    else:
+        return False
+    if tokens.peek() == ',':
+        tokens.next()
+    return True
 
 
 # Material and layer flags by MDL name, in the order they are written. The
@@ -1723,7 +1773,9 @@ def _write_material_lines(material):
         shading = layer.get('shadingFlags', 0)
         lines.extend(f'\t\t\t{name},' for name, bit in _LAYER_FLAGS.items() if shading & bit)
         tracks = layer.get('tracks') or {}
-        if 'KMTF' in tracks:
+        if layer.get('textures') is not None:
+            lines.extend(_write_hd_texture_lines(layer))
+        elif 'KMTF' in tracks:
             lines.extend(_write_track_lines('TextureID', tracks['KMTF'], 'u32', indent=3))
         else:
             lines.append(f'\t\t\tstatic TextureID {layer.get("textureId", 0)},')
@@ -1738,6 +1790,39 @@ def _write_material_lines(material):
         lines.extend(_write_field_lines(layer, _LAYER_FIELDS, indent=3, present_only=True))
         lines.append('\t\t}')
     lines.append('\t}')
+    return lines
+
+
+def _hd_texture_type(entry, index):
+    """The type an entry of a layer's texture list is written under. An
+    animated entry stores a slot that is not its type in the game's own
+    models (0 for a normal map, on 5 of 1,714 layers of 600 game models);
+    Retera's Model Studio takes its position in the list as the type, and
+    so does this."""
+    return index if (entry.get('tracks') or {}).get('KMTF') else entry.get('slot', 0)
+
+
+def _write_hd_texture_lines(layer):
+    pad = '\t\t\t'
+    textures = layer.get('textures') or []
+    lines = [f'{pad}ShaderTypeId {layer.get("hd", 0)},']
+    types = [_hd_texture_type(entry, index) for index, entry in enumerate(textures)]
+    if len(set(types)) != len(types) or any(not 0 <= t < len(HD_TEXTURE_TYPES) for t in types):
+        raise ValueError(f'a layer\'s texture list has slots MDL cannot name: '
+                         f'{[entry.get("slot") for entry in textures]}')
+    for entry, kind in zip(textures, types):
+        name = HD_TEXTURE_TYPES[kind] + 'TextureID'
+        lines.append(f'{pad}static {name} {entry.get("textureId", 0)},')
+        track = (entry.get('tracks') or {}).get('KMTF')
+        if track:
+            lines.extend(_write_track_lines(name, track, 'u32', indent=3))
+        if entry.get('slot', 0) != kind:
+            lines.append(f'{pad}{EXTENSION_COMMENT}{HD_TEXTURE_TYPES[kind]}TextureSlot {entry.get("slot", 0)},')
+    # The layer's own texture field: Retera's Model Studio sets it to the
+    # diffuse texture, but the game's HD layers have 0 there (864 of 1,714).
+    diffuse = textures[types.index(0)].get('textureId', 0) if 0 in types else 0
+    if layer.get('textureId', 0) != diffuse:
+        lines.append(f'{pad}{EXTENSION_COMMENT}LayerTextureID {layer.get("textureId", 0)},')
     return lines
 
 
