@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-27
+
 ### Fixed
 
 - Lights of version 1300 and later read right, in the layout HiveWE reads: a shadow-casting flag after the type, the shadow-casting start and end after the shadow intensity, and from version 1600 the quadratic falloff, linear falloff and damping, with their tracks (KLSS, KLSE, KLQF, KLLF, KLDA). The flag was read as the attenuation start, so every field of a version 1800 light came one place off and 24 bytes were left unread, on all 11,077 lights of the game's models. The fields are written to MDL with HiveWE's names (#376).
@@ -330,7 +332,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Bekhouche/wc3files/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Bekhouche/wc3files/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Bekhouche/wc3files/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/Bekhouche/wc3files/compare/v0.8.0...v0.9.0

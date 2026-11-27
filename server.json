@@ -3,7 +3,7 @@
   "name": "io.github.Bekhouche/wc3files",
   "title": "wc3files",
   "description": "Read and edit Warcraft III maps, objects, triggers, scripts, models and replays. Edits are opt-in.",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "websiteUrl": "https://github.com/Bekhouche/wc3files/blob/main/docs/mcp.md",
   "repository": {
     "url": "https://github.com/Bekhouche/wc3files",
@@ -13,13 +13,13 @@
     {
       "registryType": "pypi",
       "identifier": "wc3files",
-      "version": "0.11.0",
+      "version": "0.12.0",
       "runtimeHint": "uvx",
       "runtimeArguments": [
         {
           "type": "named",
           "name": "--from",
-          "value": "wc3files[mcp]==0.11.0"
+          "value": "wc3files[mcp]==0.12.0"
         },
         {
           "type": "positional",
