@@ -1295,6 +1295,8 @@ def _parse_particle_emitter2(tokens):
             emitter['replaceableId'] = int(_parse_number(tokens.next()))
         elif key == 'Squirt':
             emitter['squirt'] = 1
+        elif key in _EMITTER2_FLAGS:
+            emitter['node']['flags'] |= _EMITTER2_FLAGS[key]
         elif key == 'Head':
             emitter['headOrTail'] = 0
         elif key == 'Tail':
@@ -1345,6 +1347,26 @@ def _parse_particle_emitter2(tokens):
             tokens.next()
     tokens.expect('}')
     return emitter
+
+
+# ParticleEmitter2 node flags by MDL name; written in this order (#356).
+_EMITTER2_FLAGS = {
+    'Unshaded': 0x8000,
+    'SortPrimsFarZ': 0x10000,
+    'LineEmitter': 0x20000,
+    'Unfogged': 0x40000,
+    'ModelSpace': 0x80000,
+    'XYQuad': 0x100000,
+}
+# ParticleEmitter node flags by MDL name.
+_EMITTER_FLAGS = {
+    'EmitterUsesMDL': 0x8000,
+    'EmitterUsesTGA': 0x10000,
+}
+
+
+def _write_flag_lines(flags, names):
+    return [f'\t{name},' for name, bit in names.items() if flags & bit]
 
 
 def _parse_ribbon_emitter(tokens):
@@ -1787,6 +1809,7 @@ def _write_particle_emitter_lines(emitter):
     node = emitter.get('node') or {}
     lines = [f'ParticleEmitter "{_escape(node.get("name", ""))}" {{']
     lines.extend(_write_node_lines(node))
+    lines.extend(_write_flag_lines(node.get('flags', 0), _EMITTER_FLAGS))
     lines.append(f'\tstatic EmissionRate {_fmt_num(emitter.get("emissionRate", 0.0))},')
     lines.append(f'\tstatic Gravity {_fmt_num(emitter.get("gravity", 0.0))},')
     lines.append(f'\tstatic Longitude {_fmt_num(emitter.get("longitude", 0.0))},')
@@ -1802,6 +1825,7 @@ def _write_particle_emitter2_lines(emitter):
     node = emitter.get('node') or {}
     lines = [f'ParticleEmitter2 "{_escape(node.get("name", ""))}" {{']
     lines.extend(_write_node_lines(node))
+    lines.extend(_write_flag_lines(node.get('flags', 0), _EMITTER2_FLAGS))
     lines.append(f'\tstatic Speed {_fmt_num(emitter.get("speed", 0.0))},')
     lines.append(f'\tstatic Variation {_fmt_num(emitter.get("variation", 0.0))},')
     lines.append(f'\tstatic Latitude {_fmt_num(emitter.get("latitude", 0.0))},')
