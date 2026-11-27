@@ -193,7 +193,11 @@ class BlpFile:
         if mip in self._rgba_cache:
             return self._rgba_cache[mip]
         w, h = self.mip_size(mip)
-        chunk = self._raw[self._mip_offsets[mip]:self._mip_offsets[mip] + self._mip_sizes[mip]]
+        built = getattr(self, '_encoded_mips', None)
+        if built:
+            chunk = built[mip]
+        else:
+            chunk = self._raw[self._mip_offsets[mip]:self._mip_offsets[mip] + self._mip_sizes[mip]]
         if self.version == 'BLP2':
             rgba = self._decode_blp2_mip(chunk, w, h)
         elif self.compression == 0:
@@ -301,12 +305,19 @@ class BlpFile:
             fh.write(self.to_png_bytes(mip))
 
     @classmethod
-    def from_rgba(cls, width, height, rgba, alpha='auto'):
-        """Build a new single-mip, paletted (compression=1) BLP1 from raw RGBA8 pixel
-        data. There is no JPEG *encoder* in this package (only a decoder) - every BLP1
-        this writes uses the paletted sub-variant, which is lossless for the <=256
-        distinct colors real command-card icons typically use and degrades gracefully
-        (median-cut quantization) for anything with more.
+    def from_rgba(cls, width, height, rgba, alpha='auto', compression='palette',
+                  quality=75, mipmaps=True):
+        """Build a new BLP1 from raw RGBA8 pixel data.
+
+        compression='palette' (the default) writes a single-mip, paletted
+        (compression=1) BLP1, lossless for the <=256 distinct colors real
+        command-card icons typically use and degrading gracefully (median-cut
+        quantization) for anything with more.
+
+        compression='jpeg' writes the JPEG kind (compression=0) most of the
+        game's own icons and textures are, at `quality` (1 to 100), with a
+        full chain of mipmaps down to 1x1 unless `mipmaps` is False
+        (jpeg_encoder.py, #261).
 
         alpha: 'auto' (default) includes an 8-bit alpha plane only if the image
         actually has a non-255 alpha byte anywhere; True/False force it on/off.
@@ -318,6 +329,10 @@ class BlpFile:
             has_alpha = any(rgba[i * 4 + 3] != 255 for i in range(npix))
         else:
             has_alpha = bool(alpha)
+        if compression == 'jpeg':
+            return cls._from_rgba_jpeg(width, height, rgba, has_alpha, quality, mipmaps)
+        if compression != 'palette':
+            raise BlpError(f"compression is 'palette' or 'jpeg', not {compression!r}")
 
         palette, indices = quantize_median_cut(rgba, width, height)
 
@@ -349,7 +364,62 @@ class BlpFile:
         blp._rgba_cache = {0: blp._decode_paletted_mip(blp._encoded_mip0, width, height)}
         return blp
 
+    @classmethod
+    def _from_rgba_jpeg(cls, width, height, rgba, has_alpha, quality, mipmaps):
+        from .jpeg_encoder import encode_chunk, shared_header
+        if not 1 <= int(quality) <= 100:
+            raise BlpError(f'JPEG quality goes from 1 to 100, not {quality}')
+        if width < 1 or height < 1 or width > 0xFFFF or height > 0xFFFF:
+            raise BlpError(f'a JPEG BLP is 1 to 65535 pixels a side, not {width}x{height}')
+        blp = cls()
+        blp.version = 'BLP1'
+        blp.compression = 0
+        blp.alpha_bits = 8 if has_alpha else 0
+        blp.width, blp.height = width, height
+        blp.picture_type = 5
+        blp.has_mipmaps = bool(mipmaps)
+        blp._jpeg_shared_header = shared_header(quality)
+        levels = []
+        w, h, level = width, height, bytes(rgba)
+        while True:
+            n = w * h
+            # Without alpha the plane is still written, as the game's own
+            # files do, all opaque.
+            planes = [bytes(level[i * 4 + 2] for i in range(n)),
+                      bytes(level[i * 4 + 1] for i in range(n)),
+                      bytes(level[i * 4] for i in range(n)),
+                      bytes(level[i * 4 + 3] for i in range(n)) if has_alpha else bytes([255]) * n]
+            levels.append(encode_chunk(w, h, planes, quality))
+            if not mipmaps or (w == 1 and h == 1) or len(levels) == 16:
+                break
+            nw, nh = max(1, w // 2), max(1, h // 2)
+            level = resize_box(level, w, h, nw, nh)
+            w, h = nw, nh
+        blp._encoded_mips = levels
+        blp._mip_offsets = [0] * 16
+        blp._mip_sizes = [len(c) for c in levels] + [0] * (16 - len(levels))
+        # As for the paletted kind, get_rgba() gives what the written file
+        # decodes to, not the input, so a caller sees the loss; each mip is
+        # decoded when asked for.
+        blp._rgba_cache = {}
+        return blp
+
     def to_bytes(self):
+        if self.compression == 0 and getattr(self, '_encoded_mips', None):
+            start = (_HEADER_FIXED.size + 2 * _MIP_OFFSETS_SIZES.size + 4
+                     + len(self._jpeg_shared_header))
+            offsets, sizes, body = [], [], bytearray()
+            for chunk in self._encoded_mips:
+                offsets.append(start + len(body))
+                sizes.append(len(chunk))
+                body += chunk
+            offsets += [0] * (16 - len(offsets))
+            sizes += [0] * (16 - len(sizes))
+            header = _HEADER_FIXED.pack(b'BLP1', 0, self.alpha_bits, self.width, self.height,
+                                        self.picture_type, int(self.has_mipmaps))
+            return (header + _MIP_OFFSETS_SIZES.pack(*offsets) + _MIP_OFFSETS_SIZES.pack(*sizes)
+                    + struct.pack('<I', len(self._jpeg_shared_header))
+                    + self._jpeg_shared_header + bytes(body))
         if self.compression != 1:
             raise BlpError('writing is only supported for paletted (compression=1) BLP1 '
                             'data - build one with BlpFile.from_rgba(), not by mutating a '

@@ -86,7 +86,7 @@ dependency.
 
 | Format | Class | Read | Write | Notes |
 |---|---|:--:|:--:|---|
-| `.blp` | `BlpFile` | ✓ | ✓ | BLP1, Warcraft III's own format. Writing supports the paletted variant; there is no JPEG encoder. BLP2 (a WoW format) reads only, and is implemented from spec without real fixtures - treat as best-effort |
+| `.blp` | `BlpFile` | ✓ | ✓ | BLP1, Warcraft III's own format. Writing supports both variants: paletted, and JPEG with mipmaps at a chosen quality. BLP2 (a WoW format) reads only, and is implemented from spec without real fixtures - treat as best-effort |
 | `.dds` | `DdsFile` | ✓ | ✓ | Reads the classic DXT1-DXT5 family and uncompressed RGB(A); writes DXT1/DXT5/uncompressed |
 | `.tga` | `TgaFile` | ✓ | ✓ | |
 | `.bmp` | `BmpFile` | ✓ | ✓ | |

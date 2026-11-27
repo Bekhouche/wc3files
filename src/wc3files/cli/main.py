@@ -2211,14 +2211,20 @@ def _read_any_image(path):
     raise ValueError(f"'{path}' is not a recognized .blp/.dds/.tga/.png/.bmp/.tiff file")
 
 
-def _write_any_image(path, width, height, rgba, fourcc=b'DXT5', mipmaps=True, alpha='auto'):
+def _write_any_image(path, width, height, rgba, fourcc=b'DXT5', mipmaps=True, alpha='auto',
+                     blp_jpeg=None):
     """Write (width, height, rgba_bytes) to a .blp/.dds/.tga/.png/.bmp/.tiff file,
-    format chosen by the output path's extension."""
+    format chosen by the output path's extension. `blp_jpeg`, a quality from 1
+    to 100, writes a .blp as JPEG rather than paletted (#261)."""
     lower = path.lower()
     if alpha in ('yes', 'no'):
         alpha = alpha == 'yes'
     if lower.endswith('.blp'):
-        BlpFile.from_rgba(width, height, rgba, alpha=alpha).write(path)
+        if blp_jpeg is not None:
+            BlpFile.from_rgba(width, height, rgba, alpha=alpha, compression='jpeg',
+                              quality=blp_jpeg, mipmaps=mipmaps).write(path)
+        else:
+            BlpFile.from_rgba(width, height, rgba, alpha=alpha).write(path)
     elif lower.endswith('.dds'):
         DdsFile.from_rgba(width, height, rgba, fourcc=fourcc, mipmaps=mipmaps).write(path)
     elif lower.endswith('.tga'):
@@ -2254,7 +2260,8 @@ def _cmd_img_convert(args):
         rgba = resize_box(rgba, w, h, new_w, new_h)
         w, h = new_w, new_h
     fourcc = args.fourcc.encode('ascii') if args.fourcc else b'DXT5'
-    _write_any_image(args.output, w, h, rgba, fourcc=fourcc, mipmaps=args.mipmaps, alpha=args.alpha)
+    _write_any_image(args.output, w, h, rgba, fourcc=fourcc, mipmaps=args.mipmaps, alpha=args.alpha,
+                     blp_jpeg=args.blp_jpeg)
     print(f"Wrote {args.output} ({w}x{h})")
 
 
@@ -2266,7 +2273,8 @@ def _cmd_make_icon(args):
     if args.disabled_output:
         disabled = make_disabled_variant(rgba, size, size, darken=args.darken,
                                           desaturate=args.desaturate)
-        _write_any_image(args.disabled_output, size, size, disabled, alpha=args.alpha)
+        _write_any_image(args.disabled_output, size, size, disabled, alpha=args.alpha,
+                         blp_jpeg=args.blp_jpeg)
         print(f"Wrote {args.disabled_output} ({size}x{size}, disabled variant)")
 
     border = args.border or (border_path('active', reforged=(args.bundled_border == 'reforged'))
@@ -2275,7 +2283,7 @@ def _cmd_make_icon(args):
         bw, bh, border_rgba = _read_any_image(border)
         rgba = composite_over(rgba, size, size, border_rgba, bw, bh)
 
-    _write_any_image(args.output, size, size, rgba, alpha=args.alpha)
+    _write_any_image(args.output, size, size, rgba, alpha=args.alpha, blp_jpeg=args.blp_jpeg)
     print(f"Wrote {args.output} ({size}x{size})")
 
 
@@ -2301,7 +2309,8 @@ def _cmd_img_convert_batch(args):
                     rgba = resize_box(rgba, w, h, new_w, new_h)
                     w, h = new_w, new_h
                 os.makedirs(out_root, exist_ok=True)
-                _write_any_image(out_path, w, h, rgba, fourcc=fourcc, mipmaps=args.mipmaps)
+                _write_any_image(out_path, w, h, rgba, fourcc=fourcc, mipmaps=args.mipmaps,
+                                 blp_jpeg=args.blp_jpeg)
                 converted += 1
             except Exception as exc:  # noqa: BLE001 - report and keep going, this is a batch job
                 failed.append((in_path, str(exc)))
@@ -2363,14 +2372,15 @@ def _cmd_make_icon_set(args):
         out_dir = os.path.join(rt_dir, spec['dir']) if spec['dir'] else rt_dir
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{spec['prefix']}{args.name}{ext}")
-        _write_any_image(out_path, size, size, icon, alpha=args.alpha)
+        _write_any_image(out_path, size, size, icon, alpha=args.alpha, blp_jpeg=args.blp_jpeg)
         written.append(out_path)
 
         if spec['disabled_prefix']:
             dis_dir = os.path.join(rt_dir, _DISABLED_DIR)
             os.makedirs(dis_dir, exist_ok=True)
             dis_path = os.path.join(dis_dir, f"{spec['disabled_prefix']}{args.name}{ext}")
-            _write_any_image(dis_path, size, size, disabled, alpha=args.alpha)
+            _write_any_image(dis_path, size, size, disabled, alpha=args.alpha,
+                             blp_jpeg=args.blp_jpeg)
             written.append(dis_path)
 
     for path in written:
@@ -2573,6 +2583,9 @@ def build_parser():
                                 help=".blp output only: include an 8-bit alpha plane - "
                                      "'auto' (default) includes one only if the image has "
                                      "any non-opaque pixel.")
+    p_img_convert.add_argument('--blp-jpeg', type=int, metavar='QUALITY', default=None, help=(
+        "Write a .blp as JPEG at this quality (1 to 100; the game's own icons are about 70), "
+        'with mipmaps, rather than paletted.'))
     p_img_convert.set_defaults(func=_cmd_img_convert)
 
     p_make_icon = subparsers.add_parser('make-icon', help=(
@@ -2604,6 +2617,9 @@ def build_parser():
                               help='Disabled-variant desaturate amount, 0..1 (default: 0.7).')
     p_make_icon.add_argument('--alpha', choices=['auto', 'yes', 'no'], default='auto',
                               help='.blp output only: include an 8-bit alpha plane (default: auto).')
+    p_make_icon.add_argument('--blp-jpeg', type=int, metavar='QUALITY', default=None, help=(
+        "Write a .blp as JPEG at this quality (1 to 100; the game's own icons are about 70), "
+        'with mipmaps, rather than paletted.'))
     p_make_icon.set_defaults(func=_cmd_make_icon)
 
     p_batch = subparsers.add_parser('img-convert-batch', help=(
@@ -2623,6 +2639,9 @@ def build_parser():
                           help='--to dds only: generate a full mip chain (default: on).')
     p_batch.add_argument('--no-mipmaps', dest='mipmaps', action='store_false',
                           help='--to dds only: write a single mip level.')
+    p_batch.add_argument('--blp-jpeg', type=int, metavar='QUALITY', default=None, help=(
+        "Write a .blp as JPEG at this quality (1 to 100; the game's own icons are about 70), "
+        'with mipmaps, rather than paletted.'))
     p_batch.set_defaults(func=_cmd_img_convert_batch)
 
     p_icon_set = subparsers.add_parser('make-icon-set', help=(
@@ -2660,6 +2679,9 @@ def build_parser():
                              help='Disabled-variant desaturate amount (0..1).')
     p_icon_set.add_argument('--alpha', choices=['auto', 'yes', 'no'], default='auto',
                              help='.blp output only: include an 8-bit alpha plane (default: auto).')
+    p_icon_set.add_argument('--blp-jpeg', type=int, metavar='QUALITY', default=None, help=(
+        "Write a .blp as JPEG at this quality (1 to 100; the game's own icons are about 70), "
+        'with mipmaps, rather than paletted.'))
     p_icon_set.set_defaults(func=_cmd_make_icon_set)
 
     p_set_icon = subparsers.add_parser('set-object-icon', help=(

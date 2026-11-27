@@ -245,7 +245,7 @@ with that script, and what this one does too.
 
 - **JPEG images are not converted.** The package decodes the JPEG planes
   inside BLP files, not ordinary JPEG files, so a `.jpg` is imported as it
-  is. The converted BLP files are paletted (no JPEG encoder), and the
+  is. The converted BLP files are paletted, and the
   borders are the classic ones of `wc3files.img.borders`, not the TGA files of
   a Grim Extension Pack install.
 - **No Lua for PathMapper, TileSetter and TriggerMerger.** Their Lua

@@ -207,8 +207,11 @@ targets - MPQ is documented well enough to implement natively.
   transform), a DXT block codec (`dxt.py`, decode and a range-fit encode),
   median-cut color quantization (`palette.py`, for BLP1 writing), and
   icon-authoring helpers (`transform.py`: resize, alpha-composite,
-  disabled-icon generation). `BlpFile.write()` only supports BLP1's paletted
-  sub-variant (no JPEG *encoder*). `borders.py` bundles 13 real icon-border
+  disabled-icon generation). `BlpFile.from_rgba()` writes BLP1 either
+  paletted or JPEG (`compression='jpeg'`: `jpeg_encoder.py`, a baseline
+  encoder that splits its stream into the shared header and per-mip chunks
+  as the game's own files do; quality 68 gives the game icons' exact
+  table). `borders.py` bundles 13 real icon-border
   PNGs (classic 64x64 + Reforged 256x256, one per icon kind - copied from a
   real third-party tool with its owner's explicit authorization, see TODO.md
   for provenance) as defaults for `make-icon --bundled-border`/`make-icon-set
