@@ -13,6 +13,7 @@ section to the new version and its date.
 ### Added
 
 - `wc3files terrain-image` and `wc3files.w3e.images`: the ground height, water level and water flag of `war3map.w3e` as grayscale PNG, one pixel per tile corner with north up, and back. Height and water are 16-bit images of the stored values, so export then import gives the same file; `--stretch` spreads them over the gray range to look at, and `--range` maps an image made elsewhere onto chosen values. `read_png_gray` and `write_png_gray` read and write 8 and 16-bit grayscale PNG. On all 342 readable corpus maps, every layer exported and imported, stretched or not, gave back `war3map.w3e` byte for byte (#205).
+- `wc3files shadow-image` and `wc3files.shd.image`: `war3map.shd` as a PNG, one pixel per cell (four per tile in each direction), north up, black for shadow; and back, a pixel darker than half gray being shadow, with the size checked against the map's `war3map.w3e`. The map is rebuilt without its stale `(attributes)`. All 342 readable corpus maps have a shadow map of exactly that size holding only 0 and 0xFF, and every one came back byte for byte (#203).
 
 ## [0.8.0] - 2026-11-27
 
