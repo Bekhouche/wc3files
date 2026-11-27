@@ -1211,24 +1211,16 @@ def _parse_particle_emitter(tokens):
     }
     while tokens.peek() != '}':
         key = tokens.next()
-        if key == 'EmitterUsesMDL':
+        if _parse_field(tokens, key, emitter, _EMITTER_FIELDS):
+            pass
+        elif key == 'EmitterUsesMDL':
             emitter['node']['flags'] |= 0x8000
         elif key == 'EmitterUsesTGA':
             emitter['node']['flags'] |= 0x10000
         elif key == 'static':
             field = tokens.next()
             value = tokens.next()
-            mapping = {
-                'EmissionRate': 'emissionRate',
-                'Gravity': 'gravity',
-                'Longitude': 'longitude',
-                'Latitude': 'latitude',
-                'LifeSpan': 'lifespan',
-                'InitVelocity': 'initialVelocity',
-            }
-            if field in mapping:
-                emitter[mapping[field]] = float(_parse_number(value))
-            elif field == 'Path':
+            if field == 'Path':
                 emitter['spawnModelFileName'] = _parse_string(value)
         elif key == 'Path':
             emitter['spawnModelFileName'] = _parse_string(tokens.next())
@@ -1268,17 +1260,11 @@ def _parse_particle_emitter2(tokens):
     # Keep parser resilient: consume node fields and skip complex nested animation blocks.
     while tokens.peek() != '}':
         key = tokens.next()
-        if key == 'static':
+        if _parse_field(tokens, key, emitter, _EMITTER2_FIELDS):
+            pass
+        elif key == 'static':
             field = tokens.next()
-            if field in ('Speed', 'Variation', 'Latitude', 'Gravity', 'LifeSpan',
-                         'EmissionRate', 'Length', 'Width', 'TailLength', 'Time'):
-                mapping = {
-                    'Speed': 'speed', 'Variation': 'variation', 'Latitude': 'latitude',
-                    'Gravity': 'gravity', 'LifeSpan': 'lifespan', 'EmissionRate': 'emissionRate',
-                    'Length': 'length', 'Width': 'width', 'TailLength': 'tailLength', 'Time': 'time',
-                }
-                emitter[mapping[field]] = float(_parse_number(tokens.next()))
-            elif field == 'TextureID':
+            if field == 'TextureID':
                 emitter['textureId'] = int(_parse_number(tokens.next()))
             else:
                 if tokens.peek() == '{':
@@ -1365,6 +1351,91 @@ _EMITTER_FLAGS = {
 }
 
 
+# Emitter fields that can be animated: MDL name -> (MDX track tag, value
+# kind, static field), in the order they are written. Visibility has no
+# static field. They were written as their static value only, so every
+# emitter track was lost through MDL (#357).
+_EMITTER_FIELDS = {
+    'EmissionRate': ('KPEE', 'f32', 'emissionRate'),
+    'Gravity': ('KPEG', 'f32', 'gravity'),
+    'Longitude': ('KPLN', 'f32', 'longitude'),
+    'Latitude': ('KPLT', 'f32', 'latitude'),
+    'LifeSpan': ('KPEL', 'f32', 'lifespan'),
+    'InitVelocity': ('KPES', 'f32', 'initialVelocity'),
+    'Visibility': ('KPEV', 'f32', None),
+}
+_EMITTER2_FIELDS = {
+    'Speed': ('KP2S', 'f32', 'speed'),
+    'Variation': ('KP2R', 'f32', 'variation'),
+    'Latitude': ('KP2L', 'f32', 'latitude'),
+    'Gravity': ('KP2G', 'f32', 'gravity'),
+    'LifeSpan': (None, 'f32', 'lifespan'),
+    'EmissionRate': ('KP2E', 'f32', 'emissionRate'),
+    'Length': ('KP2N', 'f32', 'length'),
+    'Width': ('KP2W', 'f32', 'width'),
+    'Visibility': ('KP2V', 'f32', None),
+    # Written later, after the filter mode and the head or tail.
+    'TailLength': (None, 'f32', 'tailLength'),
+    'Time': (None, 'f32', 'time'),
+}
+_RIBBON_FIELDS = {
+    'HeightAbove': ('KRHA', 'f32', 'heightAbove'),
+    'HeightBelow': ('KRHB', 'f32', 'heightBelow'),
+    'Alpha': ('KRAL', 'f32', 'alpha'),
+    'Color': ('KRCO', 'f32x3', 'color'),
+    'LifeSpan': (None, 'f32', 'lifespan'),
+    'TextureSlot': ('KRTX', 'u32', 'textureSlot'),
+    'Visibility': ('KRVS', 'f32', None),
+    # Written last, after the material.
+    'Gravity': (None, 'f32', 'gravity'),
+}
+_STATIC_DEFAULTS = {'alpha': 1.0, 'color': [1.0, 1.0, 1.0], 'textureSlot': 0}
+
+
+def _parse_field(tokens, key, obj, fields):
+    """Read the field `key` of `fields` into `obj`, `static` or animated;
+    False when `key` is not one of them (nothing is consumed then)."""
+    static = key == 'static'
+    if static:
+        if tokens.peek() not in fields:
+            return False
+        key = tokens.next()
+    if key not in fields:
+        return False
+    tag, kind, field = fields[key]
+    if not static and tag and _is_animated_track(tokens):
+        tokens.next()  # keyframe count
+        obj.setdefault('tracks', {})[tag] = _parse_track_block(tokens, kind)
+    elif field is None:
+        tokens.next()
+    elif kind == 'f32x3':
+        obj[field] = _read_vector(tokens)
+    elif kind == 'u32':
+        obj[field] = int(_parse_number(tokens.next()))
+    else:
+        obj[field] = float(_parse_number(tokens.next()))
+    return True
+
+
+def _write_field_lines(obj, fields, names=None):
+    """Each field of `fields` (or the `names` among them) as its track when
+    `obj` has one, else as its static value; Visibility only as a track."""
+    tracks = obj.get('tracks') or {}
+    lines = []
+    for name in names or fields:
+        tag, kind, field = fields[name]
+        if tag in tracks:
+            lines.extend(_write_track_lines(name, tracks[tag], kind))
+        elif field is None:
+            continue
+        elif kind == 'f32x3':
+            value = obj.get(field) or _STATIC_DEFAULTS.get(field, [0.0, 0.0, 0.0])
+            lines.append(f'\tstatic {name} {{ {_fmt_floats(value)} }},')
+        else:
+            lines.append(f'\tstatic {name} {_fmt_num(obj.get(field, _STATIC_DEFAULTS.get(field, 0.0)))},')
+    return lines
+
+
 def _write_flag_lines(flags, names):
     return [f'\t{name},' for name, bit in names.items() if flags & bit]
 
@@ -1382,23 +1453,14 @@ def _parse_ribbon_emitter(tokens):
     }
     while tokens.peek() != '}':
         key = tokens.next()
-        if key == 'static':
-            field = tokens.next()
-            mapping = {
-                'HeightAbove': 'heightAbove', 'HeightBelow': 'heightBelow',
-                'Alpha': 'alpha', 'LifeSpan': 'lifespan', 'Gravity': 'gravity',
-            }
-            if field in mapping:
-                emitter[mapping[field]] = float(_parse_number(tokens.next()))
-            elif field == 'Color':
-                emitter['color'] = _read_vector(tokens)
-            elif field == 'TextureSlot':
-                emitter['textureSlot'] = int(_parse_number(tokens.next()))
+        if _parse_field(tokens, key, emitter, _RIBBON_FIELDS):
+            pass
+        elif key == 'static':
+            tokens.next()  # a static field this reader does not know
+            if tokens.peek() == '{':
+                _skip_block(tokens)
             else:
-                if tokens.peek() == '{':
-                    _skip_block(tokens)
-                else:
-                    tokens.next()
+                tokens.next()
         elif key == 'EmissionRate':
             emitter['emissionRate'] = int(_parse_number(tokens.next()))
         elif key == 'Rows':
@@ -1810,12 +1872,7 @@ def _write_particle_emitter_lines(emitter):
     lines = [f'ParticleEmitter "{_escape(node.get("name", ""))}" {{']
     lines.extend(_write_node_lines(node))
     lines.extend(_write_flag_lines(node.get('flags', 0), _EMITTER_FLAGS))
-    lines.append(f'\tstatic EmissionRate {_fmt_num(emitter.get("emissionRate", 0.0))},')
-    lines.append(f'\tstatic Gravity {_fmt_num(emitter.get("gravity", 0.0))},')
-    lines.append(f'\tstatic Longitude {_fmt_num(emitter.get("longitude", 0.0))},')
-    lines.append(f'\tstatic Latitude {_fmt_num(emitter.get("latitude", 0.0))},')
-    lines.append(f'\tstatic LifeSpan {_fmt_num(emitter.get("lifespan", 0.0))},')
-    lines.append(f'\tstatic InitVelocity {_fmt_num(emitter.get("initialVelocity", 0.0))},')
+    lines.extend(_write_field_lines(emitter, _EMITTER_FIELDS))
     lines.append(f'\tPath "{_escape(emitter.get("spawnModelFileName", ""))}",')
     lines.append('}')
     return lines
@@ -1826,14 +1883,9 @@ def _write_particle_emitter2_lines(emitter):
     lines = [f'ParticleEmitter2 "{_escape(node.get("name", ""))}" {{']
     lines.extend(_write_node_lines(node))
     lines.extend(_write_flag_lines(node.get('flags', 0), _EMITTER2_FLAGS))
-    lines.append(f'\tstatic Speed {_fmt_num(emitter.get("speed", 0.0))},')
-    lines.append(f'\tstatic Variation {_fmt_num(emitter.get("variation", 0.0))},')
-    lines.append(f'\tstatic Latitude {_fmt_num(emitter.get("latitude", 0.0))},')
-    lines.append(f'\tstatic Gravity {_fmt_num(emitter.get("gravity", 0.0))},')
-    lines.append(f'\tstatic LifeSpan {_fmt_num(emitter.get("lifespan", 0.0))},')
-    lines.append(f'\tstatic EmissionRate {_fmt_num(emitter.get("emissionRate", 0.0))},')
-    lines.append(f'\tstatic Length {_fmt_num(emitter.get("length", 0.0))},')
-    lines.append(f'\tstatic Width {_fmt_num(emitter.get("width", 0.0))},')
+    lines.extend(_write_field_lines(emitter, _EMITTER2_FIELDS, (
+        'Speed', 'Variation', 'Latitude', 'Gravity', 'LifeSpan', 'EmissionRate',
+        'Length', 'Width', 'Visibility')))
     filter_name = {0: 'Blend', 1: 'Additive', 2: 'Modulate', 3: 'Modulate2x', 4: 'AlphaKey'}.get(
         emitter.get('filterMode', 0), 'Blend'
     )
@@ -1842,8 +1894,7 @@ def _write_particle_emitter2_lines(emitter):
     lines.append(f'\tColumns {emitter.get("columns", 0)},')
     head = {0: 'Head', 1: 'Tail', 2: 'Both'}.get(emitter.get('headOrTail', 0), 'Head')
     lines.append(f'\t{head},')
-    lines.append(f'\tstatic TailLength {_fmt_num(emitter.get("tailLength", 0.0))},')
-    lines.append(f'\tstatic Time {_fmt_num(emitter.get("time", 0.0))},')
+    lines.extend(_write_field_lines(emitter, _EMITTER2_FIELDS, ('TailLength', 'Time')))
     lines.append('\tSegmentColor {')
     for color in emitter.get('segmentColor') or [[1, 1, 1]] * 3:
         lines.append(f'\t\tColor {{ {_fmt_floats(color)} }},')
@@ -1867,16 +1918,13 @@ def _write_ribbon_emitter_lines(emitter):
     node = emitter.get('node') or {}
     lines = [f'RibbonEmitter "{_escape(node.get("name", ""))}" {{']
     lines.extend(_write_node_lines(node))
-    lines.append(f'\tstatic HeightAbove {_fmt_num(emitter.get("heightAbove", 0.0))},')
-    lines.append(f'\tstatic HeightBelow {_fmt_num(emitter.get("heightBelow", 0.0))},')
-    lines.append(f'\tstatic Alpha {_fmt_num(emitter.get("alpha", 1.0))},')
-    lines.append(f'\tstatic Color {{ {_fmt_floats(emitter.get("color") or [1, 1, 1])} }},')
-    lines.append(f'\tstatic LifeSpan {_fmt_num(emitter.get("lifespan", 0.0))},')
+    lines.extend(_write_field_lines(emitter, _RIBBON_FIELDS, (
+        'HeightAbove', 'HeightBelow', 'Alpha', 'Color', 'LifeSpan', 'TextureSlot', 'Visibility')))
     lines.append(f'\tEmissionRate {emitter.get("emissionRate", 0)},')
     lines.append(f'\tRows {emitter.get("rows", 0)},')
     lines.append(f'\tColumns {emitter.get("columns", 0)},')
     lines.append(f'\tMaterialID {emitter.get("materialId", 0)},')
-    lines.append(f'\tstatic Gravity {_fmt_num(emitter.get("gravity", 0.0))},')
+    lines.extend(_write_field_lines(emitter, _RIBBON_FIELDS, ('Gravity',)))
     lines.append('}')
     return lines
 

@@ -511,3 +511,53 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         model['particleEmitters'][0]['node']['flags'] = 0x1000 | 0x10000
         self.assertEqual(load_mdl(save_mdl(model))['particleEmitters'][0]['node']['flags'],
                          0x1000 | 0x10000)
+
+    TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
+
+    def test_particle_emitter2_tracks(self):
+        model = self.model(
+            'ParticleEmitter2 "Sparks" {\n'
+            '\tObjectId 5,\n'
+            '\tSpeed' + self.TRACK % (100, 200) +
+            '\tstatic Variation 0.5,\n'
+            '\tEmissionRate' + self.TRACK % (10, 0) +
+            '\tLength' + self.TRACK % (5, 8) +
+            '\tVisibility' + self.TRACK % (1, 0) +
+            '\tstatic TailLength 2,\n'
+            '}\n')
+        emitter = model['particleEmitters2'][0]
+        self.assertEqual(set(emitter['tracks']), {'KP2S', 'KP2E', 'KP2N', 'KP2V'})
+        self.assertEqual((emitter['variation'], emitter['tailLength']), (0.5, 2.0))
+        self.assertSurvives(model)
+
+    def test_particle_emitter_tracks(self):
+        model = self.model(
+            'ParticleEmitter "Smoke" {\n'
+            '\tObjectId 5,\n'
+            '\tGravity' + self.TRACK % (1, 2) +
+            '\tstatic LifeSpan 3,\n'
+            '\tVisibility' + self.TRACK % (1, 0) +
+            '\tPath "Smoke.mdl",\n'
+            '}\n')
+        emitter = model['particleEmitters'][0]
+        self.assertEqual(set(emitter['tracks']), {'KPEG', 'KPEV'})
+        self.assertEqual(emitter['lifespan'], 3.0)
+        self.assertSurvives(model)
+
+    def test_ribbon_emitter_tracks(self):
+        model = self.model(
+            'RibbonEmitter "Trail" {\n'
+            '\tObjectId 5,\n'
+            '\tstatic HeightAbove 10,\n'
+            '\tAlpha' + self.TRACK % (1, 0.5) +
+            '\tColor 1 {\n\t\tDontInterp,\n\t\t0: { 0.1, 0.2, 0.3 },\n\t}\n'
+            '\tTextureSlot' + self.TRACK % (0, 3) +
+            '\tVisibility' + self.TRACK % (1, 0) +
+            '\tEmissionRate 20,\n'
+            '\tstatic Gravity 4,\n'
+            '}\n')
+        emitter = model['ribbonEmitters'][0]
+        self.assertEqual(set(emitter['tracks']), {'KRAL', 'KRCO', 'KRTX', 'KRVS'})
+        self.assertEqual((emitter['heightAbove'], emitter['emissionRate'], emitter['gravity']),
+                         (10.0, 20, 4.0))
+        self.assertSurvives(model)
