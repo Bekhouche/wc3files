@@ -13,7 +13,7 @@ source:
   # Checked against the sha256 PyPI reports for this sdist. If the sdist is
   # ever rebuilt, recompute it:
   #     curl -L <url> | openssl dgst -sha256
-  sha256: c8bbaa3362a2584eb8a980b55d5a8e88cb4a55545e41c6ece7b35f8f332f2316
+  sha256: 5f6a1f4a9283020745b8a6b585465533cb6cd9ce26dada08de7a9d224cfe4c7b
 
 build:
   noarch: python
