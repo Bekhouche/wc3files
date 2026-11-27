@@ -18,6 +18,10 @@ section to the new version and its date.
 - `wc3files cjass` and `wc3files.cjass`: cJass, the C-like JASS dialect of AdicHelper, compiled to JASS with vJass blocks and then through the vJass compiler to plain JASS, following the cJass 1.4.0.2 manual: braced blocks, functions and methods written return type first, locals anywhere, optional `call`/`set`/`local`, compound operators, `++` and `--` in expressions, `whilenot`/`while`/`do`, and the preprocessor (defines with arguments, overloads, private defines, `##` and stringizing, predefined macros, `#if`, `include` with `#guard`, `enum`). `cj_types.j` and `cj_typesEx.j` are bundled, written for this package. The examples of the manual give the JASS it shows for them, and two real cJass projects from GitHub compile with no issue from the JASS checker (#227).
 - `wc3files luck` and `wc3files.luck`: Luck, the indentation-based language of LuckyParser, compiled to plain JASS following its language reference, with LuckyParser's generated names: namespaces, both function forms, default and named arguments, locals and globals, `if`/`elif`/`else`, `while`, `loop`, `foreach`, `for ... in a..b`, `print` with conversions, `onInit`/`onLoad` blocks run by `LuckyParser_InitAll`, array-backed structs, `handle.id`, and `//! language` islands of JASS, vJass, Zinc and cJass. Functions are ordered after the ones they call; `--map` puts the code into a map and calls the init blocks from `main`. LuckyParser's own example project compiles with no issue from the JASS checker and, run in the JASS interpreter, prints every line its source says it prints (#228).
 
+### Changed
+
+- The README and the MCP guide link the server's pages on Glama and MCP Rush, and the README shows the MCP Rush card (#332).
+
 ## [0.9.0] - 2026-11-27
 
 ### Added
