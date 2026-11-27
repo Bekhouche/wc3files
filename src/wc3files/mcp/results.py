@@ -575,6 +575,20 @@ class OptimizeMapResult(TypedDict):
     file_size_after: NotRequired[Annotated[int, Field(description='Size of the map file written.')]]
 
 
+IconObjectType = Literal['w3u', 'w3t', 'w3a', 'w3h']
+IconKind = Literal['', 'active', 'passive', 'autocast', 'none']
+IconStyle = Literal['classic', 'reforged', 'none']
+
+
+class SetIconResult(EditResult):
+    icon: Annotated[str, Field(description='The icon imported and set on the object.')]
+    disabled: Annotated[str | None, Field(description=(
+        'Its disabled version, where the game looks for it; null for a buff.'))]
+    kind: Annotated[str, Field(description='active, passive, autocast or none.')]
+    field: Annotated[str, Field(description='The icon field set: uico, iico, aart or fart.')]
+    warnings: list[str]
+
+
 class EditObjectsResult(EditResult):
     object_type: str
     created: list[str]

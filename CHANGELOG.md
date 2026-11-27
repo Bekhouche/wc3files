@@ -21,6 +21,7 @@ section to the new version and its date.
 - MCP tool `missing_files`: textures a map's models use that neither the map nor the installed game has, and imports nothing in the map names, images, models, sounds and other files alike, a model named with either extension and its `_Portrait` counted with it (#340).
 - MCP tools `map_translation`, which lists a map's text under the stable keys of #224, and `apply_translation`, an edit tool that writes `{key: text}` back into war3map.wts, the object data and the map info, refusing keys the map does not have (#341).
 - MCP tool `optimize_map`, an edit tool: the passes of `wc3files optimize` (unused objects, computed text, model squeezing, editor-only files) with a report of what each did and the sizes before and after, or a dry run that only reports (#342).
+- MCP tool `set_icon`, an edit tool: a picture becomes an object's icon in one call, with its border, its disabled version where the game looks for it, the import entries and the icon field (#343).
 
 ## [0.10.0] - 2026-11-27
 
