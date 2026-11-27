@@ -138,6 +138,29 @@ class CompileScriptResult(TypedDict):
     lines: Annotated[int, Field(description='Lines of compiled JASS.')]
 
 
+class GameFileEntry(TypedDict):
+    path: Annotated[str, Field(description='The path game_file and game_image take.')]
+    locale: Annotated[str, Field(description='The locale, such as enUS; empty for all.')]
+    size: Annotated[int | None, Field(description='Size in bytes.')]
+    installed: Annotated[bool, Field(description='False when the file is not downloaded.')]
+
+
+class GameFilesResult(TypedDict):
+    files: list[GameFileEntry]
+    truncated: Annotated[bool, Field(description='True when more files matched than limit.')]
+
+
+class GameFileResult(TypedDict):
+    path: str
+    size: int
+    format: NotRequired[Annotated[str, Field(description='The reader used, such as slk.')]]
+    data: NotRequired[Annotated[Any, Field(description='The parsed file.')]]
+    model: NotRequired[Annotated[dict[str, Any], Field(description=(
+        "A model's name, format, version, geosets, sequences and textures."))]]
+    text: NotRequired[str]
+    note: NotRequired[str]
+
+
 ComparePart = Literal['all', 'members', 'objects', 'strings']
 ImageKind = Literal['minimap', 'preview']
 

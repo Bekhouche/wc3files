@@ -549,7 +549,7 @@ _MINIMAPS = ('war3mapMap.blp', 'war3mapMap.tga', 'war3mapMap.dds')
 _PREVIEWS = ('war3mapPreview.tga', 'war3mapPreview.blp', 'war3mapPreview.dds')
 
 
-def map_image(roots, path, kind='minimap', render=False):
+def map_image(roots, path, kind='minimap', render=False, game=None):
     """A picture of a map as PNG: its minimap (war3mapMap.blp) or its lobby
     preview (war3mapPreview.tga), the map's own image, or rendered from
     the terrain when the map has none or `render` asks for it. Returns
@@ -570,7 +570,7 @@ def map_image(roots, path, kind='minimap', render=False):
         source = name
     else:
         width = height = 256
-        rgba, note = _render_minimap(path, found)
+        rgba, note = _render_minimap(path, found, game)
         source = 'rendered from war3map.w3e' + note
     return {'png': write_png(width, height, rgba), 'width': width, 'height': height,
             'source': source}
@@ -588,9 +588,9 @@ def _decode_image(name, data):
     return reader.width, reader.height, reader.get_rgba()
 
 
-def _render_minimap(path, found):
-    """The minimap drawn from the terrain, in grey for the ground (the
-    tileset colours need the installed game), with water and doodads."""
+def _render_minimap(path, found, game=None):
+    """The minimap drawn from the terrain, with water and doodads: the
+    ground in its tileset colours with the installed game, grey without."""
     from wc3files.doo import MapDoodadsFile
     from wc3files.w3e import TerrainFile
     from wc3files.w3e.minimap import object_colours, render_minimap
@@ -610,8 +610,107 @@ def _render_minimap(path, found):
             doodads = reader.get_data()['doodads']
         except ValueError as error:
             note = f' (without doodads: war3map.doo does not read: {error})'
-    return render_minimap(terrain.get_data(), info.get_data(), doodads,
-                          water=((40, 80, 160), 0.6), object_colours=object_colours()), note
+    d = terrain.get_data()
+    tiles, water = None, ((40, 80, 160), 0.6)
+    if game is not None and game.folder is not None:
+        from wc3files.w3e.minimap import GameMinimapColours
+        colours = GameMinimapColours(game.storage)
+        tiles = colours.tile_colours(d['ground_tilesets'])
+        water = colours.water_tint(d['main_tileset']) or water
+        note += ', in the game\'s tileset colours'
+    else:
+        note += ', ground in grey (no --game for the tileset colours)'
+    return render_minimap(d, info.get_data(), doodads, tiles, water,
+                          object_colours()), note
+
+
+class Game(object):
+    """The installed game the server was given (--game), opened on first use:
+    opening a CASC storage reads its index tables, which takes a moment."""
+
+    def __init__(self, folder=None):
+        self.folder = folder
+        self._storage = None
+        if folder is not None and not os.path.isfile(os.path.join(folder, '.build.info')):
+            raise ValueError(f'--game {folder!r} is not a Warcraft III install '
+                             '(1.32 or later, the folder with .build.info)')
+
+    @property
+    def storage(self):
+        if self.folder is None:
+            raise ValueError('the server was started without --game, the installed game '
+                             'to read; start it with --game "C:/Program Files/Warcraft III"')
+        if self._storage is None:
+            from wc3files.casc import CascStorage
+            self._storage = CascStorage().open(self.folder)
+        return self._storage
+
+
+GAME_SEARCH_LIMIT = 200
+_GAME_TEXT = TEXT_EXTENSIONS + ('.ini', '.csv', '.xml', '.json', '.html', '.toc', '.pld')
+_GAME_IMAGES = ('.blp', '.dds', '.tga')
+
+
+def _game_base(path):
+    """The file name of a game path such as War3.w3mod:Units/UnitData.slk."""
+    return path.replace('\\', '/').rsplit(':', 1)[-1].rsplit('/', 1)[-1]
+
+
+def game_files(game, pattern, limit=GAME_SEARCH_LIMIT):
+    """Files of the installed game whose path contains `pattern` (or matches
+    it, with * or ?), ignoring case, with their size and locale."""
+    if not pattern:
+        raise ValueError('give a pattern, such as "UnitData" or "*.slk"')
+    if not (1 <= limit <= 1000):
+        raise ValueError('limit is between 1 and 1000')
+    storage = game.storage
+    hits = storage.search(pattern, limit=limit + 1)
+    files = []
+    for entry in hits[:limit]:
+        info = storage.info(entry)
+        files.append({'path': entry.path, 'locale': entry.locale or '',
+                      'size': info['size'], 'installed': info['installed']})
+    return {'files': files, 'truncated': len(hits) > limit}
+
+
+def game_file(game, path, max_chars=DEFAULT_MAX_CHARS):
+    """One file of the installed game, as read_member gives a map member:
+    the data of a format this package reads, a model's summary, or the
+    text of a text file. Images are refused here: game_image shows them."""
+    from wc3files.cli.formats import FORMATS, format_for_name
+    base = _game_base(path)
+    lower = base.lower()
+    if lower.endswith(_GAME_IMAGES):
+        raise ValueError(f'{path} is an image; game_image shows it')
+    data = game.storage.read(path)
+    result = {'path': path, 'size': len(data)}
+    fmt = format_for_name(base)
+    if fmt is not None and fmt != 'shd':
+        with tempfile.TemporaryDirectory() as tmp:
+            target = os.path.join(tmp, base)
+            with open(target, 'wb') as handle:
+                handle.write(data)
+            result['format'] = fmt
+            result['data'] = FORMATS[fmt].dump(target)
+    elif lower.endswith(('.mdx', '.mdl')):
+        result['model'] = _model_summary(base, data)
+    elif lower.endswith(_GAME_TEXT):
+        result['text'] = data.decode('utf-8-sig', errors='replace')
+    else:
+        result['note'] = 'binary file with no reader'
+    return limited(result, max_chars)
+
+
+def game_image(game, path):
+    """A texture of the installed game (.blp, .dds, .tga) as PNG:
+    {'png': bytes, 'width', 'height', 'path'}."""
+    from wc3files.img import write_png
+    base = _game_base(path)
+    if not base.lower().endswith(_GAME_IMAGES):
+        raise ValueError(f'{path} is not a .blp, .dds or .tga image; game_file reads it')
+    width, height, rgba = _decode_image(base, game.storage.read(path))
+    return {'png': write_png(width, height, rgba), 'width': width, 'height': height,
+            'path': path}
 
 
 RUN_MAX_SECONDS = 600.0
@@ -645,7 +744,6 @@ def run_script(roots, path, seconds=10.0, players=1, max_steps=RUN_MAX_STEPS,
 def model_info(roots, path, member=''):
     """A model's name, format, version, sequences, textures and counts. For
     a map, `member` names the model inside it."""
-    from wc3files import ModelFile
     path = roots.resolve(path)
     if _is_map(path):
         if not member:
@@ -659,6 +757,14 @@ def model_info(roots, path, member=''):
             data = handle.read()
         source = os.path.basename(path)
     base = source.replace('\\', '/').rsplit('/', 1)[-1]
+    summary = _model_summary(base, data)
+    return plain(dict({'path': path, 'member': member or None}, **summary))
+
+
+def _model_summary(base, data):
+    """Name, format, version, geoset count, sequences and textures of a
+    model's bytes; `base` is its file name, which says MDX or MDL."""
+    from wc3files import ModelFile
     with tempfile.TemporaryDirectory() as tmp:
         target = os.path.join(tmp, base)
         with open(target, 'wb') as handle:
@@ -675,10 +781,9 @@ def model_info(roots, path, member=''):
     textures = [{'path': texture.get('path') or '',
                  'replaceable_id': texture.get('replaceableId') or 0}
                 for texture in model.textures]
-    return plain({'path': path, 'member': member or None, 'name': model.name,
-                  'format': model.get_file_type().value, 'version': model.version,
-                  'geosets': len(model.geosets), 'sequences': sequences,
-                  'textures': textures})
+    return {'name': model.name, 'format': model.get_file_type().value,
+            'version': model.version, 'geosets': len(model.geosets),
+            'sequences': sequences, 'textures': textures}
 
 
 def replay_info(roots, path, chat=True, max_chars=DEFAULT_MAX_CHARS):

@@ -21,7 +21,8 @@ INSTRUCTIONS = (
     'map holds. placed_objects, map_records, object_data, trigger_text and '
     'check_script answer questions about placed units, regions, objects, '
     'triggers and scripts; compare_maps says what changed between two '
-    'versions; map_image shows a map; compile_script compiles and checks vJass, Zinc, '
+    'versions; map_image shows a map; game_files, game_file and game_image read '
+    'the installed game; compile_script compiles and checks vJass, Zinc, '
     'cJass and Luck code, and run_script runs a map script without the game; '
     'read_member gives any member as data. Every tool '
     'only reads. Files outside '
@@ -58,9 +59,10 @@ _OUT = ('The map to write, under the roots. Empty writes <name>.edited.w3x '
         'beside the source; giving the source itself overwrites it.')
 
 
-def build_server(folders, allow_write=False):
+def build_server(folders, allow_write=False, game=None):
     """An MCPServer whose tools read files under `folders` only; with
-    `allow_write`, also the edit tools, which write maps under them."""
+    `allow_write`, also the edit tools, which write maps under them. `game`
+    is the installed game's folder, which the game_ tools read."""
     try:
         from typing import Annotated
 
@@ -75,6 +77,7 @@ def build_server(folders, allow_write=False):
     except ImportError:
         raise _missing_mcp() from None
     roots = _tools.Roots(folders)
+    installed = _tools.Game(game)
     server = MCPServer('wc3files', version=__version__,
                        instructions=INSTRUCTIONS + (WRITE_INSTRUCTIONS if allow_write else ''))
 
@@ -246,9 +249,51 @@ def build_server(folders, allow_write=False):
         has none. Use it to see the layout of a map: lanes, bases, water
         and forests. A text part says where the picture came from. Fails on
         a protected map."""
-        found = _tools.map_image(roots, path, kind, render)
+        found = _tools.map_image(roots, path, kind, render, installed)
         about = {'path': path, 'kind': kind, 'source': found['source'],
                  'width': found['width'], 'height': found['height']}
+        return [TextContent(type='text', text=json.dumps(about)),
+                Image(data=found['png'], format='png')]
+
+    @tool('Find files of the game')
+    def game_files(
+            pattern: Annotated[str, Field(description=(
+                'Text the path contains, ignoring case, such as "UnitData" or "Footman", '
+                'or a pattern with * and ?, such as "*Abilit*.slk".'))],
+            limit: Annotated[int, Field(description='At most this many files. Default 200.',
+                                        ge=1, le=1000)] = _tools.GAME_SEARCH_LIMIT,
+    ) -> R.GameFilesResult:
+        """Find files of the installed Warcraft III by path, with their
+        sizes: the game's tables (Units/UnitData.slk, AbilityData.slk),
+        texts, models and textures, whose paths look like
+        War3.w3mod:Units/UnitData.slk. Use it to find what game_file and
+        game_image read, when a question needs the game's own data rather
+        than a map's. Needs the server started with --game."""
+        return _tools.game_files(installed, pattern, limit)
+
+    @tool('Read a file of the game')
+    def game_file(
+            path: Annotated[str, Field(description=(
+                'The path as game_files gives it, such as War3.w3mod:Units/UnitData.slk.'))],
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.GameFileResult:
+        """Read one file of the installed game: a table or object file as
+        data (as read_member gives a map's), a model's name, sequences and
+        textures, or a text file as text. Use it for the game's base values
+        of units, abilities and items, or to see a game model's animations.
+        Images go to game_image. Needs the server started with --game."""
+        return _tools.game_file(installed, path, max_chars)
+
+    @tool('Show a texture of the game')
+    def game_image(
+            path: Annotated[str, Field(description=(
+                'A .blp, .dds or .tga path as game_files gives it, such as '
+                'War3.w3mod:ReplaceableTextures/CommandButtons/BTNFootman.blp.'))],
+    ) -> list[TextContent | Image]:
+        """Show a texture of the installed game, such as an icon or a
+        model's skin, as a PNG image. Use it to see what an icon or texture
+        path a map uses looks like. Needs the server started with --game."""
+        found = _tools.game_image(installed, path)
+        about = {'path': path, 'width': found['width'], 'height': found['height']}
         return [TextContent(type='text', text=json.dumps(about)),
                 Image(data=found['png'], format='png')]
 
@@ -494,6 +539,9 @@ def build_parser():
     parser.add_argument('--root', action='append', required=True, metavar='FOLDER',
                         help='A folder the tools may read. Repeat it for more folders. '
                              'A relative path given to a tool is taken from the first.')
+    parser.add_argument('--game', metavar='FOLDER', default=None,
+                        help='The installed Warcraft III (1.32 or later), which the game_ '
+                             'tools read and map_image takes its colours from.')
     parser.add_argument('--allow-write', action='store_true',
                         help='Also register the edit tools, which write maps under the roots. '
                              'Without it every tool only reads.')
@@ -504,7 +552,7 @@ def build_parser():
 def main(argv=None):
     args = build_parser().parse_args(argv)
     try:
-        server = build_server(args.root, allow_write=args.allow_write)
+        server = build_server(args.root, allow_write=args.allow_write, game=args.game)
     except ValueError as exc:
         print(f'error: {exc}', file=sys.stderr)
         return 2

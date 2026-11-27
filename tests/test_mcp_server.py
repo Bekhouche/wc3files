@@ -18,12 +18,13 @@ try:
 except ImportError:  # pragma: no cover
     Client = None
 
-TOOLS = ['check_script', 'compare_maps', 'compile_script', 'list_files', 'list_members', 'map_image', 'map_info', 'map_overview',
+TOOLS = ['check_script', 'compare_maps', 'compile_script', 'game_file', 'game_files',
+         'game_image', 'list_files', 'list_members', 'map_image', 'map_info', 'map_overview',
          'map_records', 'model_info', 'object_data', 'placed_objects', 'read_member',
          'replay_info', 'run_script', 'trigger_text']
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Tools that return an image, which has no output schema.
-IMAGE_TOOLS = ('map_image',)
+IMAGE_TOOLS = ('game_image', 'map_image')
 # A script with a compile error, which compile_script returns as data.
 BROKEN = 'function F takes nothing returns nothing\ncall\nendfunction\n'
 
