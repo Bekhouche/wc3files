@@ -34,6 +34,8 @@ setup(
                    # runtime. It had no entry at all, so border_path() could
                    # not find anything in an installed copy.
                    'wc3files.img': ['gamedata/borders/*.png'],
+                   # The cj_*.j libraries cJass includes (#227).
+                   'wc3files.cjass': ['lib/*.j'],
                    # The autocast orders placed_code.py writes (#251).
                    'wc3files.w3x': ['autocast_orders.json']},
     include_package_data=True,

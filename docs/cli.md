@@ -1157,6 +1157,14 @@ result against the natives, and `-I DIR` adds a folder for `//! import`.
 `--conf jasshelper.conf` reads JassHelper's own settings. Warnings go to
 stderr. The compiler itself is covered in [vJass and Zinc](vjass.md).
 
+`cjass` compiles cJass, AdicHelper's C-like dialect, and then runs the vJass
+compiler on the result; see [cJass](vjass.md#cjass):
+
+```bash
+wc3files cjass code.j -o war3map.j --check    # cJass to plain JASS, checked
+wc3files cjass code.j --no-vjass              # stop after cJass
+```
+
 `--externals` decides what happens to the `//! external` calls and external
 blocks of Lua:
 
