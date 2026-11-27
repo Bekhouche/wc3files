@@ -141,3 +141,62 @@ def read_png(file_or_data):
             rgba[d + 3] = trns[idx] if trns is not None and idx < len(trns) else 255
 
     return width, height, bytes(rgba)
+
+
+def read_png_gray(file_or_data):
+    """Decode a PNG into (width, height, values, bit_depth): one gray value
+    per pixel, row-major from the top row, at the PNG's own depth of 8 or 16
+    bits. A colour PNG gives the mean of its red, green and blue, which is
+    the gray itself when the three are equal, as an image editor saves a
+    grayscale picture in colour. Alpha is ignored."""
+    if isinstance(file_or_data, (bytes, bytearray)):
+        data = bytes(file_or_data)
+    else:
+        with open(file_or_data, 'rb') as fh:
+            data = fh.read()
+    if data[:8] != b'\x89PNG\r\n\x1a\n':
+        raise PngError('not a PNG file (bad signature)')
+    pos = 8
+    header, palette, parts = None, None, []
+    while pos < len(data):
+        length = struct.unpack_from('>I', data, pos)[0]
+        tag = data[pos + 4:pos + 8]
+        payload = data[pos + 8:pos + 8 + length]
+        pos += 12 + length
+        if tag == b'IHDR':
+            header = struct.unpack('>IIBBBBB', payload)
+        elif tag == b'PLTE':
+            palette = payload
+        elif tag == b'IDAT':
+            parts.append(payload)
+        elif tag == b'IEND':
+            break
+    if header is None:
+        raise PngError('missing IHDR chunk')
+    width, height, bit_depth, color_type, _comp, _filt, interlace = header
+    if interlace != 0:
+        raise PngError('interlaced (Adam7) PNGs are not supported')
+    if color_type not in _COLOR_CHANNELS:
+        raise PngError(f'unsupported PNG color type: {color_type}')
+    if bit_depth not in (8, 16) or (color_type == 3 and bit_depth != 8):
+        raise PngError(f'unsupported PNG bit depth: {bit_depth} (8 or 16 are read)')
+    channels = _COLOR_CHANNELS[color_type]
+    size = bit_depth // 8
+    stride = width * channels * size
+    pixels = _unfilter(zlib.decompress(b''.join(parts)), width, height, channels * size, stride)
+    if size == 2:
+        samples = struct.unpack('>%dH' % (len(pixels) // 2), pixels)
+    else:
+        samples = pixels
+    npix = width * height
+    if color_type in (0, 4):
+        values = list(samples[::channels])
+    elif color_type == 3:
+        if palette is None:
+            raise PngError('palette color type with no PLTE chunk')
+        values = [(palette[i * 3] + palette[i * 3 + 1] + palette[i * 3 + 2] + 1) // 3
+                  for i in samples]
+    else:
+        values = [(samples[i * channels] + samples[i * channels + 1]
+                   + samples[i * channels + 2] + 1) // 3 for i in range(npix)]
+    return width, height, values, bit_depth
