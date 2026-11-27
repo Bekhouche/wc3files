@@ -20,6 +20,7 @@ section to the new version and its date.
 - Texture animations are written to MDL: the reader knew `TextureAnims`, but the writer never wrote them, so every texture animation was lost and a layer's `TVertexAnimId` pointed at nothing (#360).
 - A camera's tracks are written to MDL and read back: its position and rotation (KCTR, KCRL) and its target's position (KTTR), as mdx-m3-viewer writes them (#361).
 - Material and layer fields of version 900 and later are written to MDL and read back, in the syntax mdx-m3-viewer uses: the material's shader, and the layer's emissive gain and fresnel colour, opacity and team colour, static or animated (KMTE, KFC3, KFCA, KFTC). The flags TwoSided on a material, Unlit on a layer and SortPrimsNearZ, which had no MDL name here, are written and read too (#362).
+- The order of a model's MDX chunks is kept through MDL, in a `// wc3files: ChunkOrder` comment of the `Version` block, so the MDX written from that MDL has the original order and its empty chunks. With #355 to #363, MDX -> MDL -> MDX gives the original bytes for 173 of 300 corpus models, against 43 (#363).
 
 ## [0.11.0] - 2026-11-27
 
