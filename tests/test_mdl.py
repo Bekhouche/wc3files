@@ -696,6 +696,32 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertEqual((again['slot'], len(again['tracks']['KMTF']['keys'])), (0, 2))
         self.assertSurvives(model)
 
+    def test_hd_geoset_tangents_and_skin(self):
+        model = self.hd_model(self.GEOSET)
+        geoset = model['geosets'][0]
+        self.assertNotIn('tangents', geoset)
+        geoset['tangents'] = [1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 0.0, -1.0, 0.0, 0.0, 1.0, 1.0]
+        geoset['skin'] = [0, 1, 0, 0, 200, 55, 0, 0] * 3
+        text = save_mdl(model)
+        self.assertIn('\tTangents 3 {\n', text)
+        self.assertIn('\tSkinWeights 3 {\n\t\t0, 1, 0, 0, 200, 55, 0, 0,\n', text)
+        again = load_mdl(text)['geosets'][0]
+        self.assertEqual((again['tangents'], again['skin']), (geoset['tangents'], geoset['skin']))
+        self.assertSurvives(model)
+
+    def test_skin_count_unit(self):
+        # Version 1200 models of the corpus count the skin in bytes, the
+        # game's version 1800 models in pairs of bytes; a unit that is not
+        # the version's default is kept in a comment.
+        model = self.hd_model(self.GEOSET)
+        geoset = model['geosets'][0]
+        geoset.update(tangents=[0.0, 0.0, 1.0, 1.0] * 3, skin=[0, 0, 0, 0, 255, 0, 0, 0] * 3)
+        for version, unit, comment in ((1200, 1, False), (1800, 2, False), (1800, 1, True)):
+            model['version'] = version
+            geoset['skinCountUnit'] = unit
+            self.assertEqual('// wc3files: SkinCountUnit' in save_mdl(model), comment)
+            self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):

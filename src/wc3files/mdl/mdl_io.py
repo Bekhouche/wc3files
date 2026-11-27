@@ -219,7 +219,7 @@ def save_mdl(model):
         out.append('}')
 
     for geoset in model.get('geosets') or []:
-        out.extend(_write_geoset_lines(geoset))
+        out.extend(_write_geoset_lines(geoset, version))
     for anim in model.get('geosetAnimations') or []:
         out.extend(_write_geoset_anim_lines(anim))
     for bone in model.get('bones') or []:
@@ -919,6 +919,14 @@ def _parse_geoset(tokens):
             geoset['uvSets'].append(_parse_vector_list_block(tokens, 2))
         elif key == 'VertexGroup':
             geoset['vertexGroups'] = [int(v) for v in _parse_float_list_block(tokens)]
+        elif key == 'Tangents':
+            tokens.next()
+            geoset['tangents'] = _parse_vector_list_block(tokens, 4)
+        elif key == 'SkinWeights':
+            tokens.next()
+            geoset['skin'] = [int(v) for v in _parse_float_list_block(tokens)]
+        elif key == 'SkinCountUnit':
+            geoset['skinCountUnit'] = int(_parse_number(tokens.next()))
         elif key == 'Faces':
             tokens.next()  # groups
             tokens.next()  # indexes count sometimes "Faces 1 N"
@@ -1852,7 +1860,12 @@ def _write_track_lines(name, track, kind, indent=1):
     return lines
 
 
-def _write_geoset_lines(geoset):
+def _default_skin_unit(version):
+    """The unit save_mdx gives a skin count when none is recorded."""
+    return 2 if version >= 1800 else 1
+
+
+def _write_geoset_lines(geoset, version=800):
     lines = ['Geoset {']
     vertices = geoset.get('vertices') or []
     lines.append(f'\tVertices {len(vertices) // 3} {{')
@@ -1869,11 +1882,34 @@ def _write_geoset_lines(geoset):
         for i in range(0, len(uv), 2):
             lines.append(f'\t\t{{ {_fmt_floats(uv[i:i+2])} }},')
         lines.append('\t}')
+    # The tangents and skin weights of a version 900 and later geoset, as
+    # mdx-m3-viewer writes them; they were left out, so an HD model lost
+    # them through MDL (#373).
+    tangents = geoset.get('tangents')
+    if tangents is not None:
+        lines.append(f'\tTangents {len(tangents) // 4} {{')
+        for i in range(0, len(tangents), 4):
+            lines.append(f'\t\t{{ {_fmt_floats(tangents[i:i+4])} }},')
+        lines.append('\t}')
     vertex_groups = geoset.get('vertexGroups') or []
     lines.append('\tVertexGroup {')
     for group in vertex_groups:
         lines.append(f'\t\t{int(group)},')
     lines.append('\t}')
+    skin = geoset.get('skin')
+    if skin is not None:
+        # Per vertex, four bone indices and four weights, one byte each.
+        if len(skin) % 8:
+            raise ValueError(f'a geoset\'s skin has {len(skin)} bytes, not 8 per vertex')
+        lines.append(f'\tSkinWeights {len(skin) // 8} {{')
+        for i in range(0, len(skin), 8):
+            lines.append(f'\t\t{", ".join(str(int(v)) for v in skin[i:i+8])},')
+        lines.append('\t}')
+        # What the MDX count of the skin counts, bytes (1) or pairs of bytes
+        # (2): it differs between versions, and MDL has no field for it.
+        unit = geoset.get('skinCountUnit')
+        if unit and unit != _default_skin_unit(version):
+            lines.append(f'\t{EXTENSION_COMMENT}SkinCountUnit {unit},')
     faces = geoset.get('faces') or []
     face_groups = geoset.get('faceGroups') or ([len(faces)] if faces else [])
     lines.append(f'\tFaces {len(face_groups)} {len(faces)} {{')
