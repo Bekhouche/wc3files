@@ -20,7 +20,8 @@ INSTRUCTIONS = (
     'map holds. placed_objects, map_records, object_data, trigger_text and '
     'check_script answer questions about placed units, regions, objects, '
     'triggers and scripts; compile_script compiles and checks vJass, Zinc, '
-    'cJass and Luck code; read_member gives any member as data. Every tool '
+    'cJass and Luck code, and run_script runs a map script without the game; '
+    'read_member gives any member as data. Every tool '
     'only reads. Files outside '
     'the folders the server was started with are refused, and so are '
     'protected maps.')
@@ -226,6 +227,31 @@ def build_server(folders, allow_write=False):
         correctly before it goes into the map; edit_script then adds it. A
         compile error is returned in errors, with its line."""
         return _tools.compile_script(roots, code, path, language, include_jass, max_chars)
+
+    @tool('Run a map script')
+    def run_script(
+            path: Annotated[str, Field(description=(
+                'A .w3x or .w3m map, whose war3map.lua or war3map.j is run, or a .lua '
+                'or .j script file. ' + _PATH))],
+            seconds: Annotated[float, Field(description=(
+                'Game time to let pass after main, with its timers and triggers, up to '
+                '600. Default 10.'), ge=0, le=_tools.RUN_MAX_SECONDS)] = 10.0,
+            players: Annotated[int, Field(description=(
+                'Player slots in use, as users who are playing. Default 1.'),
+                ge=1, le=24)] = 1,
+            max_steps: Annotated[int, Field(description=(
+                'Stop after this many interpreter steps, so a script that never ends '
+                f'returns. At most {_tools.RUN_MAX_STEPS}.'), ge=1,
+                le=_tools.RUN_MAX_STEPS)] = _tools.RUN_MAX_STEPS,
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.RunScriptResult:
+        """Run a map's script without the game, against stubs of the game
+        API, as wc3files run-map does: config and main, then some seconds of
+        game time. Use it to find why a map fails when it loads or in its
+        first seconds (a nil call, a missing function, a bad argument) and
+        to see the messages it displays. A JASS script is translated to Lua
+        first. Units, sounds and the screen do not exist: what depends on
+        them is not tested."""
+        return _tools.run_script(roots, path, seconds, players, max_steps, max_chars)
 
     @tool('Model information')
     def model_info(

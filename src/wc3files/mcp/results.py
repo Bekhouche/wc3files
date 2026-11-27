@@ -138,6 +138,24 @@ class CompileScriptResult(TypedDict):
     lines: Annotated[int, Field(description='Lines of compiled JASS.')]
 
 
+class RunScriptResult(TypedDict):
+    path: str
+    script: Annotated[str, Field(description=(
+        'The script run: war3map.lua, or war3map.j (as Lua) for a JASS script.'))]
+    ok: Annotated[bool, Field(description='True when the run made no error.')]
+    errors: Annotated[list[str], Field(description=(
+        'Runtime errors, each with its Lua position, such as "attempt to call a nil '
+        'value".'))]
+    warnings: Annotated[list[str], Field(description=(
+        'Calls with arguments of the wrong type or count, which the game may accept or '
+        'not.'))]
+    messages: Annotated[list[str], Field(description='Text the map displayed or printed.')]
+    game_time: Annotated[float, Field(description='Seconds of game time the run reached.')]
+    callbacks: Annotated[int, Field(description='Timer and trigger callbacks run.')]
+    stopped: Annotated[str | None, Field(description=(
+        'Why the run stopped early (the step limit, an error), or null.'))]
+
+
 class ModelSequence(TypedDict):
     name: str | None
     start: Annotated[int | None, Field(description='First frame, in milliseconds.')]
