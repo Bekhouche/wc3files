@@ -389,6 +389,17 @@ def _cmd_model_textures(args):
     return 0
 
 
+def _cmd_model_keyframes(args):
+    """Remove the keyframes that change nothing (#230)."""
+    from wc3files.mdl.keyframes import remove_redundant_keys
+
+    def describe(report):
+        text = f"{report['redundant']} of {report['keys']} key(s) removed"
+        return text + (f", and {report['dead']} no sequence plays" if args.dead else '')
+    return _run_model_batch(
+        args, lambda data: remove_redundant_keys(data, args.tolerance, args.dead), describe)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2601,6 +2612,19 @@ def build_parser():
     p_textures.add_argument('--json', action='store_true', help='Print the report as JSON.')
     p_textures.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_textures.set_defaults(func=_cmd_model_textures)
+
+    p_keys = subparsers.add_parser(
+        'model-keyframes', help='Remove the keyframes of models that change nothing.',
+        description=('Remove a keyframe when its track gives the same values without it '
+                     'at every frame: a repeated step, a point its neighbours interpolate '
+                     'to, or a flat stretch of a curve. A key at the start or end of a '
+                     'sequence stays. See ' + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_keys)
+    p_keys.add_argument('--tolerance', type=float, default=0.0,
+                        help='How far a value may move (default 0: equal values only).')
+    p_keys.add_argument('--dead', action='store_true',
+                        help='Also remove the keys no sequence plays.')
+    p_keys.set_defaults(func=_cmd_model_keyframes)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '

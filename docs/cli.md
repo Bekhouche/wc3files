@@ -580,6 +580,30 @@ in the map nor in the game. 212 of the unused images have their file name in
 another file, which a check by hand found to be another folder, another file of
 the same name, a comment or a model's name, not a reference to them.
 
+```bash
+wc3files model-keyframes Models/ -o Out/                    # keys that change nothing
+wc3files model-keyframes Models/ -o Out/ --tolerance 0.001 --dead
+```
+
+`model-keyframes` removes a keyframe when its track gives the same values
+without it, at every frame of every sequence: on a step track, a key that
+repeats the one before; on a linear track, a key its neighbours interpolate to
+(a rotation by slerp); on a Hermite or Bezier track, a key in the middle of a
+flat stretch. A key at the start or end of a sequence, or of a global
+sequence, always stays, and neighbours are taken only inside one sequence.
+`--tolerance` lets a value move by that much, never more in total, since each
+key dropped is checked against the line that replaces it. `--dead` also removes
+the keys that no sequence plays. That rests on the reading that a sequence uses
+only the keys inside its interval, which model viewers follow but which was not
+checked in the game, so it is not the default.
+
+Every track was sampled at every 10 ms and at every key of each sequence,
+before and after. At the default tolerance of 0, nothing moved by more than
+2e-6, the rounding of a slerp; with `--tolerance 0.001`, nothing moved by more
+than 0.001. At tolerance 0, the pass removed 1,210 of 45,900 keys on 50 corpus
+imports, 77 of 19,606 on 35 SD game models and 376 of 383,820 on 36 HD ones.
+`--dead` removed 7,684 more on the corpus imports, and 17 on the SD models.
+
 ## Pathing textures
 
 ```bash
