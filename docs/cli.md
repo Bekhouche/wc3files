@@ -638,6 +638,31 @@ imports and 25 SD game models removed 27,709 keys and event frames, and every
 kept sequence played the same on every track, sampled at every 10 ms, packed
 or not.
 
+```bash
+wc3files model-transfer-sequences Footman.mdx MyFootman.mdx --in-place --sequence "Attack Slam"
+```
+
+`model-transfer-sequences SOURCE TARGET...` copies sequences of the source
+into each target, all of them or those named by `--sequence`, after the
+target's last sequence and last key, `--gap` ms apart (by default the target's
+smallest gap). Bones and the other nodes match by name, without regard to case
+or to spaces at either end; when a model repeats a name, the nth node of that
+name matches the nth. Each matched node brings its keys inside the sequence,
+moved to the new interval, and event objects their frames. Where the target's
+track has another interpolation, the keys are made fit for it: from linear to
+Hermite or Bezier exactly, with tangents that keep each segment straight, and
+the other ways at the cost of the curve's shape, which is reported. Printed for
+each target: the source nodes with no match, the sequence names the target
+already had, and the geoset animations not copied, since geosets have no names
+to match. The new sequence takes the source's extent; `model-extents` sets it
+from the target's own vertices.
+
+Stripping 41 corpus imports and 25 SD game models down to their first sequence
+and copying the 366 others back from the original, every copied sequence
+played like the original on every track. Between the game's SD and HD models
+of the same 21 units, 341 of 449 SD nodes had no node of that name in the HD
+model, so the HD skeletons are named apart, and the report says so.
+
 ## Pathing textures
 
 ```bash

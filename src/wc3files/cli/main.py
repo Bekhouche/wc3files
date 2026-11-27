@@ -432,6 +432,33 @@ def _cmd_model_remove_sequences(args):
         args, lambda data: remove_sequences(data, args.sequence, args.pack), describe)
 
 
+def _cmd_model_transfer_sequences(args):
+    """Copy sequences from one model into others, by node name (#239)."""
+    from wc3files.mdl.model_file import ModelFile
+    from wc3files.mdl.sequences import transfer_sequences
+    source = ModelFile().read(args.source).get_data()
+
+    def describe(report):
+        parts = [f"copied {', '.join(report['sequences']) or 'nothing'} "
+                 f"({report['keys']} key(s) and event frame(s))"]
+        if report['missing']:
+            parts.append(f"not in the source: {', '.join(report['missing'])}")
+        if report['already_named']:
+            parts.append(f"the target already had: {', '.join(report['already_named'])}")
+        if report['unmatched_nodes']:
+            parts.append(f"{len(report['unmatched_nodes'])} source node(s) with no match: "
+                         + ', '.join(report['unmatched_nodes'][:10])
+                         + (' ...' if len(report['unmatched_nodes']) > 10 else ''))
+        if report['converted']:
+            parts.append(f"{report['converted']} track(s) converted to the target's "
+                         'interpolation, losing their shape')
+        if report['geoset_animations']:
+            parts.append(f"{report['geoset_animations']} geoset animation(s) not copied")
+        return '; '.join(parts)
+    return _run_model_batch(
+        args, lambda data: transfer_sequences(data, source, args.sequence, args.gap), describe)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2680,6 +2707,19 @@ def build_parser():
     p_rmseq.add_argument('--pack', action='store_true',
                          help='Move the kept sequences up, with the smallest gap the model had.')
     p_rmseq.set_defaults(func=_cmd_model_remove_sequences)
+
+    p_xseq = subparsers.add_parser(
+        'model-transfer-sequences', help='Copy sequences from one model into others.',
+        description=('Copy sequences of SOURCE into each target model, matching bones and '
+                     'other nodes by name, after the target\'s last sequence. The nodes '
+                     'that do not match are reported. See ' + _DOCS + '#model-edits.'))
+    p_xseq.add_argument('source', help='The model to copy the sequences from.')
+    _add_model_batch_args(p_xseq)
+    p_xseq.add_argument('--sequence', action='append', metavar='NAME',
+                        help='A sequence to copy (repeat it); all by default.')
+    p_xseq.add_argument('--gap', type=int, default=None,
+                        help="Milliseconds between sequences (default: the target's smallest gap).")
+    p_xseq.set_defaults(func=_cmd_model_transfer_sequences)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
