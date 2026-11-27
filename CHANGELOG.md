@@ -13,6 +13,7 @@ section to the new version and its date.
 ### Added
 
 - `wc3files-lsp`, a language server for JASS and Lua map scripts, written on the standard library so it comes with the package: an editor with a Language Server Protocol client shows syntax errors, the JASS checker's findings, handle leaks and the Lua checker's findings as you type. docs/lsp.md has the setup for Neovim (#387).
+- Hover in `wc3files-lsp`: a name's declaration and where it comes from, for the natives, BJ functions, constants and types of `common.j` and `blizzard.j`, and for the file's own globals, natives, functions, parameters and locals, scoped as JASS scopes them; in Lua, the natives and the file's functions and locals. It works on a file with syntax errors too (#388).
 
 ## [0.12.0] - 2026-11-27
 

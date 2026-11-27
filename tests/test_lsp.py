@@ -158,6 +158,84 @@ class TestDiagnostics(unittest.TestCase):
         self.assertEqual(published(out)[1]['version'], 2)
 
 
+SCRIPT = (
+    'globals\n'
+    '    constant integer MAX_HEROES = 12\n'
+    '    unit array udg_Heroes\n'
+    'endglobals\n'
+    'function Heal takes unit target, real amount returns nothing\n'
+    '    local real life = GetUnitState(target, UNIT_STATE_LIFE)\n'
+    '    call SetUnitState(target, UNIT_STATE_LIFE, life + amount)\n'
+    'endfunction\n'
+    'function Init takes nothing returns nothing\n'
+    '    call Heal(udg_Heroes[MAX_HEROES], 10.0)\n'
+    '    call BJDebugMsg("ready")\n'
+    'endfunction\n')
+
+LUA_SCRIPT = (
+    'local count = 0\n'
+    'function Spawn(owner)\n'
+    '    count = count + 1\n'
+    '    return CreateUnit(owner, FourCC("hfoo"), 0, 0, 0)\n'
+    'end\n'
+    'Spawn(Player(0))\n')
+
+
+def hover(text, line, character, uri='file:///map/war3map.j', language='jass'):
+    _, out = exchange(INITIALIZE, open_doc(text, uri=uri, language=language),
+                      {'id': 5, 'method': 'textDocument/hover', 'params': {
+                          'textDocument': {'uri': uri},
+                          'position': {'line': line, 'character': character}}},
+                      SHUTDOWN, EXIT)
+    [reply] = [m for m in out if m.get('id') == 5]
+    return reply['result']
+
+
+class TestHover(unittest.TestCase):
+    def value(self, *args, **kwargs):
+        result = hover(*args, **kwargs)
+        return result and result['contents']['value']
+
+    def test_a_native(self):
+        result = hover(SCRIPT, 5, 24)  # GetUnitState
+        self.assertEqual(result['range'], {'start': {'line': 5, 'character': 22},
+                                           'end': {'line': 5, 'character': 34}})
+        self.assertIn('native GetUnitState takes unit whichUnit, unitstate whichUnitState '
+                      'returns real', result['contents']['value'])
+        self.assertIn('common.j', result['contents']['value'])
+
+    def test_a_bj_function_and_a_constant(self):
+        self.assertIn('function BJDebugMsg takes string msg returns nothing', self.value(SCRIPT, 10, 10))
+        self.assertIn('constant unitstate UNIT_STATE_LIFE', self.value(SCRIPT, 6, 30))
+
+    def test_the_files_function_and_globals(self):
+        self.assertIn('function Heal takes unit target, real amount returns nothing\n```\n'
+                      'function, this file, line 5', self.value(SCRIPT, 9, 10))
+        self.assertIn('constant integer MAX_HEROES = 12', self.value(SCRIPT, 9, 28))
+        self.assertIn('unit array udg_Heroes', self.value(SCRIPT, 9, 16))
+
+    def test_a_parameter_and_a_local(self):
+        value = self.value(SCRIPT, 6, 56)  # amount
+        self.assertIn('real amount', value)
+        self.assertIn('parameter of `Heal`', value)
+        self.assertIn('local of `Heal`', self.value(SCRIPT, 6, 48))  # life
+
+    def test_nothing_under_the_cursor(self):
+        self.assertIsNone(hover(SCRIPT, 3, 0))           # endglobals: a keyword
+        self.assertIsNone(hover(SCRIPT, 10, 25))         # inside a string
+        self.assertIsNone(hover(SCRIPT, 40, 0))          # past the end
+
+    def test_a_file_that_does_not_parse(self):
+        broken = SCRIPT.replace('endfunction\nfunction Init', 'function Init', 1)
+        self.assertIn('function Heal', self.value(broken, 8, 10))
+
+    def test_lua(self):
+        uri, language = 'file:///map/war3map.lua', 'lua'
+        self.assertIn('native CreateUnit takes player id', self.value(LUA_SCRIPT, 3, 12, uri=uri, language=language))
+        self.assertIn('function Spawn(owner)', self.value(LUA_SCRIPT, 5, 1, uri=uri, language=language))
+        self.assertIn('local count = 0', self.value(LUA_SCRIPT, 2, 5, uri=uri, language=language))
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
