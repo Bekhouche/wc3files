@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Fixed
+
+- An attachment's visibility track written to MDL is read back; it was skipped as a node key, so every attachment lost its visibility through MDL (#355).
+
 ## [0.11.0] - 2026-11-27
 
 ### Added

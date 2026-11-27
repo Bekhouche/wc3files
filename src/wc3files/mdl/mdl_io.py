@@ -946,9 +946,14 @@ def _parse_geoset_anim(tokens):
     return anim
 
 
-def _parse_node_body(tokens, node):
+def _parse_node_body(tokens, node, visibility=None):
     """Parse one node entry (ObjectId, Parent, a flag, a node track) into
     `node`, or consume a key it does not know and return it for the caller.
+
+    `visibility` is (tracks, tag) for an object with a visibility track: an
+    animated `Visibility` goes there. Without it the track is skipped, as on
+    a bone. An attachment's visibility used to be skipped here too, so the
+    attachment never saw it (#355).
 
     One entry per call: every caller already calls this once per key from its
     own loop. It used to go on reading entries after the first, so the key
@@ -994,10 +999,13 @@ def _parse_node_body(tokens, node):
             tokens.next()
             node.setdefault('tracks', {})['KGSC'] = _parse_track_block(tokens, 'f32x3')
         elif key == 'Visibility':
-            # Handled by callers that care; skip animated visibility blocks here.
             if tokens.peek() and tokens.peek()[0].isdigit():
                 tokens.next()
-                _skip_block(tokens)
+                if visibility is not None:
+                    tracks, tag = visibility
+                    tracks[tag] = _parse_track_block(tokens, 'f32')
+                else:
+                    _skip_block(tokens)
             else:
                 tokens.next()
         elif tokens.peek() == '{':
@@ -1160,11 +1168,9 @@ def _parse_attachment(tokens):
             attachment['attachmentId'] = int(_parse_number(tokens.next()))
         else:
             tokens._i -= 1
-            leftover = _parse_node_body(tokens, attachment['node'])
-            if leftover == 'Visibility' and tokens.peek() and tokens.peek()[0].isdigit():
-                tokens.next()
-                attachment['tracks']['KATV'] = _parse_track_block(tokens, 'f32')
-            elif leftover and tokens.peek() == '{':
+            leftover = _parse_node_body(tokens, attachment['node'],
+                                        (attachment['tracks'], 'KATV'))
+            if leftover and tokens.peek() == '{':
                 _skip_block(tokens)
             elif leftover and tokens.peek() not in (None, '}'):
                 tokens.next()
