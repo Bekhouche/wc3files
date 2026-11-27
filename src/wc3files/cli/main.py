@@ -2043,6 +2043,69 @@ def _cmd_replay_info(args):
             print(f'  ... {len(messages) - args.max_chat} more (--max-chat, or --json for all)')
 
 
+def _cmd_map_translate(args):
+    """Stable string keys, a diff of two map versions, and translation files
+    (#224)."""
+    from wc3files.w3x.modes import archive_files, _write_map
+    from wc3files.w3x.translation import (apply_translation, diff_strings, string_keys,
+                                          translation)
+
+    def files_of(path):
+        return archive_files(_open_map(path, args.deep))
+
+    def read_json(path):
+        with open(path, encoding='utf-8') as handle:
+            return json.load(handle)
+
+    if args.action == 'keys':
+        keys = string_keys(files_of(args.map))
+        if args.json:
+            _write_json({k: e['text'] for k, e in keys.items()}, args.output or '-')
+            return 0
+        for key, entry in keys.items():
+            print(f"{key}\t{entry['text']!r}")
+        return 0
+    if args.action == 'diff':
+        if not args.other:
+            raise ValueError('diff takes two maps: the old version and the new one')
+        found = diff_strings(files_of(args.map), files_of(args.other))
+        if args.json:
+            _write_json(found, args.output or '-')
+            return 0
+        for key, text in found['removed'].items():
+            print(f'- {key}\t{text!r}')
+        for key, text in found['added'].items():
+            print(f'+ {key}\t{text!r}')
+        for key, texts in found['changed'].items():
+            print(f"~ {key}\t{texts['old']!r} -> {texts['new']!r}")
+        print(f"{len(found['added'])} added, {len(found['removed'])} removed, "
+              f"{len(found['changed'])} changed, {found['unchanged']} unchanged", file=sys.stderr)
+        return 0
+    if args.action == 'export':
+        previous = read_json(args.previous) if args.previous else None
+        table, counts = translation(files_of(args.map), previous)
+        _write_json(table, args.output or '-')
+        summary = f"{len(table['strings'])} string(s)"
+        if previous is not None:
+            summary += (f": {counts['kept']} translation(s) kept, {counts['changed']} source(s) "
+                        f"changed, {counts['new']} new, {counts['dropped']} key(s) dropped")
+        print(summary, file=sys.stderr)
+        return 0
+    # apply
+    if not args.other or not args.output:
+        raise ValueError('apply takes the map, the translation file and -o, the map to write')
+    files, report = apply_translation(files_of(args.map), read_json(args.other),
+                                      force=args.force)
+    _write_map(files, args.output)
+    print(f"{report['applied']} applied, {report['untranslated']} untranslated, "
+          f"{len(report['stale'])} stale (source changed; --force writes them), "
+          f"{len(report['unknown'])} key(s) not in the map", file=sys.stderr)
+    for key in report['stale'][:20]:
+        print(f'stale: {key}', file=sys.stderr)
+    print(f'Wrote {args.output}', file=sys.stderr)
+    return 0
+
+
 def _cmd_map_strings(args):
     """List a map's strings by object and field, or check its tooltips."""
     from wc3files.w3x.strings import check_strings, map_strings
@@ -3858,6 +3921,30 @@ def build_parser():
                              help='Emit JSON instead of readable text.')
     p_trig_text.add_argument('--out', help='Write JSON here instead of stdout.')
     p_trig_text.set_defaults(func=_cmd_trigger_text)
+
+    p_translate = subparsers.add_parser(
+        'map-translate',
+        help=('Strings of a map under stable keys (object and field, map info field, '
+              'script function), a diff of two versions, and translation files.'))
+    p_translate.add_argument('action', choices=('keys', 'diff', 'export', 'apply'),
+                             help=('keys: list the keys; diff OLD NEW: compare two '
+                                   'versions; export: write a translation file; apply '
+                                   'MAP FILE: write a translation into the map.'))
+    p_translate.add_argument('map', help='The map (for diff, the old version).')
+    p_translate.add_argument('other', nargs='?', default=None,
+                             help='diff: the new version. apply: the translation file.')
+    p_translate.add_argument('-o', '--output', default=None,
+                             help='Where to write (default: stdout; apply needs a map).')
+    p_translate.add_argument('--previous', default=None,
+                             help=('export: the translation file of an older version, '
+                                   'whose translations carry over where the source '
+                                   'text is unchanged.'))
+    p_translate.add_argument('--force', action='store_true',
+                             help='apply: also write translations whose source changed.')
+    p_translate.add_argument('--json', action='store_true',
+                             help='keys and diff: JSON instead of text.')
+    p_translate.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_translate.set_defaults(func=_cmd_map_translate)
 
     p_strings = subparsers.add_parser(
         'map-strings',

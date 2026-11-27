@@ -133,6 +133,8 @@ def map_strings(files):
                                 int(definition.get('repeat') or 0) > 0 else None,
                                 'string_id': string_id,
                                 'text': strings.get(string_id) if match else value,
+                                # where the value is stored, for an edit
+                                'slot': level,
                             })
     references = []
     for name, data in sorted(files.items()):

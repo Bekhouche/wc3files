@@ -306,6 +306,48 @@ numbers written in a tooltip with the object's fields: free text does not
 say which field a number stands for, and on corpus maps such a comparison
 matched mostly unrelated numbers.
 
+### Translating a map
+
+```bash
+wc3files map-translate keys map.w3x                     # every string under its key
+wc3files map-translate diff v1.w3x v2.w3x               # what changed between versions
+wc3files map-translate export v1.w3x -o fr.json         # a translation file to fill in
+wc3files map-translate export v2.w3x --previous fr.json -o fr2.json
+wc3files map-translate apply v2.w3x fr2.json -o v2-fr.w3x
+```
+
+`TRIGSTR_` numbers change from one version of a map to the next, so
+`map-translate` names each string by where it is used:
+
+| Key | String |
+|---|---|
+| `w3u/h000/Name`, `w3a/A000/Ubertip/2` | a text field of an object, with the level for a field that has levels; `@skin` after the type for `war3mapSkin` files |
+| `w3i/map_name`, `w3i/players/3/name`, `w3i/loading_screen/text` | the map info; players by their player number |
+| `script/Trig_Intro_Actions/2` | the second `TRIGSTR_` string of that function of the script, where GUI triggers put their text |
+| `war3map.wtg/4` | a `TRIGSTR_` string only another file uses, by its order there |
+
+A string used in several places takes the first of these keys. Strings of
+`war3map.wts` that nothing uses have no key.
+
+`diff` lists the keys added (`+`), removed (`-`) and changed (`~`) between two
+versions, and counts the unchanged ones. `export` writes a translation file,
+`{"strings": {key: {"source": ..., "translation": ""}}}`. With
+`--previous`, the translations of an older version's file carry over where
+the source text is the same; where the source changed, the old translation
+and source are kept, with `"status": "changed"` for the translator to review;
+a new key has `"status": "new"`. `apply` writes the translations into the
+map: `war3map.wts` for a `TRIGSTR_` string, the object data or the map info
+for text kept inline. A translation is skipped when its source is not the
+map's current text, or still has the `changed` status: remove the status
+once it is reviewed, or write all of them with `--force`.
+
+On seven pairs of versions of the same map in the corpus, the keys held: for
+example, between Balanced Hero Survival 0.91 and 0.92, 1,097 strings changed
+their `TRIGSTR_` number and kept their key, and of 17,771 keys, 17,635 have
+the same text in both. A translation applied to all 342 readable corpus maps (every
+string of each map set to a marked text) gave back the translation under
+every key, 1,462,826 strings in all, 351,474 of them kept inline.
+
 ### Override tables
 
 `obj-to-override` writes the technique some maps use to have no
