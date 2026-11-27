@@ -14,6 +14,7 @@ section to the new version and its date.
 
 - An attachment's visibility track written to MDL is read back; it was skipped as a node key, so every attachment lost its visibility through MDL (#355).
 - Particle emitter flags are written to MDL: Unshaded, SortPrimsFarZ, LineEmitter, Unfogged, ModelSpace and XYQuad on a ParticleEmitter2, and EmitterUsesMDL and EmitterUsesTGA on a ParticleEmitter, which the reader knew but the writer left out (#356).
+- Particle and ribbon emitter tracks are written to MDL and read back: a field with a track (visibility, emission rate, speed, alpha, colour and the others) was written as its static value only. A ribbon's texture slot is written too. A static value an MDX model stores beside a track is not kept, since MDL holds one or the other; on 300 corpus models, 72 now come back byte for byte, against 43 (#357).
 
 ## [0.11.0] - 2026-11-27
 
