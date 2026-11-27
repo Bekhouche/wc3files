@@ -601,6 +601,34 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertEqual(camera['targetPosition'], [0.0, 0.0, 50.0])
         self.assertSurvives(model)
 
+    def test_material_fields_of_version_900_and_later(self):
+        model = self.model(
+            'Textures 1 {\n\tBitmap {\n\t\tImage "Textures\\\\Hero.blp",\n\t}\n}\n'
+            'Materials 1 {\n'
+            '\tMaterial {\n'
+            '\t\tTwoSided,\n\t\tSortPrimsNearZ,\n'
+            '\t\tShader "Shader_SD_FixedFunction",\n'
+            '\t\tLayer {\n'
+            '\t\t\tFilterMode Blend,\n'
+            '\t\t\tUnlit,\n'
+            '\t\t\tstatic TextureID 0,\n'
+            '\t\t\tstatic EmissiveGain 0.5,\n'
+            '\t\t\tstatic FresnelColor { 1, 0, 0 },\n'
+            '\t\t\tFresnelOpacity 2 {\n\t\t\t\tLinear,\n\t\t\t\t0: 0,\n\t\t\t\t100: 1,\n\t\t\t}\n'
+            '\t\t\tstatic FresnelTeamColor 0.25,\n'
+            '\t\t}\n'
+            '\t}\n'
+            '}\n')
+        model['version'] = 1000
+        material = model['materials'][0]
+        layer = material['layers'][0]
+        self.assertEqual((material['flags'], material['shader']), (0x2 | 0x8, 'Shader_SD_FixedFunction'))
+        self.assertEqual(layer['shadingFlags'], 0x100)
+        self.assertEqual((layer['emissiveGain'], layer['fresnelColor'], layer['fresnelTeamColor']),
+                         (0.5, [1.0, 0.0, 0.0], 0.25))
+        self.assertEqual(set(layer['tracks']), {'KFCA'})
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):
