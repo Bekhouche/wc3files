@@ -337,3 +337,43 @@ class TestRunScript(ToolTestCase):
                 T.run_script(self.roots, 'war3map.lua', **bad)
         with self.assertRaises(ProtectedMapError):
             T.run_script(self.roots, self.protected)
+
+
+class TestCompareMaps(ToolTestCase):
+    """compare_maps (#336), on the two versions test_translation.py builds."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        from test_translation import NEW, OLD
+        from wc3files.w3x.modes import _write_map
+        _write_map(OLD, os.path.join(cls.root, 'v1.w3x'))
+        _write_map(NEW, os.path.join(cls.root, 'v2.w3x'))
+
+    def test_all_parts(self):
+        result = T.compare_maps(self.roots, 'v1.w3x', 'v2.w3x')
+        self.assertEqual(result['summary'], {
+            'members': {'added': 0, 'removed': 0, 'changed': 3},
+            'objects': {'added': 1, 'removed': 0, 'changed': 1},
+            'strings': {'added': 2, 'removed': 0, 'changed': 1, 'unchanged': 11}})
+        self.assertEqual([m['name'] for m in result['members']['changed']],
+                         ['war3map.j', 'war3map.w3u', 'war3map.wts'])
+        self.assertEqual(result['objects']['added'],
+                         [{'type': 'w3u', 'id': 'h001', 'base': 'hkni'}])
+        self.assertEqual(result['objects']['changed'][0]['fields'],
+                         [{'field': 'unam', 'old': 'TRIGSTR_001', 'new': 'TRIGSTR_007'}])
+        self.assertEqual(result['strings']['changed'],
+                         [{'key': 'script/Trig_Intro_Actions/1', 'old': 'Welcome!',
+                           'new': 'Welcome, hero!'}])
+
+    def test_one_part_and_refusals(self):
+        strings = T.compare_maps(self.roots, 'v1.w3x', 'v2.w3x', part='strings')
+        self.assertEqual(set(strings), {'old', 'new', 'strings', 'summary'})
+        same = T.compare_maps(self.roots, 'v1.w3x', 'v1.w3x')
+        self.assertEqual(same['members']['changed'] + same['objects']['changed'], [])
+        with self.assertRaises(ValueError):
+            T.compare_maps(self.roots, 'v1.w3x', 'v2.w3x', part='terrain')
+        with self.assertRaises(ValueError):
+            T.compare_maps(self.roots, 'v1.w3x', 'v2.w3x', max_chars=50)
+        with self.assertRaises(ProtectedMapError):
+            T.compare_maps(self.roots, 'v1.w3x', self.protected)

@@ -14,6 +14,7 @@ section to the new version and its date.
 
 - MCP tool `compile_script`: vJass, Zinc, cJass or Luck code, a source file, a folder of Luck sources or a map's `war3map.j` compiled to plain JASS, with the compile error and its line as data, and the JASS checker's findings on the result, leaks included. `language: jass` only checks. `check_script` findings now carry only the keys of their schema, as the structured result already did (#334).
 - MCP tool `run_script`: a map's script, or a `.lua` or `.j` file, run against the game API stubs of `run-map`, returning the runtime errors, argument warnings and displayed messages, with the game seconds, players and a step limit as arguments (#335).
+- MCP tool `compare_maps`: what changed between two versions of a map: members added, removed and changed, objects with each changed field's old and new value, and strings by the stable keys of #224; one part at a time for a large map (#336).
 
 ## [0.10.0] - 2026-11-27
 
