@@ -582,6 +582,25 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertEqual([list(anim['tracks']) for anim in anims], [['KTAT'], ['KTAS', 'KTAR']])
         self.assertSurvives(model)
 
+    def test_camera_tracks(self):
+        model = self.model(
+            'Camera "Portrait" {\n'
+            '\tPosition { 100, 0, 50 },\n'
+            '\tTranslation 2 {\n\t\tLinear,\n\t\t0: { 0, 0, 0 },\n\t\t1000: { 10, 0, 0 },\n\t}\n'
+            '\tRotation 2 {\n\t\tLinear,\n\t\t0: 0,\n\t\t1000: 0.5,\n\t}\n'
+            '\tFieldOfView 0.7,\n'
+            '\tFarClip 1000,\n'
+            '\tNearClip 8,\n'
+            '\tTarget {\n'
+            '\t\tPosition { 0, 0, 50 },\n'
+            '\t\tTranslation 1 {\n\t\t\tLinear,\n\t\t\t0: { 0, 0, 5 },\n\t\t}\n'
+            '\t}\n'
+            '}\n')
+        camera = model['cameras'][0]
+        self.assertEqual(set(camera['tracks']), {'KCTR', 'KCRL', 'KTTR'})
+        self.assertEqual(camera['targetPosition'], [0.0, 0.0, 50.0])
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):
