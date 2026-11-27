@@ -531,6 +531,36 @@ def build_server(folders, allow_write=False, game=None):
         to see what would go."""
         return _edits.optimize_map(roots, path, passes, dry_run, out)
 
+    @tool('Set an icon', writes=True)
+    def set_icon(
+            path: MapPath,
+            object_type: Annotated[R.IconObjectType, Field(description=(
+                'w3u units, w3t items, w3a abilities or w3h buffs. An upgrade has an icon '
+                'per level: set gar1 with edit_objects.'))],
+            object_id: Annotated[str, Field(description=(
+                'The object, standard or custom, such as hfoo or A000.'),
+                min_length=4, max_length=4)],
+            image: Annotated[str, Field(description=(
+                'The picture: .png, .blp, .dds, .tga, .bmp or .tif. ' + _PATH))],
+            name: Annotated[str, Field(description=(
+                "The icon's name, as in BTN<name>.blp. Empty: the picture's file name."))] = '',
+            kind: Annotated[R.IconKind, Field(description=(
+                'active, passive or autocast: the border and the folder the game looks in. '
+                'Empty: passive or autocast when the map gives the ability such an icon, '
+                'active otherwise; give it for a standard passive ability. A buff takes '
+                'none.'))] = '',
+            style: Annotated[R.IconStyle, Field(description=(
+                'The border drawn on the icon: classic, reforged, or none.'))] = 'classic',
+            out: Out = '') -> R.SetIconResult:
+        """Give a unit, item, ability or buff a new icon from a picture, in
+        one call: the picture is cut to 64 by 64 with the border of its
+        kind, written as BLP with its disabled version where the game looks
+        for it (ReplaceableTextures/CommandButtonsDisabled/DISBTN...),
+        imported and listed in war3map.imp, and set on the object's icon
+        field."""
+        return _edits.set_icon(roots, path, object_type, object_id, image, name, kind, style,
+                               out)
+
     @tool('Edit placed units and doodads', writes=True)
     def edit_placed(
             path: MapPath,

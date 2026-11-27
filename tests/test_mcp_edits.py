@@ -522,3 +522,51 @@ class TestOptimizeMap(EditTestCase):
         for passes in ([], ['remove_everything']):
             with self.subTest(passes=passes), self.assertRaises(ValueError):
                 E.optimize_map(self.roots, 'sample.w3x', passes)
+
+
+class TestSetIcon(EditTestCase):
+    """set_icon (#343)."""
+
+    def setUp(self):
+        super().setUp()
+        from wc3files.img import write_png
+        with open(os.path.join(self.root, 'hero.png'), 'wb') as handle:
+            handle.write(write_png(100, 80, bytes([30, 90, 200, 255]) * 8000))
+
+    def test_unit_icon(self):
+        from wc3files.img import BlpFile
+        from wc3files.imp.imp_file import ImpFile
+        result = E.set_icon(self.roots, 'sample.w3x', 'w3u', 'hfoo', 'hero.png')
+        bs = chr(92)
+        self.assertEqual((result['icon'], result['disabled'], result['kind'], result['field']),
+                         (bs.join(('ReplaceableTextures', 'CommandButtons', 'BTNhero.blp')),
+                          bs.join(('ReplaceableTextures', 'CommandButtonsDisabled',
+                                   'DISBTNhero.blp')), 'active', 'uico'))
+        written = _read_files(result['path'])
+        icon = BlpFile()
+        icon.read(written[result['icon']])
+        self.assertEqual((icon.width, icon.height), (64, 64))
+        imports = ImpFile()
+        imports.read(written['war3map.imp'])
+        listed = [e['path'] for e in imports.get_data()['files']]
+        self.assertIn(result['icon'], listed)
+        self.assertIn(result['disabled'], listed)
+        units = ObjectFile()
+        units.read(written['war3map.w3u'], object_type='w3u')
+        self.assertEqual(units.export_data()['w3u']['original']['hfoo']['uico']['value'],
+                         result['icon'])
+        self.assertEqual(_digest(self.map), self.before)
+
+    def test_kinds_and_refusals(self):
+        passive = E.set_icon(self.roots, 'sample.w3x', 'w3a', 'AHab', 'hero.png', name='Aura',
+                             kind='passive', out='aura.w3x')
+        self.assertTrue(passive['icon'].endswith(chr(92).join(('PassiveButtons', 'PASAura.blp'))))
+        self.assertTrue(passive['disabled'].endswith('DISPASAura.blp'))
+        buff = E.set_icon(self.roots, 'sample.w3x', 'w3h', 'BHab', 'hero.png', out='buff.w3x')
+        self.assertEqual((buff['kind'], buff['disabled']), ('none', None))
+        for bad in ({'object_type': 'w3q'}, {'object_id': 'zzzz'}, {'name': 'bad name'},
+                    {'kind': 'huge'}, {'image': 'missing.png'}):
+            args = dict(object_type='w3u', object_id='hfoo', image='hero.png')
+            args.update(bad)
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                E.set_icon(self.roots, 'sample.w3x', **args)

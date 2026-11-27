@@ -212,15 +212,25 @@ def _apply_object_change(table_data, object_type, change, fields, base_data, rep
 
 def edit_objects(roots, path, object_type, changes, out=''):
     """Create, change or delete objects in one object data file of a map."""
-    from wc3files import ObjectFile
-    from wc3files.w3o.data import ObjectFileType
-    from wc3files.w3o.object_base_data import BaseObjectData
     if object_type not in OBJECT_TYPES:
         raise ValueError(f'object_type must be one of {", ".join(OBJECT_TYPES)}')
     if not changes:
         raise ValueError('changes is empty')
     source, out = target_path(roots, path, out)
     files = _read_files(source)
+    key, data_bytes, report, warnings = _edit_object_file(files, object_type, changes)
+    files[key] = data_bytes
+    result = commit(source, files, {key: data_bytes}, out)
+    result.update({'object_type': object_type, **report, 'warnings': warnings})
+    return plain(result)
+
+
+def _edit_object_file(files, object_type, changes):
+    """(member, new bytes, report, warnings) for `changes` applied to a
+    map's object file of `object_type`, as edit_objects applies them."""
+    from wc3files import ObjectFile
+    from wc3files.w3o.data import ObjectFileType
+    from wc3files.w3o.object_base_data import BaseObjectData
     member = f'war3map.{object_type}'
     key = _find(files, member) or member
     kind = ObjectFileType(object_type)
@@ -241,11 +251,7 @@ def edit_objects(roots, path, object_type, changes, out=''):
         _apply_object_change(table_data, object_type, change, fields, base_data, report)
     handler.import_data({object_type: table_data})
     warnings = _warnings(object_type, table_data, report.pop('touched'))
-    data_bytes = handler.to_bytes(kind)
-    files[key] = data_bytes
-    result = commit(source, files, {key: data_bytes}, out)
-    result.update({'object_type': object_type, **report, 'warnings': warnings})
-    return plain(result)
+    return key, handler.to_bytes(kind), report, warnings
 
 
 def _object_fields(kind):
@@ -928,4 +934,132 @@ def optimize_map(roots, path, passes, dry_run=False, out=''):
     result.update(commit(source, files, changed, out))
     result['file_size_before'] = os.path.getsize(source)
     result['file_size_after'] = os.path.getsize(out)
+    return plain(result)
+
+
+# ---- set_icon ---------------------------------------------------------------
+
+BS = chr(92)        # a backslash, the separator of paths inside a map
+ICON_FIELDS = {'w3u': 'uico', 'w3t': 'iico', 'w3a': 'aart', 'w3h': 'fart'}
+ICON_KINDS = ('active', 'passive', 'autocast', 'none')
+ICON_STYLES = ('classic', 'reforged', 'none')
+# Where the game looks for an icon of each kind, and for its disabled
+# version, as make-icon-set writes them.
+_ICON_PATHS = {
+    'active': ('CommandButtons', 'BTN', 'DISBTN'),
+    'passive': ('PassiveButtons', 'PAS', 'DISPAS'),
+    'autocast': ('CommandButtons', 'ATC', 'DISATC'),
+    'none': ('CommandButtons', 'BTN', None),
+}
+
+
+def _icon_kind(object_type, entry):
+    """The icon kind of an object: from the icon path the map gives an
+    ability (a passive or autocast one has its own border), active
+    otherwise. The game's own icon paths are not bundled, so a standard
+    ability the map does not change counts as active."""
+    if object_type == 'w3h':
+        return 'none'
+    if object_type != 'w3a':
+        return 'active'
+    current = ''
+    mod = (entry or {}).get('aart')
+    if isinstance(mod, dict):
+        value = mod.get('value')
+        current = next(iter(value.values()), '') if isinstance(value, dict) else value or ''
+    upper = str(current).upper()
+    if 'PASBTN' in upper or 'PASSIVEBUTTONS' in upper:
+        return 'passive'
+    if BS + 'ATC' in upper or '/ATC' in upper:
+        return 'autocast'
+    return 'active'
+
+
+def set_icon(roots, path, object_type, object_id, image, name='', kind='', style='classic',
+             out=''):
+    """Make an icon from an image, import it with its disabled version, and
+    set it on an object, as make-icon-set and set-object-icon do."""
+    import re
+    from wc3files import ObjectFile
+    from wc3files.cli.main import _read_any_image
+    from wc3files.img import (BlpFile, border_path, composite_over, make_disabled_variant,
+                              resize_box)
+    from wc3files.imp.imp_file import ImpFile
+    from wc3files.w3o.data import ObjectFileType
+    from wc3files.w3o.object_base_data import BaseObjectData
+    if object_type not in ICON_FIELDS:
+        raise ValueError(f"object_type is one of {', '.join(ICON_FIELDS)}; an upgrade has an "
+                         'icon per level: set gar1 with edit_objects')
+    if kind and kind not in ICON_KINDS:
+        raise ValueError(f"kind is one of {', '.join(ICON_KINDS)}")
+    if style not in ICON_STYLES:
+        raise ValueError(f"style is one of {', '.join(ICON_STYLES)}")
+    picture = roots.resolve(image)
+    if not os.path.isfile(picture):
+        raise ValueError(f'{picture} is not a file')
+    name = name or os.path.splitext(os.path.basename(picture))[0]
+    if not re.match(r'^[A-Za-z0-9_\-]+$', name):
+        raise ValueError(f'name {name!r} must be letters, digits, _ or -')
+    source, out = target_path(roots, path, out)
+    files = _read_files(source)
+    # the object, for its icon kind
+    entry = None
+    key = _find(files, f'war3map.{object_type}')
+    if key is not None:
+        reader = ObjectFile()
+        reader.read(files[key], object_type=object_type)
+        table = reader.export_data().get(object_type) or {}
+        for section in ('original', 'custom'):
+            if object_id in (table.get(section) or {}):
+                entry = table[section][object_id]
+    if entry is None and not BaseObjectData.default().get(ObjectFileType(object_type),
+                                                          object_id):
+        raise ValueError(f'{object_id} is not an object of war3map.{object_type} nor a '
+                         'standard one; create it with edit_objects first')
+    kind = kind or _icon_kind(object_type, entry)
+    folder, prefix, disabled_prefix = _ICON_PATHS[kind]
+    # the pictures
+    width, height, rgba = _read_any_image(picture)
+    size = 64
+    icon = resize_box(rgba, width, height, size, size) if (width, height) != (size, size) \
+        else rgba
+    disabled = make_disabled_variant(icon, size, size)
+    if style != 'none' and kind != 'none':
+        border_file = border_path(kind, reforged=style == 'reforged')
+        bw, bh, border = _read_any_image(border_file)
+        icon = composite_over(icon, size, size, border, bw, bh)
+    member = BS.join(('ReplaceableTextures', folder, f'{prefix}{name}.blp'))
+    written = {member: BlpFile.from_rgba(size, size, icon).to_bytes()}
+    if disabled_prefix:
+        disabled_member = BS.join(('ReplaceableTextures', 'CommandButtonsDisabled',
+                                   f'{disabled_prefix}{name}.blp'))
+        written[disabled_member] = BlpFile.from_rgba(size, size, disabled).to_bytes()
+    changed = {}
+    for member_name, data in written.items():
+        existing = _find(files, member_name) or member_name
+        files[existing] = data
+        changed[existing] = data
+    imp_key = _find(files, 'war3map.imp') or 'war3map.imp'
+    imports = ImpFile()
+    if imp_key in files:
+        imports.read(files[imp_key])
+    listing = imports.get_data()
+    entries = listing.setdefault('files', [])
+    listed = {e.get('path', '').lower() for e in entries}
+    for member_name in changed:
+        if member_name.lower() not in listed:
+            entries.append({'flags': _import_flags(entries), 'path': member_name})
+    imports.import_data(listing)
+    files[imp_key] = imports.to_bytes()
+    changed[imp_key] = files[imp_key]
+    # the field
+    field = ICON_FIELDS[object_type]
+    object_key, data_bytes, report, warnings = _edit_object_file(
+        files, object_type, [{'id': object_id, 'set': {field: member}}])
+    files[object_key] = data_bytes
+    changed[object_key] = data_bytes
+    result = commit(source, files, changed, out)
+    result.update({'icon': member, 'disabled': next(
+        (m for m in written if 'Disabled' in m), None), 'kind': kind, 'field': field,
+        'warnings': warnings})
     return plain(result)
