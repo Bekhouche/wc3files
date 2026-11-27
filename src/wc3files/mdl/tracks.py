@@ -31,6 +31,13 @@ TRACK_VALUE_SIZE = {
     'KLBI': ('f32', 4),
     'KLBC': ('f32x3', 12),
     'KLAV': ('f32', 4),
+    # Light, version 1300 and later (#376): shadow casting start and end,
+    # quadratic and linear falloff, damping
+    'KLSS': ('f32', 4),
+    'KLSE': ('f32', 4),
+    'KLQF': ('f32', 4),
+    'KLLF': ('f32', 4),
+    'KLDA': ('f32', 4),
     # Attachment
     'KATV': ('f32', 4),
     # Particle emitter

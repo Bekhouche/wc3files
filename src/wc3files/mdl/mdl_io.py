@@ -1287,6 +1287,10 @@ def _parse_light(tokens):
                 light[field] = float(_parse_number(tokens.next()))
         elif key == 'ShadowIntensity':
             light['shadowIntensity'] = float(_parse_number(tokens.next()))
+        elif key == 'ShadowCasting':
+            light['shadowCasting'] = 1
+        elif key == 'ShadowCastingValue':
+            light['shadowCasting'] = int(_parse_number(tokens.next()))
         else:
             tokens._i -= 1
             leftover = _parse_node_body(tokens, light['node'])
@@ -1311,7 +1315,16 @@ _LIGHT_FIELDS = {
     'AmbIntensity': ('KLBI', 'f32', 'ambientIntensity'),
     'AmbColor': ('KLBC', 'f32x3', 'ambientColor'),
     'Visibility': ('KLAV', 'f32', None),
+    # Version 1300 and 1600 and later (#376), with HiveWE's MDL names;
+    # written only when the light has them.
+    'ShadowCastingStart': ('KLSS', 'f32', 'shadowCastingStart'),
+    'ShadowCastingEnd': ('KLSE', 'f32', 'shadowCastingEnd'),
+    'QuadraticFalloff': ('KLQF', 'f32', 'quadraticFalloff'),
+    'LinearFalloff': ('KLLF', 'f32', 'linearFalloff'),
+    'Damping': ('KLDA', 'f32', 'damping'),
 }
+_LIGHT_LATER_FIELDS = frozenset(('shadowCastingStart', 'shadowCastingEnd', 'quadraticFalloff',
+                                 'linearFalloff', 'damping'))
 
 
 def _parse_attachment(tokens):
@@ -2201,17 +2214,21 @@ def _write_light_lines(light):
     tracks = light.get('tracks') or {}
     defaults = {'attenuationStart': 0.0, 'attenuationEnd': 0.0, 'intensity': 0.0,
                 'color': [1, 1, 1], 'ambientIntensity': 0.0, 'ambientColor': [0, 0, 0]}
+    if light.get('shadowCasting'):
+        lines.append('\tShadowCasting,')
     for name, (tag, kind, field) in _LIGHT_FIELDS.items():
         if tag in tracks:
             lines.extend(_write_track_lines(name, tracks[tag], kind))
-        elif field is None:
+        elif field is None or field in _LIGHT_LATER_FIELDS and field not in light:
             continue
         elif kind == 'f32x3':
             lines.append(f'\t{name} {{ {_fmt_floats(light.get(field) or defaults[field])} }},')
         else:
-            lines.append(f'\t{name} {_fmt_num(light.get(field, defaults[field]))},')
+            lines.append(f'\t{name} {_fmt_num(light.get(field, defaults.get(field, 0.0)))},')
     if 'shadowIntensity' in light:
         lines.append(f'\tShadowIntensity {_fmt_num(light["shadowIntensity"])},')
+    if light.get('shadowCasting', 0) not in (0, 1):
+        lines.append(f'\t{EXTENSION_COMMENT}ShadowCastingValue {light["shadowCasting"]},')
     lines.append('}')
     return lines
 

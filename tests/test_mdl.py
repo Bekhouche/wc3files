@@ -784,6 +784,56 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertEqual(model['faceEffects'][0]['path'], 'Units\\Human\\Arthas\\Arthas.facefx')
         self.assertSurvives(model)
 
+    LIGHT_1800 = (
+        'Light "Portrait_Key_Light" {\n'
+        '\tObjectId 5,\n'
+        '\tDirectional,\n'
+        '\tShadowCasting,\n'
+        '\tstatic AttenuationStart 80,\n'
+        '\tstatic AttenuationEnd 200,\n'
+        '\tIntensity 2 {\n\t\tLinear,\n\t\t0: 1,\n\t\t500: 0.5,\n\t}\n'
+        '\tstatic Color { 1, 0.9, 0.8 },\n'
+        '\tstatic AmbIntensity 0,\n'
+        '\tstatic AmbColor { 0, 0, 0 },\n'
+        '\tstatic ShadowCastingStart 10,\n'
+        '\tstatic ShadowCastingEnd 300,\n'
+        '\tstatic QuadraticFalloff 0.0005,\n'
+        '\tstatic LinearFalloff 0,\n'
+        '\tDamping 1 {\n\t\tDontInterp,\n\t\t0: 0.00001,\n\t}\n'
+        '\tShadowIntensity 0.4,\n'
+        '}\n')
+
+    def test_light_layout_of_version_1800(self):
+        # As HiveWE reads it: the shadow-casting flag after the type, the
+        # shadow intensity, casting start and end, and the falloff after the
+        # ambient intensity. The flag was read as the attenuation start, and
+        # 24 bytes were left over on every light of the game's models.
+        import struct
+        model = self.hd_model(self.LIGHT_1800)
+        model['version'] = 1800
+        binary = save_mdx(model)
+        start = binary.index(b'LITE') + 12
+        start += struct.unpack_from('<I', binary, start)[0]  # the node
+        fields = struct.unpack_from('<II2f3ff3ff3f3f', binary, start)
+        self.assertEqual(fields[:4], (1, 1, 80.0, 200.0))
+        self.assertAlmostEqual(fields[12], 0.4, places=6)
+        self.assertEqual(fields[13:15], (10.0, 300.0))
+        self.assertAlmostEqual(fields[15], 0.0005, places=7)
+        light = load_mdx(binary)['lights'][0]
+        self.assertEqual((light['shadowCasting'], light['attenuationStart'], light['shadowCastingEnd']),
+                         (1, 80.0, 300.0))
+        self.assertNotIn('unparsedTail', light)
+        self.assertEqual(set(light['tracks']), {'KLAI', 'KLDA'})
+
+    def test_light_fields_of_version_1800_through_mdl(self):
+        model = self.hd_model(self.LIGHT_1800)
+        model['version'] = 1800
+        light = load_mdl(save_mdl(load_mdx(save_mdx(model))))['lights'][0]
+        self.assertEqual((light['shadowCasting'], light['shadowCastingStart'], light['shadowCastingEnd'],
+                          light['linearFalloff']), (1, 10.0, 300.0, 0.0))
+        self.assertEqual(set(light['tracks']), {'KLAI', 'KLDA'})
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):

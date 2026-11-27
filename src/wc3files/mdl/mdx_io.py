@@ -677,7 +677,16 @@ def _write_helper(stream, helper):
     write_node(stream, helper.get('node') or {})
 
 
-_LIGHT_TRACKS = frozenset(('KLAS', 'KLAE', 'KLAC', 'KLAI', 'KLBI', 'KLBC', 'KLAV'))
+_LIGHT_TRACKS = frozenset(('KLAS', 'KLAE', 'KLAC', 'KLAI', 'KLBI', 'KLBC', 'KLAV',
+                           'KLSS', 'KLSE', 'KLQF', 'KLLF', 'KLDA'))
+# Light fields of later versions, in the layout HiveWE reads (#376): from
+# version 1300 a shadow-casting flag after the type, and the shadow-casting
+# start and end after the shadow intensity; from 1600 the falloff. They
+# were not read, so every field of a version 1800 light came one place off
+# (the flag was read as the attenuation start) and 24 bytes were left over.
+_LIGHT_CASTING_VERSION = 1300
+_LIGHT_FALLOFF_VERSION = 1600
+_LIGHT_FALLOFF = (('quadraticFalloff', 0.0005), ('linearFalloff', 0.0), ('damping', 0.00001))
 
 
 def _read_light(stream, version=800):
@@ -685,17 +694,25 @@ def _read_light(stream, version=800):
     end = stream.tell() + inclusive - 4
     # inclusive covers node + light fields + tracks; node has its own inclusive.
     node = read_node(stream)
-    light = {
-        'node': node,
-        'type': stream.read_u32(),
+    light = {'node': node, 'type': stream.read_u32()}
+    if version >= _LIGHT_CASTING_VERSION:
+        light['shadowCasting'] = stream.read_u32()
+    light.update({
         'attenuationStart': stream.read_f32(),
         'attenuationEnd': stream.read_f32(),
         'color': stream.read_float_array(3),
         'intensity': stream.read_f32(),
         'ambientColor': stream.read_float_array(3),
         'ambientIntensity': stream.read_f32(),
-    }
-    if version > 800 and stream.tell() + 4 <= end and \
+    })
+    if version >= _LIGHT_CASTING_VERSION:
+        light['shadowIntensity'] = stream.read_f32()
+        light['shadowCastingStart'] = stream.read_f32()
+        light['shadowCastingEnd'] = stream.read_f32()
+        if version >= _LIGHT_FALLOFF_VERSION:
+            for field, _ in _LIGHT_FALLOFF:
+                light[field] = stream.read_f32()
+    elif version > 800 and stream.tell() + 4 <= end and \
             stream.peek(4).decode('latin-1') not in _LIGHT_TRACKS:
         # Many Reforged lights carry a shadow intensity before their tracks
         # (not all: version-1000 files are seen both ways); without it the
@@ -718,13 +735,22 @@ def _write_light(stream, light, version=800):
     def write_body(body):
         write_node(body, light.get('node') or {})
         body.write_u32(light.get('type', 0))
+        if version >= _LIGHT_CASTING_VERSION:
+            body.write_u32(light.get('shadowCasting', 0))
         body.write_f32(light.get('attenuationStart', 0.0))
         body.write_f32(light.get('attenuationEnd', 0.0))
         body.write_float_array(light.get('color') or [1.0, 1.0, 1.0])
         body.write_f32(light.get('intensity', 0.0))
         body.write_float_array(light.get('ambientColor') or [0.0, 0.0, 0.0])
         body.write_f32(light.get('ambientIntensity', 0.0))
-        if version > 800 and 'shadowIntensity' in light:
+        if version >= _LIGHT_CASTING_VERSION:
+            body.write_f32(light.get('shadowIntensity', 0.4))
+            body.write_f32(light.get('shadowCastingStart', 0.0))
+            body.write_f32(light.get('shadowCastingEnd', 0.0))
+            if version >= _LIGHT_FALLOFF_VERSION:
+                for field, default in _LIGHT_FALLOFF:
+                    body.write_f32(light.get(field, default))
+        elif version > 800 and 'shadowIntensity' in light:
             body.write_f32(light['shadowIntensity'])
         if light.get('unparsedTail') is not None:
             body.write_bytes(light['unparsedTail'])
