@@ -722,6 +722,18 @@ class TestMdlKeepsMdxData(unittest.TestCase):
             self.assertEqual('// wc3files: SkinCountUnit' in save_mdl(model), comment)
             self.assertSurvives(model)
 
+    def test_bind_pose(self):
+        model = self.hd_model(
+            'BindPose {\n'
+            '\tMatrices 2 {\n'
+            '\t\t{ 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0 },\n'
+            '\t\t{ 1, 0, 0, 0, 1, 0, 0, 0, 1, 10.5, -2, 30 },\n'
+            '\t}\n'
+            '}\n')
+        self.assertEqual(model['bindPose'][1][9:], [10.5, -2.0, 30.0])
+        self.assertEqual(len(load_mdx(save_mdx(model))['bindPose']), 2)
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):
