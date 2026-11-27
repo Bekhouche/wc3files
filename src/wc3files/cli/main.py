@@ -459,6 +459,41 @@ def _cmd_model_transfer_sequences(args):
         args, lambda data: transfer_sequences(data, source, args.sequence, args.gap), describe)
 
 
+def _cmd_model_obj(args):
+    """OBJ to MDX/MDL, or MDX/MDL to OBJ and MTL (#244)."""
+    from wc3files.mdl.model_file import ModelFile
+    from wc3files.mdl.obj import model_to_obj, obj_to_model, read_mtl, read_obj
+    if args.input.lower().endswith('.obj'):
+        with open(args.input, encoding='utf-8', errors='replace') as handle:
+            text = handle.read()
+        materials = {}
+        for name in read_obj(text)['libraries']:
+            path = os.path.join(os.path.dirname(args.input), name)
+            if os.path.exists(path):
+                with open(path, encoding='utf-8', errors='replace') as handle:
+                    materials.update(read_mtl(handle.read()))
+            else:
+                print(f'not found: {path}; its materials take Textures\\White.blp',
+                      file=sys.stderr)
+        model = obj_to_model(text, materials, args.up, args.scale, args.texture_dir)
+        ModelFile().import_data(model).write(args.output)
+        print(f"Wrote {args.output}: {len(model['geosets'])} geoset(s), "
+              f"{sum(len(g['faces']) // 3 for g in model['geosets'])} triangle(s), "
+              f"textures {', '.join(t['path'] for t in model['textures'])}")
+        return 0
+    if not args.output.lower().endswith('.obj'):
+        raise ValueError('model-obj: one of the two paths is an .obj file')
+    model = ModelFile().read(args.input)
+    mtl_path = os.path.splitext(args.output)[0] + '.mtl'
+    obj_text, mtl_text = model_to_obj(model, args.sequence, args.frame, args.up,
+                                      os.path.basename(mtl_path))
+    for path, text in ((args.output, obj_text), (mtl_path, mtl_text)):
+        with open(path, 'w', encoding='utf-8', newline='\n') as handle:
+            handle.write(text)
+    print(f'Wrote {args.output} and {mtl_path}')
+    return 0
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2720,6 +2755,21 @@ def build_parser():
     p_xseq.add_argument('--gap', type=int, default=None,
                         help="Milliseconds between sequences (default: the target's smallest gap).")
     p_xseq.set_defaults(func=_cmd_model_transfer_sequences)
+
+    p_obj = subparsers.add_parser(
+        'model-obj', help='Convert a Wavefront OBJ model to MDX or MDL, or back.',
+        description=('OBJ (with its MTL materials) to a static MDX or MDL model, or a '
+                     'model to OBJ and MTL at a frame of a sequence. The direction comes '
+                     'from the extensions. See ' + _DOCS + '#model-edits.'))
+    p_obj.add_argument('input', help='The .obj, or the .mdx/.mdl model.')
+    p_obj.add_argument('output', help='The .mdx/.mdl to write, or the .obj (an .mtl goes beside it).')
+    p_obj.add_argument('--up', choices=('y', 'z'), default='y',
+                       help="The OBJ file's up axis (default y; the game's is z).")
+    p_obj.add_argument('--scale', type=float, default=1.0, help='OBJ to model: a scale factor.')
+    p_obj.add_argument('--texture-dir', help='OBJ to model: the folder of the .blp textures.')
+    p_obj.add_argument('--sequence', help='Model to OBJ: the sequence to pose (by name).')
+    p_obj.add_argument('--frame', type=int, help="Model to OBJ: the frame (default the sequence's first).")
+    p_obj.set_defaults(func=_cmd_model_obj)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
