@@ -486,10 +486,9 @@ class TestReplayActions(unittest.TestCase):
 
     @staticmethod
     def data():
-        from test_actions import command_block, four_cc
+        from test_actions import command_block
         from test_mmd import record
         from wc3files.w3g import blocks
-        train = b'\x11' + b'\x00\x00' + four_cc('hfoo') + b'\xff' * 8   # 0x11 needs more
         slots = [
             (1000, command_block(1, b'\x1a', b'\x61') + command_block(2, b'\x61')),
             (2000, command_block(1, b'\x61', b'\x61')),
@@ -497,7 +496,6 @@ class TestReplayActions(unittest.TestCase):
                                 record('val:1', 'init pid 1 Alice'),
                                 record('val:2', 'FlagP 1 winner'))),
         ]
-        del train
         return {'header': {'sub': {'replay_length': 60000}},
                 'compressed_data': {
                     'Players': [{'name': 'Alice'}, {'name': 'Bob'}],
