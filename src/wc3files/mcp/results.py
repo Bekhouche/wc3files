@@ -234,6 +234,14 @@ class MissingFilesResult(TypedDict):
     unreadable: list[UnreadableModel]
 
 
+class MapTranslationResult(TypedDict):
+    path: str
+    total: Annotated[int, Field(description='Strings with a key in the map.')]
+    strings: Annotated[dict[str, str], Field(description=(
+        'Key to text: w3u/h000/Name, w3a/A000/Ubertip/2 (level 2), w3i/map_name, '
+        'script/Trig_Intro_Actions/1 (first string of that function).'))]
+
+
 ComparePart = Literal['all', 'members', 'objects', 'strings']
 ImageKind = Literal['minimap', 'preview']
 
@@ -533,6 +541,11 @@ class EditResult(TypedDict):
     source: Annotated[str, Field(description='The map read.')]
     overwrote_source: bool
     changed_members: Annotated[list[str], Field(description='The map files that were rewritten.')]
+
+
+class ApplyTranslationResult(EditResult):
+    applied: Annotated[int, Field(description='Strings written.')]
+    empty: Annotated[int, Field(description='Keys given with an empty text, left as they were.')]
 
 
 class EditObjectsResult(EditResult):

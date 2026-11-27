@@ -23,7 +23,8 @@ INSTRUCTIONS = (
     'triggers and scripts; compare_maps says what changed between two '
     'versions; map_image shows a map; game_files, game_file and game_image read '
     'the installed game; replay_actions lists what players did; '
-    'missing_files finds missing textures and unused imports; '
+    'missing_files finds missing textures and unused imports; map_translation '
+    'lists the strings to translate; '
     'compile_script compiles and checks vJass, Zinc, '
     'cJass and Luck code, and run_script runs a map script without the game; '
     'read_member gives any member as data. Every tool '
@@ -334,6 +335,21 @@ def build_server(folders, allow_write=False, game=None):
         with thousands of imports takes a minute or more."""
         return _tools.missing_files(roots, path, installed, max_chars)
 
+    @tool('Strings of a map to translate')
+    def map_translation(
+            path: MapPath,
+            keys: Annotated[list[str], Field(description=(
+                'Keep the keys that start with one of these, such as "w3u/" for units or '
+                '"script/" for trigger text. Empty keeps all.'))] = [],
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.MapTranslationResult:
+        """List the text of a map under keys that stay the same between
+        versions: object names and tooltips, map info, and the strings of
+        triggers and the script. Use it to translate a map: translate the
+        texts, keep the keys and the markup (|cffffcc00, |r, |n,
+        <A000,DataA1>), and give them to apply_translation, which the
+        server has with --allow-write."""
+        return _tools.map_translation(roots, path, keys, max_chars)
+
     @tool('Compare two versions of a map')
     def compare_maps(
             old: Annotated[str, Field(description='The older .w3x or .w3m map. ' + _PATH)],
@@ -481,6 +497,20 @@ def build_server(folders, allow_write=False, game=None):
         field types and limits. Use object_data first to see what the map
         already changes."""
         return _edits.edit_objects(roots, path, object_type, changes, out)
+
+    @tool('Apply a translation', writes=True)
+    def apply_translation(
+            path: MapPath,
+            translations: Annotated[dict[str, str], Field(description=(
+                'Key to translated text, with the keys map_translation gives. Keys not '
+                'given keep their text; a key the map does not have refuses the call.'),
+                min_length=1)],
+            out: Out = '') -> R.ApplyTranslationResult:
+        """Write translated texts into a map by the keys of map_translation:
+        into war3map.wts for the strings kept there, or into the object
+        data and map info for text kept inline. Every key is checked before
+        anything is written."""
+        return _edits.apply_translation(roots, path, translations, out)
 
     @tool('Edit placed units and doodads', writes=True)
     def edit_placed(
