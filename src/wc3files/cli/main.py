@@ -418,6 +418,20 @@ def _cmd_model_linear(args):
     return _run_model_batch(args, edit, describe)
 
 
+def _cmd_model_remove_sequences(args):
+    """Remove sequences by name, with the keys only they used (#238)."""
+    from wc3files.mdl.sequences import remove_sequences
+
+    def describe(report):
+        parts = [f"removed {', '.join(report['removed']) or 'nothing'}",
+                 f"{report['keys']} key(s) and event frame(s) gone"]
+        if report['missing']:
+            parts.append(f"not found: {', '.join(report['missing'])}")
+        return '; '.join(parts)
+    return _run_model_batch(
+        args, lambda data: remove_sequences(data, args.sequence, args.pack), describe)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2654,6 +2668,18 @@ def build_parser():
     p_linear.add_argument('--tolerance', type=float, default=None,
                           help='Add keys until the line is this close to the curve.')
     p_linear.set_defaults(func=_cmd_model_linear)
+
+    p_rmseq = subparsers.add_parser(
+        'model-remove-sequences', help='Remove sequences from models by name.',
+        description=('Remove the named sequences, with their geoset extents, the keys no '
+                     'kept sequence plays and their event frames. --pack moves the kept '
+                     'sequences up in time. See ' + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_rmseq)
+    p_rmseq.add_argument('--sequence', action='append', required=True, metavar='NAME',
+                         help='A sequence to remove, without regard to case; repeat it.')
+    p_rmseq.add_argument('--pack', action='store_true',
+                         help='Move the kept sequences up, with the smallest gap the model had.')
+    p_rmseq.set_defaults(func=_cmd_model_remove_sequences)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
