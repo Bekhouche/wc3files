@@ -544,6 +544,76 @@ def _compare_objects(old_files, new_files):
             'changed': changed}
 
 
+IMAGE_KINDS = ('minimap', 'preview')
+_MINIMAPS = ('war3mapMap.blp', 'war3mapMap.tga', 'war3mapMap.dds')
+_PREVIEWS = ('war3mapPreview.tga', 'war3mapPreview.blp', 'war3mapPreview.dds')
+
+
+def map_image(roots, path, kind='minimap', render=False):
+    """A picture of a map as PNG: its minimap (war3mapMap.blp) or its lobby
+    preview (war3mapPreview.tga), the map's own image, or rendered from
+    the terrain when the map has none or `render` asks for it. Returns
+    {'png': bytes, 'width', 'height', 'source'}."""
+    from wc3files.img import write_png
+    if kind not in IMAGE_KINDS:
+        raise ValueError(f"kind is one of {', '.join(IMAGE_KINDS)}, not {kind!r}")
+    path = roots.resolve(path)
+    if not _is_map(path):
+        raise ValueError(f'{path} is not a .w3x or .w3m map')
+    names = (_PREVIEWS + _MINIMAPS) if kind == 'preview' else _MINIMAPS
+    found = _members(path, names + ('war3map.w3e', 'war3map.w3i', 'war3map.doo'))
+    image = None if render else next(
+        ((n, found[n.lower()][1]) for n in names if n.lower() in found), None)
+    if image is not None:
+        name, data = image
+        width, height, rgba = _decode_image(name, data)
+        source = name
+    else:
+        width = height = 256
+        rgba, note = _render_minimap(path, found)
+        source = 'rendered from war3map.w3e' + note
+    return {'png': write_png(width, height, rgba), 'width': width, 'height': height,
+            'source': source}
+
+
+def _decode_image(name, data):
+    from wc3files.img import BlpFile, DdsFile, TgaFile
+    lower = name.lower()
+    if lower.endswith('.blp'):
+        image = BlpFile()
+        image.read(data)
+        return image.width, image.height, image.get_rgba(0)
+    reader = TgaFile() if lower.endswith('.tga') else DdsFile()
+    reader.read(data)
+    return reader.width, reader.height, reader.get_rgba()
+
+
+def _render_minimap(path, found):
+    """The minimap drawn from the terrain, in grey for the ground (the
+    tileset colours need the installed game), with water and doodads."""
+    from wc3files.doo import MapDoodadsFile
+    from wc3files.w3e import TerrainFile
+    from wc3files.w3e.minimap import object_colours, render_minimap
+    from wc3files.w3i import W3iFile
+    for name in ('war3map.w3e', 'war3map.w3i'):
+        if name not in found:
+            raise ValueError(f'{path} has no {name} to draw its minimap from')
+    terrain = TerrainFile()
+    terrain.read(found['war3map.w3e'][1])
+    info = W3iFile()
+    info.read(found['war3map.w3i'][1])
+    doodads, note = [], ''
+    if 'war3map.doo' in found:
+        try:
+            reader = MapDoodadsFile()
+            reader.read(found['war3map.doo'][1])
+            doodads = reader.get_data()['doodads']
+        except ValueError as error:
+            note = f' (without doodads: war3map.doo does not read: {error})'
+    return render_minimap(terrain.get_data(), info.get_data(), doodads,
+                          water=((40, 80, 160), 0.6), object_colours=object_colours()), note
+
+
 RUN_MAX_SECONDS = 600.0
 RUN_MAX_STEPS = 50_000_000
 
