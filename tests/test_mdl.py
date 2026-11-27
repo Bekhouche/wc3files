@@ -538,6 +538,35 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertEqual(load_mdl(text)['geosetAnimations'][-1]['flags'], 26)
         self.assertSurvives(model)
 
+    GEOSET = (
+        'Geoset {\n'
+        '\tVertices 3 {\n\t\t{ 0, 0, 0 },\n\t\t{ 1, 0, 0 },\n\t\t{ 0, 1, 0 },\n\t}\n'
+        '\tNormals 3 {\n\t\t{ 0, 0, 1 },\n\t\t{ 0, 0, 1 },\n\t\t{ 0, 0, 1 },\n\t}\n'
+        '\tTVertices 3 {\n\t\t{ 0, 0 },\n\t\t{ 1, 0 },\n\t\t{ 0, 1 },\n\t}\n'
+        '\tVertexGroup {\n\t\t0,\n\t\t0,\n\t\t0,\n\t}\n'
+        '\tFaces 1 3 {\n\t\tTriangles {\n\t\t\t{ 0, 1, 2 },\n\t\t}\n\t}\n'
+        '\tGroups 1 1 {\n\t\tMatrices { 0 },\n\t}\n'
+        '\tMaterialID 0,\n'
+        '\tSelectionGroup 0,\n'
+        '}\n')
+
+    def test_geoset_selection_flags(self):
+        model = self.model(self.GEOSET)
+        model['geosets'][0]['selectionFlags'] = 4
+        self.assertIn('\tUnselectable,\n', save_mdl(model))
+        self.assertSurvives(model)
+        model['geosets'][0]['selectionFlags'] = 4 | 0x20
+        self.assertEqual(load_mdl(save_mdl(model))['geosets'][0]['selectionFlags'], 0x24)
+
+    def test_geoset_level_of_detail_and_name(self):
+        model = self.model(self.GEOSET)
+        model['version'] = 1000
+        model['geosets'][0].update(levelOfDetail=2, name='Body LOD2')
+        again = load_mdl(save_mdl(model))['geosets'][0]
+        self.assertEqual((again['levelOfDetail'], again['name']), (2, 'Body LOD2'))
+        binary = save_mdx(model)
+        self.assertEqual(load_mdx(binary)['geosets'][0]['name'], 'Body LOD2')
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):
