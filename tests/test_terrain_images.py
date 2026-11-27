@@ -9,7 +9,8 @@ from wc3files.cli.main import main
 from wc3files.img.png_reader import PngError, read_png_gray
 from wc3files.img.png_writer import write_png, write_png_gray
 from wc3files.w3e import TerrainFile
-from wc3files.w3e.images import export_layer, import_layer, layer_values
+from wc3files.w3e.images import (export_layer, export_tiles, import_layer, import_tiles,
+                                 layer_values)
 
 
 def _terrain(width=5, height=4, version=11):
@@ -121,7 +122,126 @@ class TestTerrainImages(unittest.TestCase):
             import_layer(flat, 'water', write_png_gray(5, 4, [3] * 20, 8))
 
 
+def _painted(terrain, layer, paint):
+    """The exported image of `layer` with `paint` {(x, row): '#rrggbb'} on it."""
+    from wc3files.img.png_reader import read_png
+    png, legend = export_tiles(terrain.get_data(), layer)
+    width, height, rgba = read_png(png)
+    rgba = bytearray(rgba)
+    for (x, row), colour in paint.items():
+        i = (row * width + x) * 4
+        rgba[i:i + 3] = bytes(int(colour[k:k + 2], 16) for k in (1, 3, 5))
+    return write_png(width, height, bytes(rgba)), legend
+
+
+class TestTileImages(unittest.TestCase):
+    def test_cliff_levels_come_back(self):
+        terrain = _terrain()
+        d = terrain.get_data()
+        for i, tile in enumerate(d['tiles']):
+            tile['layer_height'] = i % 16
+        original = terrain.to_bytes()
+        png, _ = export_layer(d, 'cliff-level')
+        self.assertEqual(sorted(set(read_png_gray(png)[2])), [v * 17 for v in range(16)])
+        self.assertEqual(import_layer(d, 'cliff-level', png), 0)
+        self.assertEqual(terrain.to_bytes(), original)
+        # A gray between two steps takes the nearest level.
+        import_layer(d, 'cliff-level', write_png_gray(5, 4, [40] * 20, 8))
+        self.assertEqual(set(layer_values(d, 'cliff-level')), {2})
+
+    def test_ground_round_trip_and_legend(self):
+        terrain = _terrain()
+        d = terrain.get_data()
+        for i, tile in enumerate(d['tiles']):
+            tile['ground_texture'] = i % 2
+        original = terrain.to_bytes()
+        png, legend = export_tiles(d, 'ground')
+        self.assertEqual(list(legend.values()), ['Ldrt', 'Lgrs'])
+        self.assertEqual(import_tiles(d, 'ground', png, legend)['changed'], 0)
+        self.assertEqual(terrain.to_bytes(), original)
+
+    def test_paint_a_new_texture(self):
+        terrain = _terrain()
+        png, legend = _painted(terrain, 'ground', {(0, 0): '#123456', (4, 3): '#3cb44b'})
+        legend['#123456'] = 'Lrok'
+        d = terrain.get_data()
+        report = import_tiles(d, 'ground', png, legend, variation='zero')
+        self.assertEqual(report, {'changed': 2, 'added': ['Lrok']})
+        self.assertEqual(d['ground_tilesets'], ['Ldrt', 'Lgrs', 'Lrok'])
+        top_left = d['tiles'][(d['height'] - 1) * d['width']]
+        self.assertEqual((top_left['ground_texture'], top_left['ground_variation']), (2, 0))
+        self.assertEqual(d['tiles'][4]['ground_texture'], 1)       # bottom-right, Lgrs
+        back = TerrainFile()
+        back.read(terrain.to_bytes())
+        self.assertEqual(back.get_data()['ground_tilesets'], ['Ldrt', 'Lgrs', 'Lrok'])
+
+    def test_unknown_colour(self):
+        terrain = _terrain()
+        png, legend = _painted(terrain, 'ground', {(2, 1): '#e6194c'})
+        d = terrain.get_data()
+        with self.assertRaisesRegex(ValueError, r'pixel \(2, 1\) is #e6194c'):
+            import_tiles(d, 'ground', png, legend)
+        self.assertEqual(d['ground_tilesets'], ['Ldrt', 'Lgrs'])
+        # Next to the first colour, #e6194b: the nearest is Ldrt, as it was.
+        self.assertEqual(import_tiles(d, 'ground', png, legend, nearest=True)['changed'], 0)
+
+    def test_random_variation_is_seeded(self):
+        results = []
+        for _ in range(2):
+            terrain = _terrain()
+            paint = {(x, row): '#3cb44b' for x in range(5) for row in range(4)}
+            png, legend = _painted(terrain, 'ground', paint)
+            d = terrain.get_data()
+            import_tiles(d, 'ground', png, legend, variation='random', seed=7)
+            results.append([t['ground_variation'] for t in d['tiles']])
+        self.assertEqual(results[0], results[1])
+        self.assertTrue(set(results[0]) <= set(range(18)))
+
+    def test_duplicate_code(self):
+        terrain = _terrain()
+        d = terrain.get_data()
+        d['ground_tilesets'] = ['Ldrt', 'Lgrs', 'Ldrt']
+        for i, tile in enumerate(d['tiles']):
+            tile['ground_texture'] = i % 3
+        original = terrain.to_bytes()
+        png, legend = export_tiles(d, 'ground')
+        import_tiles(d, 'ground', png, legend)
+        self.assertEqual(terrain.to_bytes(), original)
+
+    def test_cliff_type_none_and_full_list(self):
+        terrain = _terrain()
+        d = terrain.get_data()
+        png, legend = export_tiles(d, 'cliff-type')
+        self.assertEqual(legend, {'#e6194b': 'CLdi', '#000000': 'none'})
+        self.assertEqual(import_tiles(d, 'cliff-type', png, legend)['changed'], 0)
+        d['cliff_tilesets'] = ['C%03d' % i for i in range(15)]
+        with self.assertRaisesRegex(ValueError, 'list is full'):
+            import_tiles(d, 'cliff-type', png, {'#000000': 'none', '#e6194b': 'CXXX'})
+        with self.assertRaisesRegex(ValueError, "'none' is only a cliff type"):
+            import_tiles(d, 'ground', export_tiles(d, 'ground')[0], {'#000000': 'none'})
+
+
 class TestTerrainImageCli(unittest.TestCase):
+    def test_ground_with_legend(self):
+        import json
+        terrain = _terrain()
+        with tempfile.TemporaryDirectory() as tmp:
+            w3e = os.path.join(tmp, 'war3map.w3e')
+            terrain.write(w3e)
+            png = os.path.join(tmp, 'ground.png')
+            self.assertEqual(main(['terrain-image', 'export', w3e, 'ground', png]), 0)
+            with open(os.path.join(tmp, 'ground.json'), encoding='utf-8') as handle:
+                self.assertEqual(json.load(handle), {'#e6194b': 'Ldrt', '#3cb44b': 'Lgrs'})
+            painted, _ = _painted(terrain, 'ground', {(0, 0): '#3cb44b'})
+            with open(png, 'wb') as handle:
+                handle.write(painted)
+            out = os.path.join(tmp, 'out.w3e')
+            self.assertEqual(main(['terrain-image', 'import', w3e, 'ground', png, out]), 0)
+            back = TerrainFile()
+            back.read(out)
+            d = back.get_data()
+            self.assertEqual(d['tiles'][(d['height'] - 1) * d['width']]['ground_texture'], 1)
+
     def test_export_edit_import(self):
         terrain = _terrain()
         with tempfile.TemporaryDirectory() as tmp:

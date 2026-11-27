@@ -811,7 +811,36 @@ exactly. An image with other values, such as an 8-bit one drawn in an image
 editor, is mapped from black to white onto `--range LOW HIGH`, or onto the
 layer's lowest and highest values in the terrain it goes into. A colour image
 counts as the mean of its red, green and blue. For `water-flag`, a pixel
-brighter than half is water.
+brighter than half is water. `cliff-level` is the cliff level of each corner,
+0 to 15, in 16 gray steps (level 2 is the editor's ground level); any other
+gray takes the nearest step.
+
+```bash
+wc3files terrain-image export MyMap.w3x ground ground.png      # and ground.json
+wc3files terrain-image import MyMap.w3x ground ground.png Painted.w3x --variation random
+wc3files terrain-image export MyMap.w3x cliff-type cliffs.png
+```
+
+`ground` and `cliff-type` are colours: each entry of the map's ground or cliff
+tileset list gets a colour of its own, and `export` writes the legend next to
+the image (`ground.json`, or `--legend`), colour to tileset code. Corners with
+no cliff type are black, `none` in the legend. Paint with the legend's
+colours; to bring in another texture, add its colour and code to the legend,
+and `import` adds the code to the map's list (at most 16 ground textures in a
+version 11 terrain, 64 in version 12, and 15 cliff types). A colour the legend
+does not have is an error, or with `--nearest` takes the closest one, for an
+image whose edges the editor smoothed. A corner whose texture changes keeps its
+variation, or gets 0 (`--variation zero`), or one drawn as often as each
+variation is in the corpus (`--variation random`, seeded with `--seed`): over
+342 maps, variations 0, 4, 8, 12, 16 and 17 make about 14% each. That is what
+the World Editor's maps hold, not its own rule, which is not known.
+
+All six layers, exported and imported back, left `war3map.w3e` byte for byte
+on all 342 readable corpus maps. What has not been checked in the game is a
+terrain painted this way: the game builds cliffs and their edges from the
+corners' levels, and a ramp, which the editor marks on its corners, is not
+set here, so a level changed by hand may need its ramps and cliff edges
+touched up in the World Editor.
 
 ### Shadow maps
 
