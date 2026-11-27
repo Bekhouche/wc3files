@@ -184,6 +184,11 @@ targets - MPQ is documented well enough to implement natively.
   `++`/`--`) give JASS with vJass blocks, which `vjass` then compiles.
   `lib/` holds `cj_types.j` and `cj_typesEx.j`, written for this package.
   CLI `cjass`.
+- `src/wc3files/luck/` - a Luck compiler (LuckyParser's indentation-based
+  language, #228): `compiler.py` parses by indentation and lowers with
+  LuckyParser's generated names (namespaces, structs as arrays,
+  `LuckyParser_InitAll`), then orders the functions after the ones they
+  call. `//! language` islands go through `vjass` and `cjass`. CLI `luck`.
 - `src/wc3files/grimex/` - Grim Extension Pack's external tools
   (ObjectMerger, FileImporter, FileExporter, ConstantMerger), run without
   the World Editor on the calls `vjass` collects; their Lua runs on
