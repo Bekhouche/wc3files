@@ -332,14 +332,118 @@ def check_script(roots, path, max_chars=DEFAULT_MAX_CHARS):
     findings = script.validate()
     if not base.lower().endswith('.lua'):
         from wc3files.scripts.leaks import find_leaks
-        findings = sorted(findings + find_leaks(script.get_data()),
-                          key=lambda f: (f.get('line') is None, f.get('line') or 0))
-    counts = {}
-    for finding in findings:
-        counts[finding.get('severity')] = counts.get(finding.get('severity'), 0) + 1
+        findings = findings + find_leaks(script.get_data())
+    findings = _findings(findings)
     return limited({'path': path, 'script': name,
                     'language': 'lua' if base.lower().endswith('.lua') else 'jass',
-                    'counts': counts, 'findings': findings}, max_chars)
+                    'counts': _counts(findings), 'findings': findings}, max_chars)
+
+
+def _findings(findings):
+    """Checker and leak findings in line order, with only the keys of the
+    Finding result (a leak's function is already in its message)."""
+    out = [{'severity': f.get('severity'), 'message': f.get('message'), 'line': f.get('line')}
+           for f in findings]
+    return sorted(out, key=lambda f: (f['line'] is None, f['line'] or 0))
+
+
+def _counts(findings):
+    counts = {}
+    for finding in findings:
+        counts[finding['severity']] = counts.get(finding['severity'], 0) + 1
+    return counts
+
+
+COMPILE_LANGUAGES = ('vjass', 'zinc', 'cjass', 'luck', 'jass')
+_LANGUAGE_OF = {'.j': 'vjass', '.jass': 'vjass', '.vj': 'vjass', '.vjass': 'vjass',
+                '.zn': 'zinc', '.zinc': 'zinc', '.cj': 'cjass', '.cjass': 'cjass',
+                '.luck': 'luck'}
+
+
+def compile_script(roots, code='', path='', language='', include_jass=True,
+                   max_chars=DEFAULT_MAX_CHARS):
+    """Compile vJass, Zinc, cJass or Luck to plain JASS, as `wc3files vjass`,
+    `cjass` and `luck` do, and check the result as `jass --check` does.
+    `code` is source text; `path` a source file, a folder of Luck sources,
+    or a map whose war3map.j is compiled. A compile error is part of the
+    result, not a failure of the tool."""
+    from wc3files.scripts.checker import check_program
+    from wc3files.scripts.jass_parser import parse
+    from wc3files.scripts.leaks import find_leaks
+    if bool(code) == bool(path):
+        raise ValueError('give either code or path')
+    language = (language or '').lower()
+    sources, label = [], '<code>'
+    if path:
+        resolved = roots.resolve(path)
+        label = resolved
+        if os.path.isdir(resolved):
+            from wc3files.luck import project_sources
+            sources = project_sources([resolved])
+            language = language or 'luck'
+        elif _is_map(resolved):
+            found = _members(resolved, ('war3map.j', 'scripts\\war3map.j'))
+            name, data = _first(found, ('war3map.j', 'scripts\\war3map.j'))
+            if data is None:
+                raise ValueError(f'{resolved} has no war3map.j')
+            sources = [(name, data.decode('utf-8', 'replace'))]
+        else:
+            with open(resolved, 'rb') as handle:
+                sources = [(resolved, handle.read().decode('utf-8-sig', 'replace'))]
+            language = language or _LANGUAGE_OF.get(os.path.splitext(resolved)[1].lower(), '')
+    else:
+        sources = [('source.luck' if language == 'luck' else '<code>', code)]
+    language = language or 'vjass'
+    if language not in COMPILE_LANGUAGES:
+        raise ValueError(f"language is one of {', '.join(COMPILE_LANGUAGES)}, not {language!r}")
+    errors, warnings, jass = [], [], ''
+    try:
+        jass, warnings = _compile(language, sources)
+    except Exception as error:          # the compiler's own error, reported as data
+        errors.append(_compile_error(error))
+    findings = []
+    if jass:
+        try:
+            program = parse(jass)
+            findings = _findings(check_program(program) + find_leaks(program))
+        except Exception as error:
+            errors.append(_compile_error(error))
+    result = {'path': label, 'language': language, 'ok': not errors and not any(
+                  f['severity'] == 'issue' for f in findings),
+              'errors': errors, 'warnings': warnings, 'counts': _counts(findings),
+              'findings': findings, 'jass': jass if include_jass else '',
+              'lines': jass.count('\n')}
+    return limited(result, max_chars)
+
+
+def _compile(language, sources):
+    """(JASS, warnings) for `sources` in `language`."""
+    text = '\n'.join(source for _, source in sources)
+    name = sources[0][0]
+    if language == 'luck':
+        from wc3files.luck import compile_sources
+        result = compile_sources(sources)
+        return result.jass, list(result.warnings)
+    if language == 'cjass':
+        from wc3files.cjass import cjass_to_vjass
+        text = cjass_to_vjass(text, name)
+    elif language == 'zinc':
+        text = f'//! zinc\n{text}\n//! endzinc'
+    elif language == 'jass':
+        from wc3files.scripts.jass_parser import parse
+        parse(text)
+        return text, []
+    from wc3files.vjass import VJassCompiler
+    result = VJassCompiler().compile(text, name)
+    return result.jass, [str(w.message) for w in result.warnings]
+
+
+def _compile_error(error):
+    location = getattr(error, 'location', None)
+    line = getattr(location, 'line', None) or getattr(error, 'line', None) or None
+    source = getattr(location, 'file', None) or getattr(error, 'filename', None)
+    message = getattr(error, 'message', None) or str(error)
+    return {'message': str(message), 'line': line, 'file': source}
 
 
 def model_info(roots, path, member=''):

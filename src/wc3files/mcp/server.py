@@ -19,7 +19,8 @@ INSTRUCTIONS = (
     '(.w3g) with wc3files. list_files finds files; map_overview says what a '
     'map holds. placed_objects, map_records, object_data, trigger_text and '
     'check_script answer questions about placed units, regions, objects, '
-    'triggers and scripts; read_member gives any member as data. Every tool '
+    'triggers and scripts; compile_script compiles and checks vJass, Zinc, '
+    'cJass and Luck code; read_member gives any member as data. Every tool '
     'only reads. Files outside '
     'the folders the server was started with are refused, and so are '
     'protected maps.')
@@ -201,6 +202,30 @@ def build_server(folders, allow_write=False):
         type and similar errors. Use it to find why a map's script may fail
         to load; read_member on war3map.j gives the script text itself."""
         return _tools.check_script(roots, path, max_chars)
+
+    @tool('Compile a script')
+    def compile_script(
+            code: Annotated[str, Field(description=(
+                'Source code to compile. Give code or path, not both.'))] = '',
+            path: Annotated[str, Field(description=(
+                'A source file (.j, .vj, .zn, .cj, .luck), a folder of Luck sources '
+                'compiled as one program, or a .w3x or .w3m map whose war3map.j is '
+                'compiled. ' + _PATH))] = '',
+            language: Annotated[R.CompileLanguage, Field(description=(
+                'vjass (also plain JASS with vJass blocks), zinc, cjass, luck, or jass '
+                'to only check JASS. Empty: from the file extension, luck for a folder, '
+                'vjass otherwise.'))] = '',
+            include_jass: Annotated[bool, Field(description=(
+                'Return the compiled JASS too. False returns only errors and findings, '
+                'for a large script.'))] = True,
+            max_chars: MaxChars = _tools.DEFAULT_MAX_CHARS) -> R.CompileScriptResult:
+        """Compile vJass, Zinc, cJass or Luck to plain JASS, as the wc3files
+        vjass, cjass and luck commands do, and check the result against the
+        game's natives as check_script does, leaks included. Use it to see
+        whether code written for a map compiles and calls the game
+        correctly before it goes into the map; edit_script then adds it. A
+        compile error is returned in errors, with its line."""
+        return _tools.compile_script(roots, code, path, language, include_jass, max_chars)
 
     @tool('Model information')
     def model_info(
