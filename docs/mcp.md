@@ -94,6 +94,11 @@ mcp-publisher login github
 mcp-publisher publish
 ```
 
+### Directories
+
+The server is also listed on [Glama](https://glama.ai/mcp/servers/Bekhouche/wc3files)
+and [MCP Rush](https://mcprush.com/bekhouche/wc3files-mcp).
+
 ## Tools
 
 | Tool | What it returns |
