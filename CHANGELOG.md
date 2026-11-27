@@ -13,6 +13,7 @@ section to the new version and its date.
 ### Fixed
 
 - An attachment's visibility track written to MDL is read back; it was skipped as a node key, so every attachment lost its visibility through MDL (#355).
+- Particle emitter flags are written to MDL: Unshaded, SortPrimsFarZ, LineEmitter, Unfogged, ModelSpace and XYQuad on a ParticleEmitter2, and EmitterUsesMDL and EmitterUsesTGA on a ParticleEmitter, which the reader knew but the writer left out (#356).
 
 ## [0.11.0] - 2026-11-27
 

@@ -483,3 +483,31 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         keys = model['attachments'][0]['tracks']['KATV']['keys']
         self.assertEqual([(key['frame'], key['value']) for key in keys], [(0, 1.0), (500, 0.0)])
         self.assertSurvives(model)
+
+    def test_particle_emitter2_flags(self):
+        model = self.model(
+            'ParticleEmitter2 "Glow" {\n'
+            '\tObjectId 5,\n'
+            '\tUnshaded,\n\tSortPrimsFarZ,\n\tLineEmitter,\n'
+            '\tUnfogged,\n\tModelSpace,\n\tXYQuad,\n'
+            '\tstatic Speed 10,\n'
+            '}\n')
+        flags = model['particleEmitters2'][0]['node']['flags']
+        self.assertEqual(flags, 0x1000 | 0x8000 | 0x10000 | 0x20000 | 0x40000 | 0x80000 | 0x100000)
+        self.assertSurvives(model)
+        model['particleEmitters2'][0]['node']['flags'] = 0x1000 | 0x40000
+        self.assertEqual(load_mdl(save_mdl(model))['particleEmitters2'][0]['node']['flags'],
+                         0x1000 | 0x40000)
+
+    def test_particle_emitter_flags(self):
+        model = self.model(
+            'ParticleEmitter "Smoke" {\n'
+            '\tObjectId 5,\n'
+            '\tEmitterUsesMDL,\n'
+            '\tPath "Abilities\\\\Weapons\\\\Smoke.mdl",\n'
+            '}\n')
+        self.assertEqual(model['particleEmitters'][0]['node']['flags'], 0x1000 | 0x8000)
+        self.assertSurvives(model)
+        model['particleEmitters'][0]['node']['flags'] = 0x1000 | 0x10000
+        self.assertEqual(load_mdl(save_mdl(model))['particleEmitters'][0]['node']['flags'],
+                         0x1000 | 0x10000)
