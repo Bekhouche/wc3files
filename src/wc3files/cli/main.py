@@ -1340,6 +1340,48 @@ def _cmd_loading_screen(args):
     return 0
 
 
+def _cmd_placed_code(args):
+    """A map's placed objects as JASS or Lua (#251)."""
+    from wc3files.doo import MapDoodadsFile, MapUnitsFile
+    from wc3files.w3r import RegionFile
+    from wc3files.w3x.modes import archive_files, _find
+    from wc3files.w3x.placed_code import placed_code
+    files = archive_files(_open_map(args.input, args.deep))
+    parts = set(args.parts.split(',')) if args.parts else \
+        {'units', 'destructables', 'regions'}
+    unknown = parts - {'units', 'destructables', 'regions'}
+    if unknown:
+        raise ValueError(f'unknown parts {sorted(unknown)}: units, destructables, regions')
+    units, doodads, regions = [], [], []
+    key = _find(files, 'war3mapUnits.doo')
+    if 'units' in parts and key is not None:
+        reader = MapUnitsFile()
+        reader.read(files[key])
+        units = reader.get_data()['units']
+    key = _find(files, 'war3map.doo')
+    if 'destructables' in parts and key is not None:
+        reader = MapDoodadsFile()
+        reader.read(files[key])
+        doodads = reader.get_data()['doodads']
+    key = _find(files, 'war3map.w3r')
+    if 'regions' in parts and key is not None:
+        reader = RegionFile()
+        reader.read(files[key])
+        regions = list(reader.get_data().values())
+    bases = _custom_bases(files, ('war3map.w3u', 'war3map.w3t', 'war3map.w3b'))
+    code, report = placed_code(units, doodads, regions,
+                               language='lua' if args.lua else 'jass',
+                               function=args.function, skins=not args.classic,
+                               custom_bases=bases)
+    _write_or_print(code, args.output)
+    print(f"{report['units']} units, {report['items']} items, "
+          f"{report['destructables']} destructables, {report['regions']} regions",
+          file=sys.stderr)
+    for what, count in sorted(report['not created'].items()):
+        print(f'not created: {count} {what}', file=sys.stderr)
+    return 0
+
+
 def _cmd_map_description(args):
     """A Hive Workshop or GitHub description of a map (#253)."""
     from wc3files.w3x.description import TEMPLATES, map_summary, render
@@ -3634,6 +3676,28 @@ def build_parser():
         '(default war3mapImported\\LoadingScreen).'))
     p_loading.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_loading.set_defaults(func=_cmd_loading_screen)
+
+    p_placed = subparsers.add_parser(
+        'placed-code', help="Write a map's placed units, items, destructables and regions "
+                            'as JASS or Lua.',
+        description=('A function that creates them at run time, with the statements the '
+                     'World Editor writes for them. Doodads, start locations, random units '
+                     'and item drop tables are not created, and terrain cannot be: the '
+                     'game has no native that sets a height, a cliff or water. What is left '
+                     'out is listed. See ' + _DOCS + '#placed-objects-as-code.'))
+    p_placed.add_argument('input', help='The .w3x/.w3m map.')
+    p_placed.add_argument('output', nargs='?', help='The file to write (default: print).')
+    p_placed.add_argument('--lua', action='store_true', help='Write Lua instead of JASS.')
+    p_placed.add_argument('--function', default='CreatePlacedObjects',
+                          help='The function\'s name (default CreatePlacedObjects).')
+    p_placed.add_argument('--classic', action='store_true', help=(
+        'Use CreateUnit, CreateItem and CreateDestructable rather than the natives with '
+        'skins, for patches before 1.32.'))
+    p_placed.add_argument('--parts', help=(
+        'Which parts, comma-separated: units (with items), destructables, regions '
+        '(default all three).'))
+    p_placed.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_placed.set_defaults(func=_cmd_placed_code)
 
     p_description = subparsers.add_parser(
         'map-description', help='Write a Hive Workshop (BBCode) or Markdown map description.',

@@ -33,7 +33,9 @@ setup(
                    # The bundled icon-border art, which borders.py loads at
                    # runtime. It had no entry at all, so border_path() could
                    # not find anything in an installed copy.
-                   'wc3files.img': ['gamedata/borders/*.png']},
+                   'wc3files.img': ['gamedata/borders/*.png'],
+                   # The autocast orders placed_code.py writes (#251).
+                   'wc3files.w3x': ['autocast_orders.json']},
     include_package_data=True,
     install_requires=[
         # Imported at module import time, so the package cannot even be
