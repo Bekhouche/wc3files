@@ -303,6 +303,36 @@ def _cmd_model_team_glow(args):
     return _run_model_batch(args, lambda data: remove_team_glow(data, args.mode), describe)
 
 
+class _PathRule(argparse.Action):
+    """--replace, --prefix and --pattern, kept in the order given (#241)."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        rules = getattr(namespace, 'rules', None) or []
+        rules.append((self.const, values[0], values[1]))
+        namespace.rules = rules
+
+
+def _cmd_model_texture_paths(args):
+    """Rewrite the texture paths of models (#241)."""
+    from wc3files.mdl.paths import compile_rules, rewrite_texture_paths
+    if not args.rules:
+        raise ValueError('model-texture-paths: give --replace, --prefix or --pattern')
+    rules = compile_rules(args.rules)
+    changes = {'changed': 0, 'refused': 0}
+
+    def describe(report):
+        changes['changed'] += len(report['changed'])
+        changes['refused'] += len(report['refused'])
+        lines = [f'{len(report["changed"])} path(s) rewritten']
+        lines += [f'  {old} -> {new}' for old, new in report['changed']]
+        lines += [f'  not rewritten, longer than 259 bytes: {old} -> {new}'
+                  for old, new in report['refused']]
+        return '\n'.join(lines)
+    status = _run_model_batch(args, lambda data: rewrite_texture_paths(data, rules), describe)
+    print(f"{changes['changed']} path(s) rewritten, {changes['refused']} too long")
+    return status
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2485,6 +2515,22 @@ def build_parser():
     p_glow.add_argument('--mode', choices=('transparent', 'remove'), default='transparent',
                         help='transparent (default) or remove.')
     p_glow.set_defaults(func=_cmd_model_team_glow)
+
+    p_paths = subparsers.add_parser(
+        'model-texture-paths', help='Rewrite the texture paths of models.',
+        description=('Rewrite texture paths by whole path, prefix or regular expression. '
+                     'The rules are tried in the order given, and the first that matches '
+                     'a path rewrites it. Paths compare without regard to case or to \\ '
+                     'against /. See ' + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_paths)
+    p_paths.add_argument('--replace', nargs=2, metavar=('OLD', 'NEW'), action=_PathRule,
+                         const='exact', dest='rules', help='Replace the path OLD with NEW.')
+    p_paths.add_argument('--prefix', nargs=2, metavar=('OLD', 'NEW'), action=_PathRule,
+                         const='prefix', dest='rules', help='Replace the start OLD with NEW.')
+    p_paths.add_argument('--pattern', nargs=2, metavar=('REGEX', 'REPLACEMENT'),
+                         action=_PathRule, const='pattern', dest='rules',
+                         help='Replace each match of REGEX, as "\\.blp$" ".dds".')
+    p_paths.set_defaults(func=_cmd_model_texture_paths, rules=[])
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
