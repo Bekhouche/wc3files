@@ -29,7 +29,7 @@ setup(
                                     'gamedata/strings/*.txt'],
                    # common.ai as well as the .j scripts: *.j alone left it
                    # out of the wheel.
-                   'wc3files.scripts': ['gamedata/*.j', 'gamedata/*.ai'],
+                   'wc3files.scripts': ['gamedata/*.j', 'gamedata/*.ai', 'gamedata/*.json'],
                    # The bundled icon-border art, which borders.py loads at
                    # runtime. It had no entry at all, so border_path() could
                    # not find anything in an installed copy.

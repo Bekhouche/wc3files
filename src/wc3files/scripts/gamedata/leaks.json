@@ -1,0 +1,83 @@
+{
+  "_about": "Handle types that leak when created and never destroyed, read by wc3files.scripts.leaks. 'create' are the functions that return a new handle of the type each call (functions that return a shared global, such as GetPlayersAll or GetLastCreatedGroup, are left out). 'destroy' free their first argument. 'last' is the BJ global and getter a BJ creating function also stores its handle in. 'set_by' are the BJ functions that store their handle in that global. 'keep' are functions a handle can be passed to and live on after, so passing it there is not a leak.",
+  "types": {
+    "location": {
+      "create": ["Location", "GetUnitLoc", "GetUnitRallyPoint", "GetRectCenter", "GetRandomLocInRect",
+                 "GetOrderPointLoc", "GetSpellTargetLoc", "GetStartLocationLoc", "GetPlayerStartLocationLoc",
+                 "GetCameraTargetPositionLoc", "GetCameraEyePositionLoc", "CameraSetupGetDestPositionLoc",
+                 "OffsetLocation", "PolarProjectionBJ", "GetDestructableLoc", "GetItemLoc",
+                 "WaygateGetDestinationLocBJ", "BlzGetTriggerPlayerMousePosition"],
+      "destroy": ["RemoveLocation"]
+    },
+    "group": {
+      "create": ["CreateGroup", "GetUnitsInRectAll", "GetUnitsInRectOfPlayer", "GetUnitsInRectMatching",
+                 "GetUnitsInRangeOfLocAll", "GetUnitsInRangeOfLocMatching", "GetUnitsOfPlayerAll",
+                 "GetUnitsOfPlayerMatching", "GetUnitsOfPlayerAndTypeId", "GetUnitsOfTypeIdAll",
+                 "GetUnitsSelectedAll", "GetRandomSubGroup"],
+      "destroy": ["DestroyGroup"],
+      "want_destroy": ["ForGroupBJ", "CountUnitsInGroup", "GroupAddGroup", "GroupRemoveGroup",
+                       "GroupPickRandomUnit", "IsUnitGroupDeadBJ", "IsUnitGroupEmptyBJ"]
+    },
+    "force": {
+      "create": ["CreateForce", "GetPlayersAllies", "GetPlayersEnemies", "GetPlayersMatching",
+                 "GetPlayersByMapControl", "GetForceOfPlayer"],
+      "destroy": ["DestroyForce"]
+    },
+    "effect": {
+      "create": ["AddSpecialEffect", "AddSpecialEffectLoc", "AddSpecialEffectTarget", "AddSpellEffect",
+                 "AddSpellEffectLoc", "AddSpellEffectById", "AddSpellEffectByIdLoc", "AddSpellEffectTarget",
+                 "AddSpellEffectTargetById", "AddSpecialEffectLocBJ", "AddSpecialEffectTargetUnitBJ"],
+      "destroy": ["DestroyEffect", "DestroyEffectBJ"],
+      "last": {"global": "bj_lastCreatedEffect", "getter": "GetLastCreatedEffectBJ",
+               "set_by": ["AddSpecialEffectLocBJ", "AddSpecialEffectTargetUnitBJ"]}
+    },
+    "lightning": {
+      "create": ["AddLightning", "AddLightningEx", "AddLightningLoc"],
+      "destroy": ["DestroyLightning", "DestroyLightningBJ"],
+      "last": {"global": "bj_lastCreatedLightning", "getter": "GetLastCreatedLightningBJ",
+               "set_by": ["AddLightningLoc"]}
+    },
+    "texttag": {
+      "create": ["CreateTextTag", "CreateTextTagLocBJ", "CreateTextTagUnitBJ"],
+      "destroy": ["DestroyTextTag", "DestroyTextTagBJ"],
+      "release_false": ["SetTextTagPermanent", "SetTextTagPermanentBJ"],
+      "last": {"global": "bj_lastCreatedTextTag", "getter": "GetLastCreatedTextTag",
+               "set_by": ["CreateTextTagLocBJ", "CreateTextTagUnitBJ"]}
+    },
+    "rect": {
+      "create": ["Rect", "RectFromLoc", "GetWorldBounds", "RectFromCenterSizeBJ", "GetRectFromCircleBJ",
+                 "OffsetRectBJ", "GetCurrentCameraBoundsMapRectBJ"],
+      "destroy": ["RemoveRect"]
+    },
+    "region": {
+      "create": ["CreateRegion"],
+      "destroy": ["RemoveRegion"],
+      "keep": ["TriggerRegisterEnterRegion", "TriggerRegisterLeaveRegion"]
+    },
+    "timer": {
+      "create": ["CreateTimer"],
+      "destroy": ["DestroyTimer", "DestroyTimerBJ"],
+      "keep": ["TimerStart"]
+    },
+    "image": {
+      "create": ["CreateImage", "CreateImageBJ"],
+      "destroy": ["DestroyImage"],
+      "last": {"global": "bj_lastCreatedImage", "getter": "GetLastCreatedImage",
+               "set_by": ["CreateImageBJ"]}
+    },
+    "ubersplat": {
+      "create": ["CreateUbersplat", "CreateUbersplatBJ"],
+      "destroy": ["DestroyUbersplat"],
+      "last": {"global": "bj_lastCreatedUbersplat", "getter": "GetLastCreatedUbersplat",
+               "set_by": ["CreateUbersplatBJ"]}
+    },
+    "boolexpr": {
+      "create": ["And", "Or", "Not"],
+      "destroy": ["DestroyBoolExpr", "DestroyCondition", "DestroyFilter"]
+    }
+  },
+  "keep": ["SaveLocationHandle", "SaveGroupHandle", "SaveForceHandle", "SaveEffectHandle",
+           "SaveLightningHandle", "SaveTextTagHandle", "SaveRectHandle", "SaveRegionHandle",
+           "SaveTimerHandle", "SaveImageHandle", "SaveUbersplatHandle", "SaveBooleanExprHandle",
+           "SaveAgentHandle", "SaveFogStateHandle", "StoreLocationHandleBJ"]
+}

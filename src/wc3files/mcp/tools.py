@@ -330,6 +330,10 @@ def check_script(roots, path, max_chars=DEFAULT_MAX_CHARS):
         script = ScriptFile()
         script.read(target)
     findings = script.validate()
+    if not base.lower().endswith('.lua'):
+        from wc3files.scripts.leaks import find_leaks
+        findings = sorted(findings + find_leaks(script.get_data()),
+                          key=lambda f: (f.get('line') is None, f.get('line') or 0))
     counts = {}
     for finding in findings:
         counts[finding.get('severity')] = counts.get(finding.get('severity'), 0) + 1

@@ -605,7 +605,12 @@ def _cmd_jass(args):
     is_lua = script.get_file_type().value == 'lua'
 
     if args.check:
-        return _report_script_check(label, script.validate())
+        findings = script.validate()
+        if not is_lua and not args.no_leaks:
+            from wc3files.scripts.leaks import find_leaks
+            findings = findings + find_leaks(program)
+            findings.sort(key=lambda f: (f.get('line') is None, f.get('line') or 0))
+        return _report_script_check(label, findings)
     if args.to_lua:
         if is_lua:
             raise ValueError('--to-lua takes a JASS script')
@@ -660,8 +665,12 @@ def _report_script_check(path, findings):
         where = f'{path}:{line}' if line else path
         print(f"{where}: {finding['severity']}: {finding['message']}")
     issues = sum(1 for f in findings if f['severity'] == 'issue')
-    notes = len(findings) - issues
-    print(f'{issues} issue(s), {notes} note(s)', file=sys.stderr)
+    warnings = sum(1 for f in findings if f['severity'] == 'warning')
+    notes = len(findings) - issues - warnings
+    summary = f'{issues} issue(s), {notes} note(s)'
+    if warnings:
+        summary += f', {warnings} warning(s)'
+    print(summary, file=sys.stderr)
     return 1 if issues else 0
 
 
@@ -3287,7 +3296,10 @@ def build_parser():
     p_jass.add_argument('--check', action='store_true',
                         help=('Check calls against common.j/blizzard.j (and, for Lua, '
                               'undefined globals and the Lua 5.3 library) and print '
-                              'the findings instead of the script. Exits 1 on an issue.'))
+                              'the findings instead of the script. Exits 1 on an issue. '
+                              'For JASS, handle leaks are reported too, as warnings.'))
+    p_jass.add_argument('--no-leaks', action='store_true',
+                        help='With --check, leave out the handle leak warnings.')
     p_jass.set_defaults(func=_cmd_jass)
 
     p_vjass = subparsers.add_parser(
