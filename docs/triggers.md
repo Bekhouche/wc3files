@@ -215,6 +215,76 @@ hand-written, TypeScript and C# transpiled, obfuscated), it reports issues in
 copies of one map (the native takes one packed color, so the color passed is
 255), and a call to a `testChars` that is defined nowhere in two others.
 
+### Handle leaks
+
+For JASS, `jass --check` also reports handle leaks, as warnings: handles
+that are created and never destroyed. A location, group or effect lives
+until the script destroys it, so a trigger that makes one on every run and
+drops it slows the game down over a long match.
+
+```python
+from wc3files.scripts import parse_jass
+from wc3files.scripts.leaks import find_leaks
+
+for finding in find_leaks(parse_jass(text)):
+    print(finding['line'], finding['message'])
+```
+
+Three cases are reported:
+
+- a new handle dropped at once, passed to a function that does not keep it
+  or called as a statement: `call CreateNUnitsAtLoc(1, 'hfoo', p,
+  GetRectCenter(r), 0)` or `call AddSpecialEffect(...)`;
+- a local set to a new handle and, in the same function, never destroyed,
+  returned, assigned elsewhere or passed to a function that keeps it;
+- a global set to a new handle that no function of the script destroys.
+
+The types and functions are data, in
+`src/wc3files/scripts/gamedata/leaks.json`: for each type (location, group,
+force, effect, lightning, text tag, rect, region, timer, image, ubersplat,
+boolexpr), the functions that create a new one on each call, those that
+destroy it, and those it can be passed to and live on (hashtable saves,
+`TimerStart`, region events). Functions of the script that return a new
+handle on every path count as creating functions too.
+
+These are not reported:
+
+- the GUI idioms: `set bj_wantDestroyGroup = true` before the `ForGroupBJ`
+  it applies to; a handle a BJ function also keeps in `bj_lastCreated...`,
+  destroyed or stored through `GetLastCreatedEffectBJ()` and the like before
+  the next one replaces it; a text tag made temporary with
+  `SetTextTagPermanent(t, false)`;
+- a handle passed to a function of the script, which may destroy it. Calling
+  such a function or running a trigger also releases the `bj_lastCreated...`
+  handles;
+- the World Editor's `gg_` globals;
+- code that runs once at map start: `main`, `config`, the functions only they
+  call (also through `ExecuteFunc("name")`, as JassHelper runs library
+  initializers), and the actions of a trigger whose one run is a map
+  initialization or elapsed-time event. A handle lost there is lost once.
+
+Known false positives and misses:
+
+- a global kept for the whole game but set in a trigger that the check
+  cannot tell runs once, such as a trigger turned off after its first run,
+  is reported;
+- an effect meant to stay, attached to a unit in code that runs more than
+  once, is reported;
+- a handle passed to a function of the script counts as handled even when
+  that function does not destroy it;
+- locals and globals are not followed in the order of the statements: a
+  local set on every turn of a loop and destroyed once after it is not
+  reported, and neither is a global overwritten before it is destroyed.
+
+`--no-leaks` leaves the warnings out. Lua scripts are not checked for leaks.
+
+On the 319 parsed `war3map.j` scripts of the benchmark corpus, the check
+reports 70,806 warnings in 274 maps, 66,713 of them
+dropped handles (mostly locations from `GetRectCenter` and `GetUnitLoc`,
+groups from `GetUnitsInRect...` and forces from `GetForceOfPlayer`). Of 20
+warnings drawn at random, one per map, and read in their scripts, 19 were
+real leaks; the other was an effect attached to a unit to stay.
+
 ## Running a map script
 
 The checker reads a script; `run-map` runs one, to find the errors a map

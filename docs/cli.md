@@ -1042,7 +1042,9 @@ wc3files script-to-triggers war3map.j        # rebuild GUI triggers from a scrip
 `jass --check` prints one `file:line: severity: message` per finding instead
 of the script, and exits with status 1 when there is an issue. It works on
 JASS and on Reforged Lua; what it checks is described in [Triggers and
-scripts](triggers.md#checking-a-script).
+scripts](triggers.md#checking-a-script). For JASS it also prints handle leaks
+as warnings, which do not change the exit status; `--no-leaks` leaves them
+out (see [Handle leaks](triggers.md#handle-leaks)).
 
 `jass` and `trigger-text` also take a `.w3x`/`.w3m` map and read its
 `war3map.lua` or `war3map.j`, or its `war3map.wtg`, without unpacking it:

@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Added
+
+- `jass --check` reports handle leaks in JASS, as warnings, and `wc3files.scripts.leaks.find_leaks` gives them as findings: a new location, group, force, effect, text tag, rect or other leaking handle dropped at once, a local never destroyed in its function, and a global no function destroys. The types and their creating, destroying and keeping functions are data, in `scripts/gamedata/leaks.json`. The GUI idioms (`bj_wantDestroyGroup`, `GetLastCreated...()` followed in order), handles passed to the script's own functions, the editor's `gg_` globals and code that runs once at map start are not reported; `--no-leaks` leaves the warnings out, and the MCP `check_script` tool includes them. On the 319 parsed corpus scripts it reports 70,806 warnings in 274 maps, and 19 of 20 drawn at random were real leaks (#255).
+
 ## [0.9.0] - 2026-11-27
 
 ### Added
