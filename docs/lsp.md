@@ -42,6 +42,12 @@ function you are in, then the file, then `common.j` and `blizzard.j`. In
 Lua it is the nearest declaration above the cursor (`function`, `local`, or
 a parameter), then the natives: Lua's block scopes are not followed.
 
+## Go to definition
+
+Go to definition jumps to a name's declaration, found as hover finds it. A
+native, BJ function or constant opens the bundled `common.j` or
+`blizzard.j` of the installed package at its line.
+
 ## Neovim
 
 Neovim (0.10 or later) has a client built in. Give `.j` files a file type
