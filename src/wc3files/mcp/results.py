@@ -13,6 +13,7 @@ from pydantic import Field
 from typing_extensions import NotRequired, TypedDict
 
 ObjectType = Literal['', 'w3u', 'w3t', 'w3b', 'w3d', 'w3a', 'w3h', 'w3q']
+CompileLanguage = Literal['', 'vjass', 'zinc', 'cjass', 'luck', 'jass']
 
 
 class FileEntry(TypedDict):
@@ -112,6 +113,29 @@ class CheckScriptResult(TypedDict):
     language: Annotated[str, Field(description='jass or lua.')]
     counts: Annotated[dict[str, int], Field(description='Number of findings by severity.')]
     findings: list[Finding]
+
+
+class CompileError(TypedDict):
+    message: str
+    line: Annotated[int | None, Field(description='Line of the source, when known.')]
+    file: Annotated[str | None, Field(description='Source file, when known.')]
+
+
+class CompileScriptResult(TypedDict):
+    path: Annotated[str, Field(description='The source compiled: a path, or <code>.')]
+    language: Annotated[str, Field(description='vjass, zinc, cjass, luck or jass.')]
+    ok: Annotated[bool, Field(description=(
+        'True when it compiled and the check found no issue (notes and leak warnings '
+        'aside).'))]
+    errors: Annotated[list[CompileError], Field(description=(
+        'The compile error, if any: the compilers stop at the first one.'))]
+    warnings: Annotated[list[str], Field(description="The compiler's warnings.")]
+    counts: Annotated[dict[str, int], Field(description='Number of findings by severity.')]
+    findings: Annotated[list[Finding], Field(description=(
+        'Findings of the JASS checker on the compiled JASS, leaks included as warnings; '
+        'their lines are lines of the compiled JASS.'))]
+    jass: Annotated[str, Field(description='The compiled JASS; empty with include_jass false.')]
+    lines: Annotated[int, Field(description='Lines of compiled JASS.')]
 
 
 class ModelSequence(TypedDict):

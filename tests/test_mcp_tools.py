@@ -228,3 +228,70 @@ class TestTools(ToolTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestCompileScript(ToolTestCase):
+    """compile_script (#334)."""
+
+    def test_vjass_code(self):
+        code = ('library Hello initializer Init\n'
+                '    private function Init takes nothing returns nothing\n'
+                '        call BJDebugMsg("hello")\n'
+                '    endfunction\n'
+                'endlibrary\n')
+        result = T.compile_script(self.roots, code=code)
+        self.assertTrue(result['ok'], result)
+        self.assertEqual((result['language'], result['errors']), ('vjass', []))
+        self.assertIn('function Hello__Init takes nothing returns nothing', result['jass'])
+        self.assertEqual(T.compile_script(self.roots, code=code, include_jass=False)['jass'], '')
+
+    def test_compile_error_is_data(self):
+        result = T.compile_script(self.roots, code='function F takes nothing returns nothing\n'
+                                                   '    call\nendfunction\n')
+        self.assertFalse(result['ok'])
+        self.assertEqual(len(result['errors']), 1)
+        self.assertEqual(result['errors'][0]['line'], 2)
+        self.assertEqual(result['jass'], '')
+
+    def test_check_findings_and_leaks(self):
+        result = T.compile_script(self.roots, code=(
+            'function F takes nothing returns nothing\n'
+            '    call KillUnit(1, 2)\n'
+            '    call AddSpecialEffect("a.mdl", 0, 0)\n'
+            'endfunction\n'), language='jass')
+        self.assertFalse(result['ok'])
+        self.assertEqual(result['counts'], {'issue': 1, 'warning': 1})
+        self.assertEqual(set(result['findings'][0]), {'severity', 'message', 'line'})
+
+    def test_other_languages_and_paths(self):
+        cjass = T.compile_script(self.roots, code='void Hi() { BJDebugMsg("hi") }',
+                                 language='cjass')
+        self.assertTrue(cjass['ok'], cjass)
+        self.assertIn('function Hi takes nothing returns nothing', cjass['jass'])
+        luck = T.compile_script(self.roots, code='nothing Hi():\n    print(1 + 2)\n',
+                                language='luck')
+        self.assertIn('call BJDebugMsg(I2S((1 + 2)))', luck['jass'])
+        zinc = T.compile_script(self.roots, code=(
+            'library Z {\n    public function Hi() { BJDebugMsg("z"); }\n}\n'),
+            language='zinc')
+        self.assertTrue(zinc['ok'], zinc)
+        folder = os.path.join(self.root, 'luck')
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, 'a.luck'), 'w', encoding='utf-8') as handle:
+            handle.write('nothing A():\n    B()\n')
+        with open(os.path.join(folder, 'b.luck'), 'w', encoding='utf-8') as handle:
+            handle.write('nothing B():\n    print("b")\n')
+        project = T.compile_script(self.roots, path='luck')
+        self.assertEqual((project['language'], project['ok']), ('luck', True))
+        # sample.j passes Foo, which takes arguments, as code: JassHelper's
+        # error, with its line; checked as plain JASS it compiles.
+        errors = T.compile_script(self.roots, path='sample.j')['errors']
+        self.assertEqual((len(errors), errors[0]['line']), (1, 23))
+        self.assertIn('cannot be used as code', errors[0]['message'])
+        self.assertTrue(T.compile_script(self.roots, path='sample.j', language='jass')['jass'])
+        self.assertEqual(T.compile_script(self.roots, path='sample.w3x')['errors'], [])
+        for bad in ({}, {'code': 'x', 'path': 'sample.j'}, {'code': 'x', 'language': 'cobol'}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                T.compile_script(self.roots, **bad)
+        with self.assertRaises(PermissionError):
+            T.compile_script(self.roots, path=os.path.dirname(self.root))

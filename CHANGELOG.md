@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Added
+
+- MCP tool `compile_script`: vJass, Zinc, cJass or Luck code, a source file, a folder of Luck sources or a map's `war3map.j` compiled to plain JASS, with the compile error and its line as data, and the JASS checker's findings on the result, leaks included. `language: jass` only checks. `check_script` findings now carry only the keys of their schema, as the structured result already did (#334).
+
 ## [0.10.0] - 2026-11-27
 
 ### Added
