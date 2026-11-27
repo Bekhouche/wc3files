@@ -567,6 +567,21 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         binary = save_mdx(model)
         self.assertEqual(load_mdx(binary)['geosets'][0]['name'], 'Body LOD2')
 
+    def test_texture_animations(self):
+        model = self.model(
+            'TextureAnims 2 {\n'
+            '\tTVertexAnim {\n'
+            '\t\tTranslation 2 {\n\t\t\tLinear,\n\t\t\t0: { 0, 0, 0 },\n\t\t\t1000: { 1, 0, 0 },\n\t\t}\n'
+            '\t}\n'
+            '\tTVertexAnim {\n'
+            '\t\tScaling 1 {\n\t\t\tDontInterp,\n\t\t\t0: { 2, 2, 1 },\n\t\t}\n'
+            '\t\tRotation 1 {\n\t\t\tLinear,\n\t\t\t0: { 0, 0, 0, 1 },\n\t\t}\n'
+            '\t}\n'
+            '}\n')
+        anims = model['textureAnimations']
+        self.assertEqual([list(anim['tracks']) for anim in anims], [['KTAT'], ['KTAS', 'KTAR']])
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):
