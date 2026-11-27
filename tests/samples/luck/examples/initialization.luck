@@ -1,0 +1,12 @@
+# Multiple initialization blocks are supported. Priority init blocks are emitted
+# before ordinary init blocks. onLoad is also recognized by the current compiler.
+
+library InitializationExample:
+    onInit.priority:
+        print("priority init")
+
+    onInit:
+        print("normal init")
+
+    onLoad:
+        print("load block")

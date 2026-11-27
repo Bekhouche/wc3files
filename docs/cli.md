@@ -1165,6 +1165,14 @@ wc3files cjass code.j -o war3map.j --check    # cJass to plain JASS, checked
 wc3files cjass code.j --no-vjass              # stop after cJass
 ```
 
+`luck` compiles Luck, the indentation-based language of LuckyParser, from
+files and folders as one program; see [Luck](vjass.md#luck):
+
+```bash
+wc3files luck src/ -o luck.j --check               # a folder of sources to JASS
+wc3files luck src/ --map MyMap.w3x -o Built.w3x    # into a map; main runs the init blocks
+```
+
 `--externals` decides what happens to the `//! external` calls and external
 blocks of Lua:
 
