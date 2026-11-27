@@ -458,3 +458,28 @@ class TestMdlLights(unittest.TestCase):
         self.assertEqual(save_mdl(again), text)
         binary = save_mdx(again)
         self.assertEqual(save_mdx(load_mdl(save_mdl(load_mdx(binary)))), binary)
+
+
+class TestMdlKeepsMdxData(unittest.TestCase):
+    """Data an MDX model has that MDL text lost on the way through it
+    (#110). Each test adds one object to the sample model and checks that
+    MDX -> MDL -> MDX gives the same bytes."""
+
+    def model(self, text):
+        with open(_helpers.sample_path('sample.mdl'), encoding='utf-8') as handle:
+            return load_mdl(handle.read() + text)
+
+    def assertSurvives(self, model):
+        binary = save_mdx(model)
+        self.assertEqual(save_mdx(load_mdl(save_mdl(load_mdx(binary)))), binary)
+
+    def test_attachment_visibility(self):
+        model = self.model(
+            'Attachment "Origin Ref" {\n'
+            '\tObjectId 5,\n'
+            '\tAttachmentID 0,\n'
+            '\tVisibility 2 {\n\t\tDontInterp,\n\t\t0: 1,\n\t\t500: 0,\n\t}\n'
+            '}\n')
+        keys = model['attachments'][0]['tracks']['KATV']['keys']
+        self.assertEqual([(key['frame'], key['value']) for key in keys], [(0, 1.0), (500, 0.0)])
+        self.assertSurvives(model)
