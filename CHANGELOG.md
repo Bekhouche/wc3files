@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-27
+
 ### Added
 
 - `wc3files terrain-image` and `wc3files.w3e.images`: the ground height, water level and water flag of `war3map.w3e` as grayscale PNG, one pixel per tile corner with north up, and back. Height and water are 16-bit images of the stored values, so export then import gives the same file; `--stretch` spreads them over the gray range to look at, and `--range` maps an image made elsewhere onto chosen values. `read_png_gray` and `write_png_gray` read and write 8 and 16-bit grayscale PNG. On all 342 readable corpus maps, every layer exported and imported, stretched or not, gave back `war3map.w3e` byte for byte (#205).
@@ -280,7 +282,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Bekhouche/wc3files/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Bekhouche/wc3files/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Bekhouche/wc3files/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/Bekhouche/wc3files/compare/v0.6.3...v0.6.4
