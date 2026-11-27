@@ -18,6 +18,7 @@ section to the new version and its date.
 - Geoset animation flags survive MDL: a static colour was written only when bit 1 (DropShadow) was set, though bit 2 is the colour flag, so most models lost their colour, and DropShadow was never written. Bits 8 and 16, set on 1,063 geoset animations of 300 corpus models and with no MDL name, are kept in a `// wc3files: UnnamedFlags` comment that other MDL tools skip and wc3files reads back (#358).
 - A geoset's Unselectable flag is written to MDL (it was read but never written), and the level of detail and name of a version 900 or later geoset are written and read back, as mdx-m3-viewer writes them (#359).
 - Texture animations are written to MDL: the reader knew `TextureAnims`, but the writer never wrote them, so every texture animation was lost and a layer's `TVertexAnimId` pointed at nothing (#360).
+- A camera's tracks are written to MDL and read back: its position and rotation (KCTR, KCRL) and its target's position (KTTR), as mdx-m3-viewer writes them (#361).
 
 ## [0.11.0] - 2026-11-27
 

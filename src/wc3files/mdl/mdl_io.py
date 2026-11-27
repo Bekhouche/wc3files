@@ -1567,6 +1567,12 @@ def _parse_camera(tokens):
         key = tokens.next()
         if key == 'Position':
             camera['position'] = _read_vector(tokens)
+        elif key == 'Translation' and _is_animated_track(tokens):
+            tokens.next()
+            camera['tracks']['KCTR'] = _parse_track_block(tokens, 'f32x3')
+        elif key == 'Rotation' and _is_animated_track(tokens):
+            tokens.next()
+            camera['tracks']['KCRL'] = _parse_track_block(tokens, 'f32')
         elif key == 'FieldOfView':
             camera['fieldOfView'] = float(_parse_number(tokens.next()))
         elif key == 'FarClip':
@@ -1579,6 +1585,9 @@ def _parse_camera(tokens):
                 tkey = tokens.next()
                 if tkey == 'Position':
                     camera['targetPosition'] = _read_vector(tokens)
+                elif tkey == 'Translation' and _is_animated_track(tokens):
+                    tokens.next()
+                    camera['tracks']['KTTR'] = _parse_track_block(tokens, 'f32x3')
                 elif tokens.peek() == '{':
                     _skip_block(tokens)
                 elif tokens.peek() not in (None, '}'):
@@ -2004,12 +2013,21 @@ def _write_event_object_lines(event):
 
 def _write_camera_lines(camera):
     lines = [f'Camera "{_escape(camera.get("name", ""))}" {{']
+    # The tracks are written as mdx-m3-viewer writes them; they used to be
+    # left out (#361).
+    tracks = camera.get('tracks') or {}
     lines.append(f'\tPosition {{ {_fmt_floats(camera.get("position") or [0, 0, 0])} }},')
+    if 'KCTR' in tracks:
+        lines.extend(_write_track_lines('Translation', tracks['KCTR'], 'f32x3'))
+    if 'KCRL' in tracks:
+        lines.extend(_write_track_lines('Rotation', tracks['KCRL'], 'f32'))
     lines.append(f'\tFieldOfView {_fmt_num(camera.get("fieldOfView", 0.0))},')
     lines.append(f'\tFarClip {_fmt_num(camera.get("farClippingPlane", 0.0))},')
     lines.append(f'\tNearClip {_fmt_num(camera.get("nearClippingPlane", 0.0))},')
     lines.append('\tTarget {')
     lines.append(f'\t\tPosition {{ {_fmt_floats(camera.get("targetPosition") or [0, 0, 0])} }},')
+    if 'KTTR' in tracks:
+        lines.extend(_write_track_lines('Translation', tracks['KTTR'], 'f32x3', indent=2))
     lines.append('\t}')
     lines.append('}')
     return lines
