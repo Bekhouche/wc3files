@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-27
+
 ### Added
 
 - `wc3files model-extents` and `wc3files.mdl.extents.compute_extents`: the extents of each geoset, sequence and model recomputed from the vertices, posed by the bones at frames spread over each sequence, with a geoset counted only while its geoset animation shows it. A geoset never seen in a sequence gets the game's empty box, and a model with no vertex keeps its extents. The radius is the farthest vertex from the box's center, or half the diagonal with `--radius diagonal`. `wc3files.mdl.animation` samples tracks and poses vertices, and `wc3files.mdl.batch` runs an edit over models and folders, to `-o` or `--in-place`, for every model command. Over 49 of the game's SD models, a geoset's box in a sequence is within 2% of the stored one in 72% of cases and within 10% in 87%; over 23 HD models, a sequence's box is within 2% in 83% and within 10% in 98%. Where they differ, the box made here is mostly the larger one (#236).
@@ -266,7 +268,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Bekhouche/wc3files/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Bekhouche/wc3files/compare/v0.6.4...v0.7.0
 [0.6.4]: https://github.com/Bekhouche/wc3files/compare/v0.6.3...v0.6.4
 [0.6.3]: https://github.com/Bekhouche/wc3files/compare/v0.6.2...v0.6.3
