@@ -774,6 +774,23 @@ def missing_files(roots, path, game=None, max_chars=DEFAULT_MAX_CHARS):
         'unreadable': [{'name': n, 'error': e} for n, e in report['unreadable']]}, max_chars)
 
 
+def map_translation(roots, path, keys=None, max_chars=DEFAULT_MAX_CHARS):
+    """The strings of a map under stable keys, as `wc3files map-translate
+    keys` gives them: {key: text}, for an assistant to translate and give
+    back to apply_translation. `keys` keeps those whose key starts with
+    one of the prefixes given, such as w3u/ or script/."""
+    from wc3files.w3x.translation import string_keys
+    path = roots.resolve(path)
+    if not _is_map(path):
+        raise ValueError(f'{path} is not a .w3x or .w3m map')
+    files = {name: bytes(data) for name, data in read_map(path).files.items()
+             if data is not None}
+    found = string_keys(files)
+    strings = {key: entry['text'] for key, entry in found.items()
+               if not keys or any(key.startswith(prefix) for prefix in keys)}
+    return limited({'path': path, 'total': len(found), 'strings': strings}, max_chars)
+
+
 ACTIONS_LIMIT = 200
 
 

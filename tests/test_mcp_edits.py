@@ -464,3 +464,39 @@ class TestImportFile(EditTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestApplyTranslation(EditTestCase):
+    """map_translation and apply_translation (#341), on the map versions of
+    test_translation.py."""
+
+    def setUp(self):
+        super().setUp()
+        from test_translation import NEW
+        from wc3files.w3x.modes import _write_map
+        _write_map(NEW, os.path.join(self.root, 'strings.w3x'))
+
+    def test_round_trip(self):
+        listed = T.map_translation(self.roots, 'strings.w3x')
+        self.assertEqual(listed['strings']['w3u/h001/Name'], 'Knight')
+        self.assertEqual(set(T.map_translation(self.roots, 'strings.w3x',
+                                               keys=['script/'])['strings']),
+                         {'script/Trig_Intro_Actions/1', 'script/Trig_Intro_Actions/2',
+                          'script/Trig_Intro_Actions/3'})
+        result = E.apply_translation(self.roots, 'strings.w3x', {
+            'w3u/h001/Name': 'Chevalier', 'w3i/map_name': 'Carte',
+            'script/Trig_Intro_Actions/3': 'Bonne chance.'}, out='fr.w3x')
+        self.assertEqual((result['applied'], result['empty']), (3, 0))
+        self.assertEqual(result['changed_members'], ['war3map.w3i', 'war3map.wts'])
+        after = T.map_translation(self.roots, 'fr.w3x')['strings']
+        self.assertEqual((after['w3u/h001/Name'], after['w3i/map_name'],
+                          after['script/Trig_Intro_Actions/3'], after['w3u/h000/Name']),
+                         ('Chevalier', 'Carte', 'Bonne chance.', 'Footman'))
+
+    def test_refusals(self):
+        with self.assertRaises(ValueError) as caught:
+            E.apply_translation(self.roots, 'strings.w3x', {'w3u/hxxx/Name': 'x'})
+        self.assertIn('not in the map', str(caught.exception))
+        with self.assertRaises(ValueError):
+            E.apply_translation(self.roots, 'strings.w3x', {})
+        self.assertFalse(os.path.exists(os.path.join(self.root, 'strings.edited.w3x')))

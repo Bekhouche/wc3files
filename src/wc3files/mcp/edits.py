@@ -848,3 +848,28 @@ def import_file(roots, path, member, source, out=''):
     result.update({'member': key, 'size': len(data), 'replaced': existing is not None,
                    'listed': imp_key in changed})
     return plain(result)
+
+
+# ---- apply_translation ----------------------------------------------------
+
+def apply_translation(roots, path, translations, out=''):
+    """Write translated strings into a map, by the stable keys of
+    map_translation (#224): {key: text}."""
+    from wc3files.w3x.translation import apply_translation as apply, string_keys
+    if not translations:
+        raise ValueError('translations is empty')
+    source, out = target_path(roots, path, out)
+    files = _read_files(source)
+    keys = string_keys(files)
+    unknown = sorted(key for key in translations if key not in keys)
+    if unknown:
+        raise ValueError(f'{len(unknown)} key(s) are not in the map, such as '
+                         + ', '.join(unknown[:5]) + '; map_translation lists its keys')
+    table = {'strings': {key: {'source': keys[key]['text'], 'translation': text}
+                         for key, text in translations.items()}}
+    written, report = apply(files, table)
+    changed = {name: data for name, data in written.items()
+               if files.get(name) != data}
+    result = commit(source, written, changed, out)
+    result.update({'applied': report['applied'], 'empty': report['untranslated']})
+    return plain(result)
