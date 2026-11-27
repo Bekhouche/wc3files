@@ -955,6 +955,35 @@ These icons are placed in minimap pixels, the same layout as the minimap. With
 `--image`, any picture is fitted into the square on black instead. The icon
 sizes are chosen here, not measured from the game.
 
+### Loading screens
+
+```bash
+wc3files loading-screen MyMap.w3x art.png WithLoadingScreen.w3x
+wc3files loading-screen MyMap.w3x art.png WithLoadingScreen.w3x --layout reforged
+```
+
+`loading-screen` gives a map a custom loading screen made from one picture: it
+cuts the textures (JPEG BLP, `--quality`, 85 by default), writes the model that
+shows them, imports both under `war3mapImported\LoadingScreen` (`--prefix`),
+lists them in `war3map.imp`, and sets the map info's loading screen to the
+model (number -1 and its path, as all 79 corpus maps with their own model do).
+The picture is scaled to cover the screen with its shape kept, the overflow cut
+evenly from both sides.
+
+- `classic` (the default) is the game's own layout: its campaign loading
+  screens are four quads in a 0.8 by 0.6 area, the top two 0.4 by 0.4 with
+  512 by 512 textures and the bottom two 0.4 by 0.2 with 512 by 256 ones. The
+  picture becomes 1024 by 768 and is cut in four. Three corpus maps' loading
+  screens are the same four quads.
+- `reforged` is one quad with the whole picture in a 2048 by 1024 texture, as
+  72 of the 79 corpus maps with a custom loading screen use. Built here, its
+  model is the same as theirs, apart from the texture's name.
+
+The model is version 800, with a `Birth` sequence from 1000 to 2000 that does
+not loop and an unshaded, two-sided, unfogged layer per quad, as the corpus
+models have. Neither layout has been checked in the game from this tool; both
+are copied from models that ship in maps and in the game.
+
 ## Scripts and triggers
 
 ```bash
