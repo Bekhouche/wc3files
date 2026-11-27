@@ -512,6 +512,32 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertEqual(load_mdl(save_mdl(model))['particleEmitters'][0]['node']['flags'],
                          0x1000 | 0x10000)
 
+    def test_geoset_animation_flags_and_colour(self):
+        model = self.model(
+            'GeosetAnim {\n'
+            '\tDropShadow,\n'
+            '\tstatic Alpha 0.5,\n'
+            '\tstatic Color { 1, 0.5, 0 },\n'
+            '\tGeosetId 0,\n'
+            '}\n')
+        anim = model['geosetAnimations'][-1]
+        self.assertEqual((anim['flags'], anim['color']), (3, [1.0, 0.5, 0.0]))
+        self.assertSurvives(model)
+        # The colour flag alone, as on most real models: the colour was
+        # written only when bit 1 (DropShadow) was set.
+        anim['flags'] = 2
+        again = load_mdl(save_mdl(model))['geosetAnimations'][-1]
+        self.assertEqual((again['flags'], again['color']), (2, [1.0, 0.5, 0.0]))
+        self.assertSurvives(model)
+
+    def test_geoset_animation_unnamed_flags(self):
+        model = self.model('GeosetAnim {\n\tstatic Color { 1, 1, 0 },\n\tGeosetId 0,\n}\n')
+        model['geosetAnimations'][-1]['flags'] = 26
+        text = save_mdl(model)
+        self.assertIn('\t// wc3files: UnnamedFlags 24,\n', text)
+        self.assertEqual(load_mdl(text)['geosetAnimations'][-1]['flags'], 26)
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):

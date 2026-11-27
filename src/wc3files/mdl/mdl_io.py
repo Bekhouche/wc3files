@@ -24,12 +24,20 @@ _TOKEN = re.compile(
 # A string still matches first, so a // inside one stays part of it.
 
 
+# Data MDL has no syntax for is written in a comment that starts with this,
+# such as `// wc3files: UnnamedFlags 24,`. Other MDL readers skip it as a
+# comment; this one reads what follows as ordinary MDL (#358).
+EXTENSION_COMMENT = '// wc3files: '
+
+
 class MdlTokenizer:
     def __init__(self, text):
         # Comments are matched by the same pattern as strings, so a `//`
         # inside a string stays part of it. They used to be cut from each
         # line before tokenizing: an attachment path holding a URL lost its
         # closing quote, and the parser read on into the next block.
+        if EXTENSION_COMMENT in text:
+            text = text.replace(EXTENSION_COMMENT, '')
         self._tokens = list(filter(None, _TOKEN.findall(text)))
         self._i = 0
 
@@ -931,11 +939,13 @@ def _parse_geoset_anim(tokens):
                 anim['tracks']['KGAC'] = _parse_track_block(tokens, 'f32x3')
             else:
                 anim['color'] = _read_vector(tokens)
-                anim['flags'] |= 1
+            anim['flags'] |= 2
         elif key == 'GeosetId':
             anim['geosetId'] = int(_parse_number(tokens.next()))
         elif key == 'DropShadow':
             anim['flags'] |= 1
+        elif key == 'UnnamedFlags':
+            anim['flags'] |= int(_parse_number(tokens.next()))
         elif tokens.peek() == '{':
             _skip_block(tokens)
         elif tokens.peek() not in (None, '}'):
@@ -1757,14 +1767,24 @@ def _write_geoset_lines(geoset):
 def _write_geoset_anim_lines(anim):
     lines = ['GeosetAnim {']
     tracks = anim.get('tracks') or {}
+    flags = anim.get('flags', 0)
+    # Bit 1 is DropShadow and bit 2 the colour. A static colour used to be
+    # written on bit 1, so it was lost on most models and DropShadow was
+    # never written (#358).
+    if flags & 1:
+        lines.append('\tDropShadow,')
     if 'KGAO' in tracks:
         lines.extend(_write_track_lines('Alpha', tracks['KGAO'], 'f32'))
     else:
         lines.append(f'\tstatic Alpha {_fmt_num(anim.get("alpha", 1.0))},')
     if 'KGAC' in tracks:
         lines.extend(_write_track_lines('Color', tracks['KGAC'], 'f32x3'))
-    elif anim.get('flags', 0) & 1:
+    elif flags & 2:
         lines.append(f'\tstatic Color {{ {_fmt_floats(anim.get("color") or [1, 1, 1])} }},')
+    # Bits 8 and 16 are set on 1,063 geoset animations of 300 corpus models
+    # (always together, 26 = 2 + 8 + 16) and have no MDL name.
+    if flags & ~3:
+        lines.append(f'\t{EXTENSION_COMMENT}UnnamedFlags {flags & ~3},')
     lines.append(f'\tGeosetId {anim.get("geosetId", 0)},')
     lines.append('}')
     return lines
