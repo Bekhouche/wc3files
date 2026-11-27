@@ -239,6 +239,34 @@ def _cmd_model_extents(args):
         describe)
 
 
+def _cmd_model_transform(args):
+    """Scale and move whole models (#235)."""
+    from wc3files.mdl.transform import scale_model, translate_model
+    if args.scale is None and args.translate is None:
+        raise ValueError('model-transform: give --scale, --translate or both')
+    offset = None
+    if args.translate is not None:
+        try:
+            offset = [float(v) for v in args.translate.split(',')]
+        except ValueError:
+            offset = []
+        if len(offset) != 3:
+            raise ValueError('model-transform: --translate takes X,Y,Z, as 0,0,10')
+
+    def edit(data):
+        done = []
+        if args.scale is not None:
+            report = scale_model(data, args.scale)
+            done.append(f'scaled by {args.scale:g}')
+            if report['popcorn']:
+                done.append(f"{report['popcorn']} popcorn emitter(s) left as they were")
+        if offset is not None:
+            translate_model(data, offset)
+            done.append('moved by ' + ','.join(f'{v:g}' for v in offset))
+        return ', '.join(done)
+    return _run_model_batch(args, edit, str)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2375,6 +2403,17 @@ def build_parser():
                                  'center (default, as SD models), or half the diagonal '
                                  '(as HD models).'))
     p_extents.set_defaults(func=_cmd_model_extents)
+
+    p_transform = subparsers.add_parser(
+        'model-transform', help='Scale and move whole models.',
+        description=('Scale a model about its origin, then move it, in one step: vertices, '
+                     'pivots, translation keys, extents, cameras, collision shapes, '
+                     'particle and ribbon sizes, lights and move speeds. See '
+                     + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_transform)
+    p_transform.add_argument('--scale', type=float, help='The factor, as 1.5.')
+    p_transform.add_argument('--translate', metavar='X,Y,Z', help='The offset, as 0,0,10.')
+    p_transform.set_defaults(func=_cmd_model_transform)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
