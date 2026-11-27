@@ -1008,12 +1008,14 @@ def _write_member(files, key, data, output):
 def _cmd_terrain_image(args):
     """Terrain layers of war3map.w3e as grayscale PNG, and back (#205)."""
     from wc3files.w3e import TerrainFile
-    from wc3files.w3e.images import export_layer, import_layer
+    from wc3files.w3e.images import TILE_LAYERS, export_layer, import_layer
     files, key, data = _read_member(args.input, 'war3map.w3e', args.deep)
     terrain = TerrainFile()
     terrain.read(data)
     d = terrain.get_data()
     size = f"{d['width']}x{d['height']}"
+    if args.layer in TILE_LAYERS:
+        return _terrain_tiles(args, files, key, terrain, size)
     if args.action == 'export':
         png, value_range = export_layer(d, args.layer, stretch=args.stretch)
         with open(args.image, 'wb') as handle:
@@ -1028,6 +1030,38 @@ def _cmd_terrain_image(args):
                            tuple(args.range) if args.range else None)
     _write_member(files, key, terrain.to_bytes(), args.output)
     print(f'{changed} of {len(d["tiles"])} tile corners changed; wrote {args.output}')
+    return 0
+
+
+def _terrain_tiles(args, files, key, terrain, size):
+    """terrain-image for the ground and cliff-type layers, with a legend (#206)."""
+    from wc3files.w3e.images import export_tiles, import_tiles
+    d = terrain.get_data()
+    legend_path = args.legend or os.path.splitext(args.image)[0] + '.json'
+    if args.action == 'export':
+        png, legend = export_tiles(d, args.layer)
+        with open(args.image, 'wb') as handle:
+            handle.write(png)
+        with open(legend_path, 'w', encoding='utf-8') as handle:
+            json.dump(legend, handle, indent=1)
+            handle.write('\n')
+        for colour, code in legend.items():
+            print(f'{colour} {code}')
+        print(f'Wrote {args.image} ({size}, {args.layer}) and its legend {legend_path}')
+        return 0
+    if not args.output:
+        raise ValueError('terrain-image import: give the map or war3map.w3e to write')
+    legend = None
+    if args.legend or os.path.exists(legend_path):
+        with open(legend_path, encoding='utf-8') as handle:
+            legend = json.load(handle)
+    report = import_tiles(d, args.layer, args.image, legend, nearest=args.nearest,
+                          variation=args.variation, seed=args.seed)
+    for code in report['added']:
+        print(f'added to the {args.layer} list: {code}')
+    _write_member(files, key, terrain.to_bytes(), args.output)
+    print(f"{report['changed']} of {len(d['tiles'])} tile corners changed; "
+          f"wrote {args.output}")
     return 0
 
 
@@ -3231,16 +3265,20 @@ def build_parser():
     p_pathing.set_defaults(func=_cmd_pathing_texture)
 
     p_terrain_image = subparsers.add_parser(
-        'terrain-image', help='Export or import terrain heights and water as grayscale PNG.',
+        'terrain-image', help='Export or import terrain heights, water, cliffs and ground '
+                              'textures as PNG.',
         description=('One pixel per tile corner, north up. height and water are 16-bit '
                      'PNGs of the values as stored, so export then import leaves '
-                     'war3map.w3e as it was; water-flag is black or white. An image of '
-                     'other values (8-bit, or with --range) is mapped from black to '
-                     "white onto a range of values, by default the layer's lowest to "
-                     'highest in the terrain. See ' + _DOCS + '#terrain-images.'))
+                     'war3map.w3e as it was; water-flag is black or white, cliff-level '
+                     'gray steps. An image of other values (8-bit, or with --range) is '
+                     'mapped from black to white onto a range of values, by default the '
+                     "layer's lowest to highest in the terrain. ground and cliff-type "
+                     'are colours, one per entry of the tileset list, with a JSON legend '
+                     'of colour to tileset code. See ' + _DOCS + '#terrain-images.'))
     p_terrain_image.add_argument('action', choices=('export', 'import'))
     p_terrain_image.add_argument('input', help='The .w3x/.w3m map, or a war3map.w3e.')
-    p_terrain_image.add_argument('layer', choices=('height', 'water', 'water-flag'))
+    p_terrain_image.add_argument('layer', choices=('height', 'water', 'water-flag',
+                                                   'cliff-level', 'ground', 'cliff-type'))
     p_terrain_image.add_argument('image', help='The PNG to write (export) or read (import).')
     p_terrain_image.add_argument('output', nargs='?',
                                  help='import: the map or war3map.w3e to write.')
@@ -3249,6 +3287,19 @@ def build_parser():
         'printed for --range.'))
     p_terrain_image.add_argument('--range', nargs=2, type=int, metavar=('LOW', 'HIGH'),
                                  help='import: the values black and white stand for.')
+    p_terrain_image.add_argument('--legend', help=(
+        'ground and cliff-type: the JSON of colour to tileset code, written on export and '
+        "read on import (default: the image's name with .json; without one, the colours "
+        "export gives the map's own list)."))
+    p_terrain_image.add_argument('--nearest', action='store_true', help=(
+        'ground and cliff-type import: take the closest legend colour for any other '
+        'colour, such as the smoothed edges of a painted image.'))
+    p_terrain_image.add_argument('--variation', choices=('keep', 'random', 'zero'),
+                                 default='keep', help=(
+        'ground import: the variation of a corner whose texture changed: kept (default), '
+        'drawn as often as each one is in the corpus, or 0.'))
+    p_terrain_image.add_argument('--seed', type=int, default=0,
+                                 help='ground import: the seed for --variation random.')
     p_terrain_image.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_terrain_image.set_defaults(func=_cmd_terrain_image)
 
