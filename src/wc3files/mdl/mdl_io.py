@@ -15,7 +15,11 @@ _SPECIAL_FLOATS = ('nan', 'inf', 'infinity')
 
 
 _TOKEN = re.compile(
-    r'("[^"]*"'                 # a string, which may itself contain //
+    # A string, which may itself contain // and, escaped, a quote: save_mdl
+    # writes " as \" and \ as \\, and a string used to end at the escaped
+    # quote (#380). A lone backslash, as paths in real MDL files have it,
+    # stays part of the string.
+    r'("(?:[^"\\]|\\.)*"'
     r'|[{},]'
     r'|(?:(?!//)[^\s{},"])+)'   # anything else, up to a comment
     r'|//[^\n]*')               # a comment, to the end of the line
@@ -321,8 +325,12 @@ def _parse_number(token):
 
 def _parse_string(token):
     if token.startswith('"') and token.endswith('"'):
-        return token[1:-1].replace('\\\\', '\\')
+        # \\ and \" back to \ and "; any other backslash is kept
+        return _UNESCAPE.sub(r'\1', token[1:-1])
     return token
+
+
+_UNESCAPE = re.compile(r'\\(["\\])')
 
 
 def _skip_block(tokens):

@@ -734,6 +734,22 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertEqual(len(load_mdx(save_mdx(model))['bindPose']), 2)
         self.assertSurvives(model)
 
+    def test_quotes_in_strings(self):
+        # As in a corpus model named `Edit From "...", Edit by Deckai`.
+        model = self.model(
+            'Textures 1 {\n\tBitmap {\n\t\tImage "Textures\\\\Sign.blp",\n\t}\n}\n')
+        model['name'] = 'Edit From "Sign", Edit by Deckai'
+        model['textures'][0]['path'] = 'Textures\\"Sign".blp'
+        again = load_mdl(save_mdl(model))
+        self.assertEqual((again['name'], again['textures'][0]['path']),
+                         ('Edit From "Sign", Edit by Deckai', 'Textures\\"Sign".blp'))
+        self.assertSurvives(model)
+
+    def test_a_lone_backslash_in_a_path(self):
+        # Real MDL files write paths with one backslash.
+        model = self.model('Textures 1 {\n\tBitmap {\n\t\tImage "Textures\\Sign.blp",\n\t}\n}\n')
+        self.assertEqual(model['textures'][0]['path'], 'Textures\\Sign.blp')
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):
