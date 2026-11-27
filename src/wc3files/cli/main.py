@@ -1255,6 +1255,75 @@ def _cmd_minimap(args):
     return 0
 
 
+def _cmd_map_preview(args):
+    """war3mapPreview.tga from the minimap and its icons, or a picture (#210)."""
+    from wc3files.w3x.modes import archive_files, _find, _write_map
+    from wc3files.w3x.preview import SIZE, draw_icons, fit, game_icons, preview_tga
+    files = archive_files(_open_map(args.input, args.deep))
+    storage = None
+    if args.game:
+        from wc3files.casc import CascStorage
+        if not os.path.isdir(os.path.join(args.game, 'Data')):
+            raise ValueError(f'{args.game} is not a CASC install (Warcraft III 1.32 or later)')
+        storage = CascStorage().open(args.game)
+    if args.image:
+        width, height, rgba = _read_any_image(args.image)
+        rgba = fit(rgba, width, height)
+        source = args.image
+    else:
+        key = _find(files, 'war3mapMap.blp')
+        if key is not None:
+            minimap = BlpFile()
+            minimap.read(files[key])
+            rgba = fit(minimap.get_rgba(0), minimap.width, minimap.height)
+            source = f'{args.input}:{key}'
+        elif storage is not None:
+            from wc3files.doo import MapDoodadsFile
+            from wc3files.w3e import TerrainFile
+            from wc3files.w3e.minimap import (GameMinimapColours, object_colours,
+                                              render_minimap)
+            from wc3files.w3i import W3iFile
+            terrain, info = TerrainFile(), W3iFile()
+            terrain.read(files[_find(files, 'war3map.w3e')])
+            info.read(files[_find(files, 'war3map.w3i')])
+            doodads = []
+            if _find(files, 'war3map.doo'):
+                doo = MapDoodadsFile()
+                doo.read(files[_find(files, 'war3map.doo')])
+                doodads = doo.get_data()['doodads']
+            d = terrain.get_data()
+            colours = GameMinimapColours(storage)
+            rgba = render_minimap(d, info.get_data(), doodads,
+                                  colours.tile_colours(d['ground_tilesets']),
+                                  colours.water_tint(d['main_tileset']), object_colours())
+            source = 'a minimap rendered from the terrain'
+        else:
+            raise ValueError(f'{args.input} has no war3mapMap.blp: give --game to render one, '
+                             f'or --image')
+        mmp_key = _find(files, 'war3map.mmp')
+        if mmp_key is not None and not args.no_icons:
+            from wc3files.mmp import PreviewIconsFile
+            icons_file = PreviewIconsFile()
+            icons_file.read(files[mmp_key])
+            icons = list(icons_file.get_data().values())
+            gold, neutral = game_icons(storage) if storage is not None else (None, None)
+            rgba = draw_icons(rgba, icons, gold, neutral)
+            source += f' with {len(icons)} icons'
+    lower = args.output.lower()
+    if lower.endswith('.png'):
+        data = write_png(SIZE, SIZE, rgba)
+    else:
+        data = preview_tga(rgba)
+    if lower.endswith(_MAP_EXTENSIONS):
+        files[_find(files, 'war3mapPreview.tga') or 'war3mapPreview.tga'] = data
+        _write_map(files, args.output)
+    else:
+        with open(args.output, 'wb') as handle:
+            handle.write(data)
+    print(f'Wrote {args.output} from {source}')
+    return 0
+
+
 def _cmd_map_description(args):
     """A Hive Workshop or GitHub description of a map (#253)."""
     from wc3files.w3x.description import TEMPLATES, map_summary, render
@@ -3512,6 +3581,24 @@ def build_parser():
         'The JPEG quality of the .blp (default 40, as the World Editor writes it).'))
     p_minimap.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_minimap.set_defaults(func=_cmd_minimap)
+
+    p_preview = subparsers.add_parser(
+        'map-preview', help='Make the lobby preview (war3mapPreview.tga) of a map.',
+        description=("From the map's minimap and the icons of war3map.mmp (gold mines, "
+                     'neutral buildings, start locations), or from any picture, 256 by '
+                     '256. The game shows the preview whenever the map has one. See '
+                     + _DOCS + '#minimaps.'))
+    p_preview.add_argument('input', help='The .w3x/.w3m map.')
+    p_preview.add_argument('output', help=(
+        'A map to write with the preview, or a .tga or .png to write it to.'))
+    p_preview.add_argument('--image', help='A picture to use instead of the minimap.')
+    p_preview.add_argument('--game', help=(
+        "The Warcraft III install (1.32 or later): the game's minimap icons, and the "
+        'minimap rendered from the terrain when the map has none.'))
+    p_preview.add_argument('--no-icons', action='store_true',
+                           help='Leave the icons of war3map.mmp off the minimap.')
+    p_preview.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_preview.set_defaults(func=_cmd_map_preview)
 
     p_description = subparsers.add_parser(
         'map-description', help='Write a Hive Workshop (BBCode) or Markdown map description.',

@@ -938,6 +938,23 @@ For scale, a flat image of each editor minimap's own mean colour gives 24.6,
 and the rendering does better than that on 176 of the 266 maps. It is a fair
 likeness rather than the editor's picture; a map takes about a second.
 
+```bash
+wc3files map-preview MyMap.w3x WithPreview.w3x --game "C:/Program Files/Warcraft III"
+wc3files map-preview MyMap.w3x WithPreview.w3x --image cover.png
+```
+
+`map-preview` makes `war3mapPreview.tga`, the picture of the map in the game
+lobby. The game shows it whenever the map has one: over 342 corpus maps, the 50
+with a preview set no map info flag the others do not, so none is set. It is
+256 by 256, the size of 36 of those 50. The picture is the map's minimap
+(`war3mapMap.blp`, or one rendered as `minimap` does when the map has none and
+`--game` is given) with the icons of `war3map.mmp` on it: gold mines and
+neutral buildings in the game's own minimap icons (with `--game`; a plain
+square without), and each start location as a dot in its player's colour.
+These icons are placed in minimap pixels, the same layout as the minimap. With
+`--image`, any picture is fitted into the square on black instead. The icon
+sizes are chosen here, not measured from the game.
+
 ## Scripts and triggers
 
 ```bash
