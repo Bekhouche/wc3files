@@ -910,6 +910,34 @@ make it worse than the terrain alone. A map's shadow map is only as fresh as
 the last time its author ran Calculate Shadows, so some of the difference may
 be the maps, not the model. A map of 256 by 256 tiles takes a few seconds.
 
+### Minimaps
+
+```bash
+wc3files minimap MyMap.w3x WithMinimap.w3x --game "C:/Program Files/Warcraft III"
+wc3files minimap MyMap.w3x minimap.png --game "C:/Program Files/Warcraft III"
+```
+
+`minimap` renders `war3mapMap.blp`, the minimap the game shows, which only the
+World Editor makes otherwise, and writes it into a map, or to a `.blp` or a
+`.png`. As the editor's on all 342 readable corpus maps, it is 256 by 256 and
+shows the playable area (the map less its camera bounds complements), scaled to
+fill the square with its shape kept, on black; the `.blp` is JPEG of one mip
+at quality 40.
+
+The ground at each pixel blends the corners of its tile, each the mean colour
+of its tileset's texture, read from the installed game (`--game`, 1.32 or
+later). Water is tinted with the tileset's minimap water colour, and trees and
+the other destructables and doodads that show on the minimap in a colour of
+their own are a dot of it; a custom object takes its base object's colour.
+Cliffs, terrain lighting and models are not drawn.
+
+Against the editor's minimaps of 266 corpus maps (one copy of each), the mean
+absolute difference per colour channel inside the playable area has a median
+of 19.8 out of 255 (a quarter of the maps below 14.6, a quarter above 27.0).
+For scale, a flat image of each editor minimap's own mean colour gives 24.6,
+and the rendering does better than that on 176 of the 266 maps. It is a fair
+likeness rather than the editor's picture; a map takes about a second.
+
 ## Scripts and triggers
 
 ```bash
