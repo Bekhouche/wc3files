@@ -16,6 +16,10 @@ section to the new version and its date.
 - `wc3files model-transform` and `wc3files.mdl.transform`: `scale_model` and `translate_model` scale a whole model about its origin or move it: vertices, pivots, translation keys, extents, cameras, collision shapes, particle and ribbon sizes, light attenuation and move speeds. PopcornFX emitters are left as they are and counted. On 163 real models (49 SD and 17 HD game models, 97 imported into corpus maps), the vertices posed at the start, middle and end of each sequence came out as the original ones times 2.5, or plus the offset, to within 1e-13, and every result wrote and read back (#235).
 - `wc3files model-normals` and `wc3files.mdl.normals.recompute_normals`: vertex normals from the faces, each triangle weighted by its area. `--weld` joins the vertices at one position whose normals are within `--angle` degrees, so a UV seam is smooth and a sharper edge stays hard. Without it, the normals are a median of 1.0 degrees from the stored ones of 49 SD game models and 1.6 degrees from those of 22 HD models, 87% and 89% of them within 15 degrees; welding at 60 degrees gives 2.7 and 2.6 degrees (#237).
 
+### Fixed
+
+- MDX layers of version 1100 and later read their texture list: `layer['textures']` holds each texture's id, slot and optional `KMTF` track, and `layer['hd']` the flag before it. The reader kept these bytes raw, so the five other textures of an HD layer, and the layer's own tracks after them, were out of reach: layer tracks are now read on 524 of 1,161 such layers, against 117 before. All 718 models sampled (game SD and HD models, corpus imports, versions 800 to 1800) still write back byte for byte. Data read before keeps its `unknown_v1100` bytes and still writes. MDL does not write the list yet (#302) (#301).
+
 ## [0.7.0] - 2026-11-26
 
 ### Added
