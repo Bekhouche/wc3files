@@ -110,6 +110,8 @@ def load_mdl(text):
             model['cameras'].append(_parse_camera(tokens))
         elif token == 'CollisionShape':
             model['collisionShapes'].append(_parse_collision_shape(tokens))
+        elif token == 'BindPose':
+            model['bindPose'] = _parse_bind_pose(tokens)
         else:
             # Skip unknown top-level blocks conservatively.
             tokens.next()
@@ -250,6 +252,17 @@ def save_mdl(model):
         out.extend(_write_camera_lines(camera))
     for shape in model.get('collisionShapes') or []:
         out.extend(_write_collision_shape_lines(shape))
+
+    # The bind pose of a version 900 and later model, one 4x3 matrix per
+    # node, as mdx-m3-viewer writes it; it was left out (#374).
+    bind_pose = model.get('bindPose') or []
+    if bind_pose:
+        out.append('BindPose {')
+        out.append(f'\tMatrices {len(bind_pose)} {{')
+        for matrix in bind_pose:
+            out.append(f'\t\t{{ {_fmt_floats(matrix)} }},')
+        out.append('\t}')
+        out.append('}')
 
     return '\n'.join(out) + '\n'
 
@@ -1309,6 +1322,28 @@ def _parse_attachment(tokens):
             tokens.next()
     tokens.expect('}')
     return attachment
+
+
+def _parse_bind_pose(tokens):
+    """`BindPose { Matrices N { { 12 floats }, ... } }`, as save_mdl writes
+    it: a list of 12-float matrices."""
+    tokens.expect('BindPose')
+    tokens.expect('{')
+    matrices = []
+    while tokens.peek() != '}':
+        key = tokens.next()
+        if key == 'Matrices':
+            tokens.next()  # count
+            values = _parse_vector_list_block(tokens, 12)
+            if len(values) % 12:
+                raise ValueError(f'BindPose has {len(values)} values, not 12 per matrix')
+            matrices = [values[i:i + 12] for i in range(0, len(values), 12)]
+        elif tokens.peek() == '{':
+            _skip_block(tokens)
+        if tokens.peek() == ',':
+            tokens.next()
+    tokens.expect('}')
+    return matrices
 
 
 def _parse_pivot_points(tokens):

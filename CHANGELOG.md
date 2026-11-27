@@ -12,6 +12,7 @@ section to the new version and its date.
 
 ### Fixed
 
+- The bind pose of a version 900 and later model is written to MDL and read back, as mdx-m3-viewer writes it (`BindPose { Matrices N { ... } }`); it was left out, so 118 of 150 of the game's own models lost it. With #302 and #373, 75 of those 150 models now come back from MDX through MDL byte for byte, against 21 (#374).
 - The tangents and skin weights of a version 900 and later geoset are written to MDL and read back, as mdx-m3-viewer writes them (`Tangents` and `SkinWeights` blocks); they were left out, so 106 of 150 of the game's own models lost them. What the MDX skin count counts, bytes or pairs of bytes, differs between versions; a count that is not its version's default is kept in a `// wc3files: SkinCountUnit` comment (#373).
 - The texture list of a layer of version 1100 and later is written to MDL and read back, in the syntax of Retera's Model Studio: `ShaderTypeId` for the HD flag, and `static <Type>TextureID` or a `<Type>TextureID` track for each texture, the type being its slot (Diffuse, Normal, ORM, Emissive, TeamColor, Reflections). It was written as the layer's own texture field, which is 0 on the game's HD layers, so an HD model came back with one texture per layer. On 450 of the game's models, no texture list is lost through MDL (#302).
 - An attachment's visibility track written to MDL is read back; it was skipped as a node key, so every attachment lost its visibility through MDL (#355).
