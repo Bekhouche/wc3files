@@ -178,6 +178,12 @@ targets - MPQ is documented well enough to implement natively.
   follow JassHelper's (`s__Struct_member`, ...), so code written against
   JassHelper's output keeps working. `//! external` and `//! externalblock`
   calls are collected for `grimex`. CLI `vjass`.
+- `src/wc3files/cjass/` - a cJass compiler (AdicHelper's C-like dialect,
+  #227): `preprocessor.py` (defines, `#if`, `include`, `enum`) and
+  `syntax.py` (braced blocks, return-type-first functions, locals anywhere,
+  `++`/`--`) give JASS with vJass blocks, which `vjass` then compiles.
+  `lib/` holds `cj_types.j` and `cj_typesEx.j`, written for this package.
+  CLI `cjass`.
 - `src/wc3files/grimex/` - Grim Extension Pack's external tools
   (ObjectMerger, FileImporter, FileExporter, ConstantMerger), run without
   the World Editor on the calls `vjass` collects; their Lua runs on
