@@ -267,6 +267,17 @@ def _cmd_model_transform(args):
     return _run_model_batch(args, edit, str)
 
 
+def _cmd_model_normals(args):
+    """Recompute the vertex normals of models from their faces (#237)."""
+    from wc3files.mdl.normals import recompute_normals
+
+    def describe(report):
+        text = f"{report['vertices']} normal(s) set"
+        return text + (f", {report['kept']} vertex(es) in no face kept" if report['kept'] else '')
+    return _run_model_batch(
+        args, lambda data: recompute_normals(data, args.angle, args.weld), describe)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2414,6 +2425,20 @@ def build_parser():
     p_transform.add_argument('--scale', type=float, help='The factor, as 1.5.')
     p_transform.add_argument('--translate', metavar='X,Y,Z', help='The offset, as 0,0,10.')
     p_transform.set_defaults(func=_cmd_model_transform)
+
+    p_normals = subparsers.add_parser(
+        'model-normals', help='Recompute the vertex normals of models from their faces.',
+        description=("Set each vertex normal to the sum of its triangles' normals, "
+                     'weighted by area. --weld also joins the vertices at one position '
+                     'whose normals are within --angle degrees, as on a UV seam. See '
+                     + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_normals)
+    p_normals.add_argument('--weld', action='store_true',
+                           help='Join vertices at one position, as across a UV seam.')
+    p_normals.add_argument('--angle', type=float, default=60.0,
+                           help='With --weld: the widest angle joined (default 60); '
+                                'a sharper edge stays hard.')
+    p_normals.set_defaults(func=_cmd_model_normals)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '

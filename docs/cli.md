@@ -469,6 +469,7 @@ wc3files model-info Footman.mdx                    # version, sequences, texture
 wc3files model-extents Footman.mdx --in-place      # recompute the bounds
 wc3files model-extents Models/ -o Fixed/           # every model of a folder
 wc3files model-transform Tree.mdx -o Out/ --scale 1.5 --translate 0,0,10
+wc3files model-normals Imported/ -o Fixed/           # normals from the faces
 ```
 
 Each model edit takes models and folders, searched with their subfolders, and
@@ -505,6 +506,15 @@ reported. Moving changes vertices, pivots, extents, cameras and collision
 shapes, since translation keys are offsets from the pivot. On 163 real models,
 the vertices posed at the start, middle and end of each sequence came out as
 the original ones times 2.5, or plus the offset, to within 1e-13.
+
+`model-normals` sets each vertex normal to the sum of the normals of its
+triangles, weighted by their area. With `--weld`, the vertices of a geoset at
+one position are also taken together when their normals are within `--angle`
+degrees (default 60): a UV seam then gets one smooth normal, and a sharper edge
+stays hard. A vertex in no triangle keeps its normal. Without `--weld`, the
+normals come closest to the game's own: a median of 1.0 degrees from those of
+49 SD models and 1.6 degrees from those of 22 HD models, with 87% and 89%
+within 15 degrees. Welding at 60 degrees gives 2.7 and 2.6 degrees.
 
 ## Pathing textures
 
