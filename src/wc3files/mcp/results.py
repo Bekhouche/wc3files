@@ -548,6 +548,33 @@ class ApplyTranslationResult(EditResult):
     empty: Annotated[int, Field(description='Keys given with an empty text, left as they were.')]
 
 
+OptimizePass = Literal['remove_unused_objects', 'computed_text', 'mdx_squeeze', 'remove_we_only']
+
+
+# 'pass' is a Python keyword, so this type is written the functional way.
+PassReport = TypedDict('PassReport', {
+    'pass': Annotated[str, Field(description='The pass run.')],
+    'summary': Annotated[str, Field(description='What it did, in a few words.')],
+    'details': Annotated[dict[str, Any], Field(description=(
+        'removed: the objects (by file type) or files removed; squeezed: the models '
+        'squeezed.'))]})
+
+
+class OptimizeMapResult(TypedDict):
+    path: Annotated[str | None, Field(description='The map written; null for a dry run.')]
+    source: str
+    dry_run: bool
+    passes: list[PassReport]
+    members_before: Annotated[int, Field(description='Bytes of all members, unpacked, before.')]
+    members_after: Annotated[int, Field(description='Bytes of all members, unpacked, after.')]
+    changed: Annotated[list[str], Field(description='Members rewritten.')]
+    removed: Annotated[list[str], Field(description='Members removed.')]
+    overwrote_source: NotRequired[bool]
+    changed_members: NotRequired[list[str]]
+    file_size_before: NotRequired[Annotated[int, Field(description='Size of the map file read.')]]
+    file_size_after: NotRequired[Annotated[int, Field(description='Size of the map file written.')]]
+
+
 class EditObjectsResult(EditResult):
     object_type: str
     created: list[str]

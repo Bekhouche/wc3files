@@ -512,6 +512,25 @@ def build_server(folders, allow_write=False, game=None):
         anything is written."""
         return _edits.apply_translation(roots, path, translations, out)
 
+    @tool('Optimize a map', writes=True)
+    def optimize_map(
+            path: MapPath,
+            passes: Annotated[list[R.OptimizePass], Field(description=(
+                'remove_unused_objects: custom objects nothing refers to; computed_text: '
+                'tooltip references such as <A000,DataA1> written in as numbers; '
+                'mdx_squeeze: smaller float encoding in models; remove_we_only: files only '
+                'the World Editor reads (triggers, regions, sounds list, imports list). '
+                'They run in this order.'), min_length=1)],
+            dry_run: Annotated[bool, Field(description=(
+                'Only report what the passes would change; write nothing.'))] = False,
+            out: Out = '') -> R.OptimizeMapResult:
+        """Shrink a map with the passes of wc3files optimize and report what
+        each removed or changed, with the sizes before and after. The map
+        written no longer opens in the World Editor as it did when
+        remove_we_only ran; keep the source for editing. Use dry_run first
+        to see what would go."""
+        return _edits.optimize_map(roots, path, passes, dry_run, out)
+
     @tool('Edit placed units and doodads', writes=True)
     def edit_placed(
             path: MapPath,
