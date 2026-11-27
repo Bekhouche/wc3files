@@ -1014,6 +1014,41 @@ def _write_member(files, key, data, output):
     _write_map(files, output)
 
 
+def _cmd_lua_bundle(args):
+    """A Lua project bundled into one war3map.lua, alone or in a map (#256)."""
+    from wc3files.scripts.lua_bundle import bundle, insert_bundle
+    from wc3files.scripts.lua_checker import check_chunk
+    from wc3files.scripts.lua_parser import parse
+    root = args.root
+    if root is None:
+        root = (os.path.dirname(os.path.abspath(args.entry))
+                if args.entry.lower().endswith('.lua') else os.getcwd())
+    text, report = bundle(args.entry, root, run=args.map is None)
+    files = key = None
+    if args.map is not None:
+        if args.output in (None, '-'):
+            raise ValueError('--map needs -o, the map or .lua file to write')
+        files, key, data = _read_member(args.map, 'war3map.lua', args.deep)
+        text = insert_bundle(data.decode('utf-8', 'replace'), text, report['entry'], at=args.at)
+    print(f"bundled {len(report['modules'])} module(s) from {os.path.abspath(root)}: "
+          + ', '.join(report['modules']), file=sys.stderr)
+    if report['dynamic requires']:
+        print(f"note: {report['dynamic requires']} require call(s) with a name that is not "
+              'a literal string were not followed', file=sys.stderr)
+    if args.output in (None, '-'):
+        sys.stdout.write(text)
+    else:
+        _write_member(files, key, text.encode('utf-8'), args.output)
+        print(f'Wrote {args.output}', file=sys.stderr)
+    if args.no_check:
+        return 0
+    findings = check_chunk(parse(text))
+    issues = [f for f in findings if f['severity'] == 'issue']
+    for finding in issues:
+        print(f"check: line {finding.get('line')}: {finding['message']}", file=sys.stderr)
+    return 1 if issues else 0
+
+
 def _cmd_terrain_image(args):
     """Terrain layers of war3map.w3e as grayscale PNG, and back (#205)."""
     from wc3files.w3e import TerrainFile
@@ -3557,6 +3592,29 @@ def build_parser():
     p_pathing.add_argument('--max-height', type=float, default=None, help=(
         'from-model: only the triangles that come this close to the ground.'))
     p_pathing.set_defaults(func=_cmd_pathing_texture)
+
+    p_lua_bundle = subparsers.add_parser(
+        'lua-bundle', help=('Bundle a Lua project of modules joined by require into one '
+                            'war3map.lua, alone or into a map.'))
+    p_lua_bundle.add_argument('entry', help=('The entry module: a .lua file, or a module '
+                                             'name under --root.'))
+    p_lua_bundle.add_argument('--root', default=None,
+                              help=('The source folder module names are found in '
+                                    '(a.b is a/b.lua or a/b/init.lua). Default: the '
+                                    "entry file's folder, or the current one."))
+    p_lua_bundle.add_argument('--map', default=None,
+                              help=('A map (or its war3map.lua) to put the bundle into, '
+                                    'in front of the generated code.'))
+    p_lua_bundle.add_argument('-o', '--output', default=None,
+                              help="Where to write it: a .lua file, or a map with --map "
+                                   "(default: stdout without --map).")
+    p_lua_bundle.add_argument('--at', choices=('main', 'load'), default='main',
+                              help=('With --map, start the entry module at the end of '
+                                    'main (default) or when the script loads.'))
+    p_lua_bundle.add_argument('--no-check', action='store_true',
+                              help='Do not run the Lua checker on the result.')
+    p_lua_bundle.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_lua_bundle.set_defaults(func=_cmd_lua_bundle)
 
     p_terrain_image = subparsers.add_parser(
         'terrain-image', help='Export or import terrain heights, water, cliffs and ground '

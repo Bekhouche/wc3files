@@ -1070,6 +1070,37 @@ wc3files trigger-ui ui/ plugin1/ out/                        # ui folders, merge
 `trigger-ui` converts the editor's GUI function definitions to YDWE's `ui`
 folder and back; see [Triggers and scripts](triggers.md).
 
+### Lua projects
+
+```bash
+wc3files lua-bundle src/main.lua -o war3map.lua                 # one file from the modules
+wc3files lua-bundle src/main.lua --map MyMap.w3x -o Built.w3x   # into a map
+```
+
+`lua-bundle` takes the entry module of a Lua project whose files `require`
+each other, as Ceres and similar tools build them, and writes one script:
+each module the entry needs, found by following `require("name")` with a
+literal name to `name.lua` or `name/init.lua` under `--root` (dots are
+folders; the default root is the entry file's folder), as a function in a
+table, with a local `require` that runs a module once and keeps what it
+returns. A `require` whose name is not a literal string is counted and not
+followed; a module not found stops the command.
+
+With `--map`, the bundle goes into the map's `war3map.lua`, in front of the
+code the World Editor generated, which is kept as it is, and the entry
+module starts at the end of `main`, after the units, regions and
+initialization triggers exist (`--at load` starts it when the script
+loads). Running the command again on the result replaces the bundle. The
+result is checked with the Lua checker, and the command exits with status 1
+on an issue (`--no-check` skips it).
+
+Into each of the 22 corpus maps with a `war3map.lua`, a three-module test
+project went in front of the generated code, and the maps were run with
+`run-map`. On the 15 maps whose own script reaches the end of `main`, the
+modules ran once each, in order. Four maps fail in their own code before
+then, with the same error with or without the bundle. Three obfuscated maps
+have no `main`; with `--at load` the modules ran on them too.
+
 ### vJass and Zinc
 
 ```bash
