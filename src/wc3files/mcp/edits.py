@@ -873,3 +873,59 @@ def apply_translation(roots, path, translations, out=''):
     result = commit(source, written, changed, out)
     result.update({'applied': report['applied'], 'empty': report['untranslated']})
     return plain(result)
+
+
+# ---- optimize_map ---------------------------------------------------------
+
+OPTIMIZE_PASSES = ('remove_unused_objects', 'computed_text', 'mdx_squeeze', 'remove_we_only')
+
+
+def optimize_map(roots, path, passes, dry_run=False, out=''):
+    """Run the optimizer passes of `wc3files optimize` on a map, in the
+    order the command runs them, and report what each changed."""
+    from wc3files.w3x.optimize import (computed_text, remove_unused_objects, remove_we_only,
+                                       squeeze_models)
+    if not passes:
+        raise ValueError(f"give at least one pass: {', '.join(OPTIMIZE_PASSES)}")
+    unknown = [p for p in passes if p not in OPTIMIZE_PASSES]
+    if unknown:
+        raise ValueError(f"unknown pass {unknown[0]!r}; the passes are "
+                         + ', '.join(OPTIMIZE_PASSES))
+    source, out = target_path(roots, path, out)
+    original = _read_files(source)
+    files = dict(original)
+    reports = []
+    for name, run in (('remove_unused_objects', remove_unused_objects),
+                      ('computed_text', computed_text), ('mdx_squeeze', squeeze_models),
+                      ('remove_we_only', remove_we_only)):
+        if name not in passes:
+            continue
+        files, report = run(files)
+        if name == 'remove_unused_objects':
+            summary = (f"skipped: {report['skipped']}" if report.get('skipped') else
+                       f"removed {sum(len(v) for v in report['removed'].values())} object(s), "
+                       f"kept {report['kept']}")
+            details = {'removed': report.get('removed') or {}}
+        elif name == 'computed_text':
+            summary = (f"{report['replaced']} reference(s) written in, {report['left']} left "
+                       'as they were')
+            details = {}
+        elif name == 'mdx_squeeze':
+            summary = f"{len(report['squeezed'])} model(s) squeezed"
+            details = {'squeezed': list(report['squeezed'])}
+        else:
+            summary = 'removed ' + (', '.join(report['removed']) or 'nothing')
+            details = {'removed': list(report['removed'])}
+        reports.append({'pass': name, 'summary': summary, 'details': plain(details)})
+    size = lambda table: sum(len(d) for d in table.values() if d is not None)
+    changed = {n: d for n, d in files.items() if d is not None and original.get(n) != d}
+    removed = sorted(n for n in original if n not in files or files[n] is None)
+    result = {'passes': reports, 'members_before': size(original), 'members_after': size(files),
+              'changed': sorted(changed), 'removed': removed, 'dry_run': bool(dry_run)}
+    if dry_run:
+        result.update({'path': None, 'source': source})
+        return plain(result)
+    result.update(commit(source, files, changed, out))
+    result['file_size_before'] = os.path.getsize(source)
+    result['file_size_after'] = os.path.getsize(out)
+    return plain(result)

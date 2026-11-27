@@ -500,3 +500,25 @@ class TestApplyTranslation(EditTestCase):
         with self.assertRaises(ValueError):
             E.apply_translation(self.roots, 'strings.w3x', {})
         self.assertFalse(os.path.exists(os.path.join(self.root, 'strings.edited.w3x')))
+
+
+class TestOptimizeMap(EditTestCase):
+    """optimize_map (#342)."""
+
+    def test_dry_run_and_write(self):
+        dry = E.optimize_map(self.roots, 'sample.w3x', ['remove_we_only'], dry_run=True)
+        self.assertTrue(dry['dry_run'])
+        self.assertIsNone(dry['path'])
+        self.assertIn('war3map.wtg', dry['removed'])
+        self.assertLess(dry['members_after'], dry['members_before'])
+        self.assertFalse(os.path.exists(os.path.join(self.root, 'sample.edited.w3x')))
+        result = E.optimize_map(self.roots, 'sample.w3x', ['remove_we_only'], out='small.w3x')
+        self.assertEqual(result['removed'], dry['removed'])
+        written = _read_files(os.path.join(self.root, 'small.w3x'))
+        self.assertFalse(any(name.lower() == 'war3map.wtg' for name in written))
+        self.assertEqual(_digest(self.map), self.before)          # the source is untouched
+
+    def test_refusals(self):
+        for passes in ([], ['remove_everything']):
+            with self.subTest(passes=passes), self.assertRaises(ValueError):
+                E.optimize_map(self.roots, 'sample.w3x', passes)
