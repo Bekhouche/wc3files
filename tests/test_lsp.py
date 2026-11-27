@@ -279,6 +279,70 @@ class TestDefinition(unittest.TestCase):
         self.assertIsNone(definition(SCRIPT, 3, 0))
 
 
+def complete(text, line, character, uri='file:///map/war3map.j', language='jass'):
+    _, out = exchange(INITIALIZE, open_doc(text, uri=uri, language=language),
+                      {'id': 7, 'method': 'textDocument/completion', 'params': {
+                          'textDocument': {'uri': uri},
+                          'position': {'line': line, 'character': character}}},
+                      SHUTDOWN, EXIT)
+    [reply] = [m for m in out if m.get('id') == 7]
+    return reply['result']
+
+
+class TestCompletion(unittest.TestCase):
+    def labels(self, result):
+        return [item['label'] for item in result['items']]
+
+    def with_line(self, line_text):
+        """SCRIPT with `line_text` added in Heal, and its position."""
+        lines = SCRIPT.splitlines()
+        lines.insert(7, line_text)
+        return '\n'.join(lines) + '\n', 7, len(line_text)
+
+    def test_natives_bj_functions_and_the_files_names(self):
+        text, line, character = self.with_line('    call GetUnitSt')
+        result = complete(text, line, character)
+        labels = self.labels(result)
+        self.assertIn('GetUnitState', labels)
+        item = result['items'][labels.index('GetUnitState')]
+        self.assertEqual(item['kind'], 3)
+        self.assertIn('takes unit whichUnit', item['detail'])
+        text, line, character = self.with_line('    call He')
+        self.assertIn('Heal', self.labels(complete(text, line, character)))
+        text, line, character = self.with_line('    set udg_H')
+        self.assertEqual(self.labels(complete(text, line, character))[0], 'udg_Heroes')
+
+    def test_locals_only_in_their_function(self):
+        text, line, character = self.with_line('    set li')
+        self.assertIn('life', self.labels(complete(text, line, character)))
+        lines = SCRIPT.splitlines()
+        lines.insert(10, '    set li')  # in Init, where life is not declared
+        self.assertNotIn('life', self.labels(complete('\n'.join(lines) + '\n', 10, 10)))
+
+    def test_no_prefix_offers_the_scope_and_keywords(self):
+        text, line, character = self.with_line('    ')
+        result = complete(text, line, character)
+        labels = self.labels(result)
+        self.assertTrue({'target', 'amount', 'life', 'call', 'set'} <= set(labels))
+        self.assertNotIn('GetUnitState', labels)
+        self.assertTrue(result['isIncomplete'])
+
+    def test_a_long_list_is_cut(self):
+        text, line, character = self.with_line('    call S')
+        result = complete(text, line, character)
+        self.assertEqual(len([i for i in result['items'] if i['kind'] != 14]), 300)
+        self.assertTrue(result['isIncomplete'])
+
+    def test_lua(self):
+        text = LUA_SCRIPT + 'Spa'
+        result = complete(text, 6, 3, uri='file:///map/war3map.lua', language='lua')
+        self.assertIn('Spawn', self.labels(result))
+        result = complete(LUA_SCRIPT + 'CreateUn', 6, 8, uri='file:///map/war3map.lua', language='lua')
+        self.assertIn('CreateUnit', self.labels(result))
+        result = complete(LUA_SCRIPT + 'whi', 6, 3, uri='file:///map/war3map.lua', language='lua')
+        self.assertIn('while', self.labels(result))
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')

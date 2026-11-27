@@ -332,6 +332,65 @@ def describe(symbol, language):
     return f'```{code_language}\n{symbol.detail}\n```\n{origin}'
 
 
+# The protocol's CompletionItemKind.
+_ITEM_KIND = {'native': 3, 'function': 3, 'global': 6, 'local': 6, 'param': 6,
+              'constant': 21, 'type': 7}
+KEYWORD_ITEM = 14
+COMPLETION_LIMIT = 300
+
+
+def _visible(symbol, line, language):
+    """Whether `symbol` can be named on 1-based `line`: a parameter or local
+    only in its function (JASS) or below its declaration (Lua)."""
+    if language == 'lua':
+        return symbol.kind not in ('local', 'param') or symbol.line <= line
+    return symbol.scope is None or symbol.scope[0] <= line <= symbol.scope[1]
+
+
+def completions(document_index, language, prefix, line):
+    """(items, complete) for the names that start with `prefix` on 1-based
+    `line`: the file's own first, then the bundled natives, functions,
+    constants and types, then keywords. With no prefix, only the names in
+    scope and the keywords are offered; past COMPLETION_LIMIT the list is cut
+    and `complete` is False, so the editor asks again as more is typed."""
+    from wc3files.scripts.jass_lexer import KEYWORDS
+    from wc3files.scripts.lua_lexer import LUA_KEYWORDS
+    lowered = prefix.lower()
+    sources = [document_index.symbols]
+    if prefix:
+        sources.append(bundled().symbols)
+    items, seen = [], set()
+    complete = True
+    for symbols in sources:
+        for symbol in symbols:
+            if symbol.name in seen or not symbol.name.lower().startswith(lowered):
+                continue
+            if not _visible(symbol, line, language):
+                continue
+            if not prefix and symbol.scope is None and language == 'jass':
+                continue  # with no prefix, only the function's own names
+            if len(items) >= COMPLETION_LIMIT:
+                complete = False
+                break
+            seen.add(symbol.name)
+            items.append({'label': symbol.name, 'kind': _ITEM_KIND.get(symbol.kind, 6),
+                          'detail': symbol.detail})
+    for keyword in sorted(LUA_KEYWORDS if language == 'lua' else KEYWORDS):
+        if keyword.startswith(lowered) and keyword not in seen:
+            items.append({'label': keyword, 'kind': KEYWORD_ITEM})
+    return items, complete
+
+
+def prefix_at(text, line, character):
+    """The identifier characters just before 0-based `line`, `character`."""
+    lines = text.splitlines()
+    if not 0 <= line < len(lines):
+        return ''
+    before = lines[line][:character]
+    match = re.search(r'[A-Za-z_][A-Za-z0-9_]*$', before)
+    return match.group(0) if match else ''
+
+
 def lookup(document_index, name, line):
     """The declaration of `name` on 1-based `line`: in the document, then in
     the bundled files."""
