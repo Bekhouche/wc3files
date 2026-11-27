@@ -10,9 +10,19 @@ exponent and top 7 mantissa bits, so a value moves by at most about 0.8%
 of itself: the file keeps its size, but the long runs of zero bytes
 compress far better inside a map's MPQ.
 
-It is lossy and meant for a released map. Only version 800 models (the
-classic MDX layout) are changed; any other version, or a file whose chunks
-do not add up, is returned as it is, never half-rewritten.
+It is lossy and meant for a released map. A version 800 model (the classic
+MDX layout) is changed in place, chunk by chunk; a file whose chunks do not
+add up is returned as it is, never half-rewritten.
+
+Versions 900 and later (#233) go through the model reader instead: the same
+floats are squeezed in the model's data, plus the tangents (TANG) of
+version 900 and later geosets, and the model is written again. That is done
+only when the model reads and writes back to exactly the bytes it came
+from, so a layout the reader does not know is never rewritten. Left as they
+are, in every version: the geoset's own extent, the skin weights (bytes),
+the bind pose, materials and layers, texture and geoset animations, every
+other node and emitter, cameras, and the model's and sequences' extents.
+On version 800 models, the two ways give the same bytes.
 """
 
 import struct
@@ -120,12 +130,61 @@ class _Walker:
                raise _Abort()
 
 
-def squeeze_mdx(data):
-     """The squeezed model, or `data` itself when it cannot be (not a
-     version 800 MDX, or chunks that do not add up)."""
-     if data[:4] != b'MDLX' or data[4:8] != b'VERS' or \
-               struct.unpack_from('<II', data, 8) != (4, 800):
+_PACK = struct.Struct('<f')
+_UNPACK = struct.Struct('<I')
+
+
+def _squeeze_float(value):
+     bits = _UNPACK.unpack(_PACK.pack(value))[0] & 0xFFFF0000
+     return _PACK.unpack(_UNPACK.pack(bits))[0]
+
+
+def _squeeze_list(values):
+     return [_squeeze_float(v) for v in values]
+
+
+def squeeze_model(model):
+     """Squeeze the floats of a model's data in place (see above)."""
+     for geoset in model.get('geosets') or []:
+          for field in ('vertices', 'normals', 'tangents'):
+               if geoset.get(field):
+                    geoset[field] = _squeeze_list(geoset[field])
+          geoset['uvSets'] = [_squeeze_list(uv) for uv in geoset.get('uvSets') or []]
+          for extent in geoset.get('sequenceExtents') or []:
+               extent['boundsRadius'] = _squeeze_float(extent['boundsRadius'])
+               extent['minimum'] = _squeeze_list(extent['minimum'])
+               extent['maximum'] = _squeeze_list(extent['maximum'])
+     for kind in ('bones', 'helpers'):
+          for entry in model.get(kind) or []:
+               for tag, track in (entry.get('node', {}).get('tracks') or {}).items():
+                    if tag not in ('KGTR', 'KGRT', 'KGSC'):
+                         continue
+                    for key in track.get('keys') or []:
+                         for field in ('value', 'inTan', 'outTan'):
+                              if field in key:
+                                   key[field] = _squeeze_list(key[field])
+     return model
+
+
+def _squeeze_by_reader(data):
+     from .mdx_io import load_mdx, save_mdx
+     try:
+          model = load_mdx(data)
+          if save_mdx(model) != data:
+               return data
+          out = save_mdx(squeeze_model(model))
+     except Exception:  # a model the reader cannot take is left as it is
           return data
+     return data if out == data else out
+
+
+def squeeze_mdx(data):
+     """The squeezed model, or `data` itself when it cannot be (chunks that
+     do not add up, or a newer model that does not read back exactly)."""
+     if data[:4] != b'MDLX' or data[4:8] != b'VERS' or struct.unpack_from('<I', data, 8)[0] != 4:
+          return data
+     if struct.unpack_from('<I', data, 12)[0] != 800:
+          return _squeeze_by_reader(data)
      walker = _Walker(data)
      pos = 16
      try:

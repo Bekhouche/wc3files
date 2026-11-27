@@ -159,12 +159,17 @@ wc3files optimize MyMap.w3x Release.w3x --remove-unused-objects --remove-we-only
   what the game runs), the import list, and the regions, cameras and sounds
   when the script recreates them (it does when the editor wrote it).
   `war3mapUnits.doo` and the minimap icons are kept.
-- `--mdx-squeeze` (w3x2lni's `mdx_squf`) cuts the precision of version 800
+- `--mdx-squeeze` (w3x2lni's `mdx_squf`) cuts the precision of the
   models: the low 16 bits of the vertex, normal, extent, texture-coordinate
   and bone-key floats become zero, so each value moves by at most about 0.8%
   of itself. The files keep their size but compress far better: on 1,752
   corpus models, 34.6% smaller once compressed, and one sample map went from
-  14.2 MB to 10.9 MB. It is lossy; newer model versions are left alone.
+  14.2 MB to 10.9 MB. It is lossy. Models of version 900 and later (#233)
+  also have their geoset tangents squeezed, and are changed only when they
+  read and write back to the bytes they came from: on the 418 game models
+  sampled (version 1800) and 35 newer corpus imports, every model with
+  geometry was squeezed, and the game's HD models were 35% smaller once
+  compressed (169.4 MB to 109.7 MB).
 - `--computed-text` (w3x2lni's `computed_text`) writes the values of
   `<A000,DataA1>` references into the map's text, in its object files, skin
   files and `war3map.wts` (edited in place): the referenced field, the map's

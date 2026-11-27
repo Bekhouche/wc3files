@@ -73,12 +73,39 @@ class TestSqueeze(unittest.TestCase):
           self.assertEqual(out[data.index(b'PVTX'):data.index(b'GNDX')],
                            data[data.index(b'PVTX'):data.index(b'GNDX')])
 
-     def test_other_versions_and_broken_files_are_left_alone(self):
+     def test_files_that_do_not_read_back_are_left_alone(self):
           data = _model()
+          # A version 800 body labelled 1000 does not read back exactly.
           newer = data.replace(struct.pack('<I', 800), struct.pack('<I', 1000), 1)
           self.assertIs(squeeze_mdx(newer), newer)
           broken = data[:-20]
           self.assertIs(squeeze_mdx(broken), broken)
+
+     def test_a_newer_model_is_squeezed_through_the_reader(self):
+          # #233: the version 800 model, read, given tangents, written as 1000.
+          from wc3files.mdl.mdx_io import load_mdx, save_mdx
+          model = load_mdx(_model())
+          model['version'] = 1000
+          model['geosets'][0]['tangents'] = [0.123456, 0.654321, 0.111111, 1.0] * 3
+          data = save_mdx(model)
+          self.assertEqual(save_mdx(load_mdx(data)), data)
+          out = squeeze_mdx(data)
+          self.assertIsNot(out, data)
+          squeezed = load_mdx(out)
+          for field in ('vertices', 'tangents'):
+               for a, b in zip(model['geosets'][0][field], squeezed['geosets'][0][field]):
+                    self.assertLess(abs(a - b), abs(a) * 0.01 + 1e-9)
+                    self.assertEqual(struct.pack('<f', b)[:2], b'\0\0')
+          key = squeezed['bones'][0]['node']['tracks']['KGTR']['keys'][1]
+          self.assertEqual(key['frame'], 500)
+          self.assertEqual(struct.pack('<f', key['value'][0])[:2], b'\0\0')
+
+     def test_the_reader_and_the_walker_agree_on_version_800(self):
+          from wc3files.mdl.mdx_io import load_mdx, save_mdx
+          from wc3files.mdl.squeeze import squeeze_model
+          # Written once, so the writer's own chunks (MODL and the like) are in.
+          data = save_mdx(load_mdx(_model()))
+          self.assertEqual(save_mdx(squeeze_model(load_mdx(data))), squeeze_mdx(data))
 
 
 def _objects(ext, data):
