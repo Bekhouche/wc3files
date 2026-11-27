@@ -750,6 +750,32 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         model = self.model('Textures 1 {\n\tBitmap {\n\t\tImage "Textures\\Sign.blp",\n\t}\n}\n')
         self.assertEqual(model['textures'][0]['path'], 'Textures\\Sign.blp')
 
+    def test_popcorn_emitter(self):
+        model = self.hd_model(
+            'ParticleEmitterPopcorn "Fire" {\n'
+            '\tObjectId 5,\n'
+            '\tUnshaded,\n\tUnfogged,\n'
+            '\tstatic LifeSpan 1.5,\n'
+            '\tEmissionRate 2 {\n\t\tLinear,\n\t\t0: 10,\n\t\t500: 0,\n\t}\n'
+            '\tstatic Speed 3,\n'
+            '\tstatic Color { 1, 0.5, 0 },\n'
+            '\tstatic Alpha 0.75,\n'
+            '\tVisibility 1 {\n\t\tDontInterp,\n\t\t0: 1,\n\t}\n'
+            '\tReplaceableId 1,\n'
+            '\tPath "Effects\\\\Fire.pkfx",\n'
+            '\tAnimVisibilityGuide "stand=on, death=off",\n'
+            '}\n')
+        emitter = model['particleEmittersPopcorn'][0]
+        self.assertEqual(emitter['node']['flags'], 0x8000 | 0x40000)
+        self.assertEqual((emitter['lifeSpan'], emitter['color']), (1.5, [1.0, 0.5, 0.0, 0.75]))
+        self.assertEqual(set(emitter['tracks']), {'KPPE', 'KPPV'})
+        self.assertEqual((emitter['path'], emitter['flags']), ('Effects\\Fire.pkfx', 'stand=on, death=off'))
+        self.assertSurvives(model)
+        # A node bit with no MDL name, as a game model may have.
+        emitter['node']['flags'] |= 0x1000
+        self.assertIn('// wc3files: UnnamedFlags 4096,', save_mdl(model))
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):

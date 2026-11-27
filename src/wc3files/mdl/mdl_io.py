@@ -116,6 +116,8 @@ def load_mdl(text):
             model['collisionShapes'].append(_parse_collision_shape(tokens))
         elif token == 'BindPose':
             model['bindPose'] = _parse_bind_pose(tokens)
+        elif token == 'ParticleEmitterPopcorn':
+            model['particleEmittersPopcorn'].append(_parse_popcorn_emitter(tokens))
         else:
             # Skip unknown top-level blocks conservatively.
             tokens.next()
@@ -250,6 +252,8 @@ def save_mdl(model):
         out.extend(_write_particle_emitter2_lines(emitter))
     for emitter in model.get('ribbonEmitters') or []:
         out.extend(_write_ribbon_emitter_lines(emitter))
+    for emitter in model.get('particleEmittersPopcorn') or []:
+        out.extend(_write_popcorn_emitter_lines(emitter))
     for event in model.get('eventObjects') or []:
         out.extend(_write_event_object_lines(event))
     for camera in model.get('cameras') or []:
@@ -1330,6 +1334,83 @@ def _parse_attachment(tokens):
             tokens.next()
     tokens.expect('}')
     return attachment
+
+
+# PopcornFX emitters (CORN) of version 900 and later, in the syntax of
+# mdx-m3-viewer's ParticleEmitterPopcorn; they were left out (#375). The
+# colour and alpha are one 4-float `color` in the MDX data, and the MDX
+# field named `flags` there is the animation visibility guide string.
+_POPCORN_FLAGS = {'Unshaded': 0x8000, 'SortPrimsFarZ': 0x10000, 'Unfogged': 0x40000}
+_POPCORN_FIELDS = {
+    'LifeSpan': ('KPPL', 'f32', 'lifeSpan'),
+    'EmissionRate': ('KPPE', 'f32', 'emissionRate'),
+    'Speed': ('KPPS', 'f32', 'speed'),
+    'Color': ('KPPC', 'f32x3', '_rgb'),
+    'Alpha': ('KPPA', 'f32', '_alpha'),
+    'Visibility': ('KPPV', 'f32', None),
+}
+# Node bits save_mdl writes by name: DontInherit, Billboarded and the rest.
+_NAMED_NODE_BITS = 0xFF
+
+
+def _write_popcorn_emitter_lines(emitter):
+    node = emitter.get('node') or {}
+    color = list(emitter.get('color') or [1.0, 1.0, 1.0, 1.0])
+    view = dict(emitter, _rgb=color[:3], _alpha=color[3] if len(color) > 3 else 1.0)
+    lines = [f'ParticleEmitterPopcorn "{_escape(node.get("name", ""))}" {{']
+    lines.extend(_write_node_lines(node))
+    flags = node.get('flags', 0)
+    lines.extend(_write_flag_lines(flags, _POPCORN_FLAGS))
+    unnamed = flags & ~_NAMED_NODE_BITS & ~sum(_POPCORN_FLAGS.values())
+    if unnamed:
+        lines.append(f'\t{EXTENSION_COMMENT}UnnamedFlags {unnamed},')
+    lines.extend(_write_field_lines(view, _POPCORN_FIELDS))
+    if emitter.get('replaceableId'):
+        lines.append(f'\tReplaceableId {emitter["replaceableId"]},')
+    if emitter.get('path'):
+        lines.append(f'\tPath "{_escape(emitter["path"])}",')
+    if emitter.get('flags'):
+        lines.append(f'\tAnimVisibilityGuide "{_escape(emitter["flags"])}",')
+    lines.append('}')
+    return lines
+
+
+def _parse_popcorn_emitter(tokens):
+    tokens.expect('ParticleEmitterPopcorn')
+    name = _parse_string(tokens.next()) if tokens.peek().startswith('"') else ''
+    tokens.expect('{')
+    emitter = {
+        'node': _new_node(name, 0),
+        'lifeSpan': 0.0, 'emissionRate': 0.0, 'speed': 0.0,
+        '_rgb': [1.0, 1.0, 1.0], '_alpha': 1.0,
+        'replaceableId': 0, 'path': '', 'flags': '', 'tracks': {},
+    }
+    while tokens.peek() != '}':
+        key = tokens.next()
+        if _parse_field(tokens, key, emitter, _POPCORN_FIELDS):
+            pass
+        elif key in _POPCORN_FLAGS:
+            emitter['node']['flags'] |= _POPCORN_FLAGS[key]
+        elif key == 'UnnamedFlags':
+            emitter['node']['flags'] |= int(_parse_number(tokens.next()))
+        elif key == 'ReplaceableId':
+            emitter['replaceableId'] = int(_parse_number(tokens.next()))
+        elif key == 'Path':
+            emitter['path'] = _parse_string(tokens.next())
+        elif key == 'AnimVisibilityGuide':
+            emitter['flags'] = _parse_string(tokens.next())
+        else:
+            tokens._i -= 1
+            leftover = _parse_node_body(tokens, emitter['node'])
+            if leftover and tokens.peek() == '{':
+                _skip_block(tokens)
+            elif leftover and tokens.peek() not in (None, '}'):
+                tokens.next()
+        if tokens.peek() == ',':
+            tokens.next()
+    tokens.expect('}')
+    emitter['color'] = list(emitter.pop('_rgb')) + [emitter.pop('_alpha')]
+    return emitter
 
 
 def _parse_bind_pose(tokens):
