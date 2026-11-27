@@ -1,5 +1,5 @@
 context:
-  version: "0.9.0"
+  version: "0.10.0"
   # Set here rather than left to conda-forge's default: the package needs
   # Python 3.10 (#178).
   python_min: "3.10"
@@ -13,7 +13,7 @@ source:
   # Checked against the sha256 PyPI reports for this sdist. If the sdist is
   # ever rebuilt, recompute it:
   #     curl -L <url> | openssl dgst -sha256
-  sha256: 0f9d8737037d56f85e6d12db1deb2e5b687547c7862ca386312f4601ee7cb3ae
+  sha256: c8bbaa3362a2584eb8a980b55d5a8e88cb4a55545e41c6ece7b35f8f332f2316
 
 build:
   noarch: python
