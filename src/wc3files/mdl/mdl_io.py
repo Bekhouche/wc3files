@@ -874,6 +874,12 @@ def _parse_geoset(tokens):
             geoset['selectionGroup'] = int(_parse_number(tokens.next()))
         elif key == 'Unselectable':
             geoset['selectionFlags'] |= 4
+        elif key == 'UnnamedSelectionFlags':
+            geoset['selectionFlags'] |= int(_parse_number(tokens.next()))
+        elif key == 'LevelOfDetail':
+            geoset['levelOfDetail'] = int(_parse_number(tokens.next()))
+        elif key == 'Name':
+            geoset['name'] = _parse_string(tokens.next())
         elif key == 'MinimumExtent':
             geoset['extent']['minimum'] = _read_vector(tokens)
         elif key == 'MaximumExtent':
@@ -1760,6 +1766,18 @@ def _write_geoset_lines(geoset):
         lines.append('\t}')
     lines.append(f'\tMaterialID {geoset.get("materialId", 0)},')
     lines.append(f'\tSelectionGroup {geoset.get("selectionGroup", 0)},')
+    # Unselectable was read but never written (#359). Version 900 and later
+    # geosets have a level of detail and a name, written as mdx-m3-viewer
+    # writes them.
+    selection = geoset.get('selectionFlags', 0)
+    if selection & 4:
+        lines.append('\tUnselectable,')
+    if selection & ~4:
+        lines.append(f'\t{EXTENSION_COMMENT}UnnamedSelectionFlags {selection & ~4},')
+    if 'levelOfDetail' in geoset:
+        lines.append(f'\tLevelOfDetail {geoset["levelOfDetail"]},')
+    if 'name' in geoset:
+        lines.append(f'\tName "{_escape(geoset["name"])}",')
     lines.append('}')
     return lines
 
