@@ -19,6 +19,7 @@ section to the new version and its date.
 - A geoset's Unselectable flag is written to MDL (it was read but never written), and the level of detail and name of a version 900 or later geoset are written and read back, as mdx-m3-viewer writes them (#359).
 - Texture animations are written to MDL: the reader knew `TextureAnims`, but the writer never wrote them, so every texture animation was lost and a layer's `TVertexAnimId` pointed at nothing (#360).
 - A camera's tracks are written to MDL and read back: its position and rotation (KCTR, KCRL) and its target's position (KTTR), as mdx-m3-viewer writes them (#361).
+- Material and layer fields of version 900 and later are written to MDL and read back, in the syntax mdx-m3-viewer uses: the material's shader, and the layer's emissive gain and fresnel colour, opacity and team colour, static or animated (KMTE, KFC3, KFCA, KFTC). The flags TwoSided on a material, Unlit on a layer and SortPrimsNearZ, which had no MDL name here, are written and read too (#362).
 
 ## [0.11.0] - 2026-11-27
 

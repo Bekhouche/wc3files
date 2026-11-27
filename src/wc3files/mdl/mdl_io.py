@@ -514,14 +514,12 @@ def _parse_materials(tokens):
         material = {'priorityPlane': 0, 'flags': 0, 'layers': []}
         while tokens.peek() != '}':
             key = tokens.next()
-            if key == 'ConstantColor':
-                material['flags'] |= 1
-            elif key == 'SortPrimsFarZ':
-                material['flags'] |= 16
-            elif key == 'FullResolution':
-                material['flags'] |= 32
+            if key in _MATERIAL_FLAGS:
+                material['flags'] |= _MATERIAL_FLAGS[key]
             elif key == 'PriorityPlane':
                 material['priorityPlane'] = int(_parse_number(tokens.next()))
+            elif key == 'Shader':
+                material['shader'] = _parse_string(tokens.next())
             elif key == 'Layer':
                 material['layers'].append(_parse_layer(tokens))
             elif tokens.peek() == '{':
@@ -550,21 +548,13 @@ def _parse_layer(tokens):
     }
     while tokens.peek() != '}':
         key = tokens.next()
-        if key == 'FilterMode':
+        if _parse_field(tokens, key, layer, _LAYER_FIELDS):
+            pass
+        elif key == 'FilterMode':
             mode = tokens.next()
             layer['filterMode'] = _FILTER_MODES.get(mode, int(_parse_number(mode)) if _NUMBER.match(mode) else 0)
-        elif key == 'Unshaded':
-            layer['shadingFlags'] |= 1
-        elif key == 'SphereEnvMap':
-            layer['shadingFlags'] |= 2
-        elif key == 'TwoSided':
-            layer['shadingFlags'] |= 16
-        elif key == 'Unfogged':
-            layer['shadingFlags'] |= 32
-        elif key == 'NoDepthTest':
-            layer['shadingFlags'] |= 64
-        elif key == 'NoDepthSet':
-            layer['shadingFlags'] |= 128
+        elif key in _LAYER_FLAGS:
+            layer['shadingFlags'] |= _LAYER_FLAGS[key]
         elif key == 'static':
             field = tokens.next()
             if field == 'TextureID':
@@ -598,6 +588,35 @@ def _parse_layer(tokens):
             tokens.next()
     tokens.expect('}')
     return layer
+
+
+# Material and layer flags by MDL name, in the order they are written. The
+# names are mdx-m3-viewer's; TwoSided on a material and Unlit on a layer
+# exist from version 900 on, and SortPrimsNearZ was missing (#362).
+_MATERIAL_FLAGS = {
+    'ConstantColor': 0x1,
+    'TwoSided': 0x2,
+    'SortPrimsNearZ': 0x8,
+    'SortPrimsFarZ': 0x10,
+    'FullResolution': 0x20,
+}
+_LAYER_FLAGS = {
+    'Unshaded': 0x1,
+    'SphereEnvMap': 0x2,
+    'TwoSided': 0x10,
+    'Unfogged': 0x20,
+    'NoDepthTest': 0x40,
+    'NoDepthSet': 0x80,
+    'Unlit': 0x100,
+}
+# Layer fields of version 900 and later, static or animated, in the syntax
+# mdx-m3-viewer reads and writes (#362).
+_LAYER_FIELDS = {
+    'EmissiveGain': ('KMTE', 'f32', 'emissiveGain'),
+    'FresnelColor': ('KFC3', 'f32x3', 'fresnelColor'),
+    'FresnelOpacity': ('KFCA', 'f32', 'fresnelOpacity'),
+    'FresnelTeamColor': ('KFTC', 'f32', 'fresnelTeamColor'),
+}
 
 
 def _is_animated_track(tokens):
@@ -1455,22 +1474,24 @@ def _parse_field(tokens, key, obj, fields):
     return True
 
 
-def _write_field_lines(obj, fields, names=None):
+def _write_field_lines(obj, fields, names=None, indent=1, present_only=False):
     """Each field of `fields` (or the `names` among them) as its track when
-    `obj` has one, else as its static value; Visibility only as a track."""
+    `obj` has one, else as its static value; Visibility only as a track.
+    With `present_only`, a static value `obj` does not have is left out."""
     tracks = obj.get('tracks') or {}
+    pad = '\t' * indent
     lines = []
     for name in names or fields:
         tag, kind, field = fields[name]
         if tag in tracks:
-            lines.extend(_write_track_lines(name, tracks[tag], kind))
-        elif field is None:
+            lines.extend(_write_track_lines(name, tracks[tag], kind, indent=indent))
+        elif field is None or present_only and field not in obj:
             continue
         elif kind == 'f32x3':
             value = obj.get(field) or _STATIC_DEFAULTS.get(field, [0.0, 0.0, 0.0])
-            lines.append(f'\tstatic {name} {{ {_fmt_floats(value)} }},')
+            lines.append(f'{pad}static {name} {{ {_fmt_floats(value)} }},')
         else:
-            lines.append(f'\tstatic {name} {_fmt_num(obj.get(field, _STATIC_DEFAULTS.get(field, 0.0)))},')
+            lines.append(f'{pad}static {name} {_fmt_num(obj.get(field, _STATIC_DEFAULTS.get(field, 0.0)))},')
     return lines
 
 
@@ -1673,32 +1694,18 @@ _FILTER_MODE_NAMES = ['None', 'Transparent', 'Blend', 'Additive', 'AddAlpha', 'M
 def _write_material_lines(material):
     lines = ['\tMaterial {']
     flags = material.get('flags', 0)
-    if flags & 1:
-        lines.append('\t\tConstantColor,')
-    if flags & 16:
-        lines.append('\t\tSortPrimsFarZ,')
-    if flags & 32:
-        lines.append('\t\tFullResolution,')
+    lines.extend(f'\t\t{name},' for name, bit in _MATERIAL_FLAGS.items() if flags & bit)
     if material.get('priorityPlane'):
         lines.append(f'\t\tPriorityPlane {material["priorityPlane"]},')
+    if 'shader' in material:
+        lines.append(f'\t\tShader "{_escape(material["shader"])}",')
     for layer in material.get('layers') or []:
         lines.append('\t\tLayer {')
         mode = layer.get('filterMode', 0)
         mode_name = _FILTER_MODE_NAMES[mode] if 0 <= mode < len(_FILTER_MODE_NAMES) else 'None'
         lines.append(f'\t\t\tFilterMode {mode_name},')
         shading = layer.get('shadingFlags', 0)
-        if shading & 1:
-            lines.append('\t\t\tUnshaded,')
-        if shading & 2:
-            lines.append('\t\t\tSphereEnvMap,')
-        if shading & 16:
-            lines.append('\t\t\tTwoSided,')
-        if shading & 32:
-            lines.append('\t\t\tUnfogged,')
-        if shading & 64:
-            lines.append('\t\t\tNoDepthTest,')
-        if shading & 128:
-            lines.append('\t\t\tNoDepthSet,')
+        lines.extend(f'\t\t\t{name},' for name, bit in _LAYER_FLAGS.items() if shading & bit)
         tracks = layer.get('tracks') or {}
         if 'KMTF' in tracks:
             lines.extend(_write_track_lines('TextureID', tracks['KMTF'], 'u32', indent=3))
@@ -1712,6 +1719,7 @@ def _write_material_lines(material):
             lines.extend(_write_track_lines('Alpha', tracks['KMTA'], 'f32', indent=3))
         else:
             lines.append(f'\t\t\tstatic Alpha {_fmt_num(layer.get("alpha", 1.0))},')
+        lines.extend(_write_field_lines(layer, _LAYER_FIELDS, indent=3, present_only=True))
         lines.append('\t\t}')
     lines.append('\t}')
     return lines
