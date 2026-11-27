@@ -377,3 +377,45 @@ class TestCompareMaps(ToolTestCase):
             T.compare_maps(self.roots, 'v1.w3x', 'v2.w3x', max_chars=50)
         with self.assertRaises(ProtectedMapError):
             T.compare_maps(self.roots, 'v1.w3x', self.protected)
+
+
+class TestMapImage(ToolTestCase):
+    """map_image (#337)."""
+
+    def test_rendered_and_own(self):
+        from wc3files.img import BlpFile, read_png
+        archive = W3xFile()
+        archive.read(sample_path('sample.w3x'))
+        files = dict(archive.files)
+        with open(sample_path('sample.w3e'), 'rb') as handle:
+            files['war3map.w3e'] = handle.read()
+        archive.build_from_files(files, os.path.join(self.root, 'terrain.w3x'))
+        rendered = T.map_image(self.roots, 'terrain.w3x')
+        self.assertEqual((rendered['width'], rendered['height']), (256, 256))
+        # the sample's war3map.doo is not a doodad file: drawn without doodads
+        self.assertTrue(rendered['source'].startswith(
+            'rendered from war3map.w3e (without doodads: war3map.doo does not read'))
+        self.assertEqual(read_png(rendered['png'])[:2], (256, 256))
+        with self.assertRaises(ValueError):           # no terrain to draw from
+            T.map_image(self.roots, 'sample.w3x')
+        # a map with its own minimap gives that one, and render redraws it
+        files['war3mapMap.blp'] = BlpFile.from_rgba(64, 64, bytes([10, 200, 30, 255]) * 4096,
+                                                    mipmaps=False).to_bytes()
+        own = os.path.join(self.root, 'own.w3x')
+        archive.build_from_files(files, own)
+        minimap = T.map_image(self.roots, 'own.w3x')
+        self.assertEqual((minimap['source'], minimap['width']), ('war3mapMap.blp', 64))
+        width, height, rgba = read_png(minimap['png'])[:3]
+        self.assertEqual(bytes(rgba[:4])[:3], bytes([10, 200, 30]))
+        self.assertEqual(T.map_image(self.roots, 'own.w3x', 'preview')['source'],
+                         'war3mapMap.blp')
+        self.assertTrue(T.map_image(self.roots, 'own.w3x', render=True)['source'].startswith(
+            'rendered from war3map.w3e'))
+
+    def test_refusals(self):
+        with self.assertRaises(ValueError):
+            T.map_image(self.roots, 'sample.w3x', kind='loading')
+        with self.assertRaises(ValueError):
+            T.map_image(self.roots, 'sample.j')
+        with self.assertRaises(ProtectedMapError):
+            T.map_image(self.roots, self.protected)

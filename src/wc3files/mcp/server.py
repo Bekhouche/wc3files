@@ -9,6 +9,7 @@ wc3files.mcp.edits are registered too (#272); they write a new map.
 """
 import argparse
 import functools
+import json
 import sys
 
 from wc3files.version import __version__
@@ -20,7 +21,7 @@ INSTRUCTIONS = (
     'map holds. placed_objects, map_records, object_data, trigger_text and '
     'check_script answer questions about placed units, regions, objects, '
     'triggers and scripts; compare_maps says what changed between two '
-    'versions; compile_script compiles and checks vJass, Zinc, '
+    'versions; map_image shows a map; compile_script compiles and checks vJass, Zinc, '
     'cJass and Luck code, and run_script runs a map script without the game; '
     'read_member gives any member as data. Every tool '
     'only reads. Files outside '
@@ -65,7 +66,8 @@ def build_server(folders, allow_write=False):
 
         from mcp.server.mcpserver import MCPServer
         from mcp.server.mcpserver.exceptions import ToolError
-        from mcp.types import ToolAnnotations
+        from mcp.server.mcpserver.utilities.types import Image
+        from mcp.types import TextContent, ToolAnnotations
         from pydantic import Field
 
         from . import edits as _edits
@@ -228,6 +230,27 @@ def build_server(folders, allow_write=False):
         correctly before it goes into the map; edit_script then adds it. A
         compile error is returned in errors, with its line."""
         return _tools.compile_script(roots, code, path, language, include_jass, max_chars)
+
+    @tool('Picture of a map')
+    def map_image(
+            path: MapPath,
+            kind: Annotated[R.ImageKind, Field(description=(
+                'minimap (war3mapMap.blp, the map seen from above) or preview (the '
+                'lobby picture, war3mapPreview.tga, else the minimap).'))] = 'minimap',
+            render: Annotated[bool, Field(description=(
+                "Draw the minimap from the terrain even when the map has its own: "
+                'ground in grey, water in blue, trees and doodads as dots.'))] = False,
+    ) -> list[TextContent | Image]:
+        """Show a map as a PNG image: its minimap or its lobby preview, as
+        the map has them, or a minimap drawn from the terrain when the map
+        has none. Use it to see the layout of a map: lanes, bases, water
+        and forests. A text part says where the picture came from. Fails on
+        a protected map."""
+        found = _tools.map_image(roots, path, kind, render)
+        about = {'path': path, 'kind': kind, 'source': found['source'],
+                 'width': found['width'], 'height': found['height']}
+        return [TextContent(type='text', text=json.dumps(about)),
+                Image(data=found['png'], format='png')]
 
     @tool('Compare two versions of a map')
     def compare_maps(

@@ -2,6 +2,7 @@
 process, and as `python -m wc3files.mcp` over stdio. Skipped when `mcp` is
 not installed (pip install "wc3files[mcp]"); CI installs it."""
 import asyncio
+import base64
 import json
 import os
 import shutil
@@ -17,10 +18,12 @@ try:
 except ImportError:  # pragma: no cover
     Client = None
 
-TOOLS = ['check_script', 'compare_maps', 'compile_script', 'list_files', 'list_members', 'map_info', 'map_overview',
+TOOLS = ['check_script', 'compare_maps', 'compile_script', 'list_files', 'list_members', 'map_image', 'map_info', 'map_overview',
          'map_records', 'model_info', 'object_data', 'placed_objects', 'read_member',
          'replay_info', 'run_script', 'trigger_text']
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Tools that return an image, which has no output schema.
+IMAGE_TOOLS = ('map_image',)
 # A script with a compile error, which compile_script returns as data.
 BROKEN = 'function F takes nothing returns nothing\ncall\nendfunction\n'
 
@@ -44,6 +47,13 @@ class TestMcpServer(unittest.TestCase):
         cls.root = tempfile.mkdtemp()
         for name in ('sample.w3x', 'sample.mdx', 'sample.w3u', 'sample.j'):
             shutil.copy(sample_path(name), cls.root)
+        from wc3files.w3x.w3x_file import W3xFile
+        archive = W3xFile()
+        archive.read(sample_path('sample.w3x'))
+        files = dict(archive.files)
+        with open(sample_path('sample.w3e'), 'rb') as handle:
+            files['war3map.w3e'] = handle.read()
+        archive.build_from_files(files, os.path.join(cls.root, 'terrain.w3x'))
         cls.server = build_server([cls.root])
 
     @classmethod
@@ -124,6 +134,8 @@ class TestMcpServer(unittest.TestCase):
                 return tools, [await client.call_tool(name, args) for name, args, _ in calls]
         tools, results = _run(go())
         for tool in tools.values():
+            if tool.name in IMAGE_TOOLS:
+                continue                  # an image has no output schema
             with self.subTest(schema=tool.name):
                 self.assertEqual(tool.output_schema.get('type'), 'object')
                 self.assertTrue(tool.output_schema.get('properties'))
@@ -133,6 +145,17 @@ class TestMcpServer(unittest.TestCase):
             with self.subTest(call=name, args=args):
                 self.assertFalse(result.is_error, result.content)
                 self.assertEqual(result.structured_content, json.loads(json.dumps(expected())))
+
+    def test_map_image(self):
+        async def go():
+            async with Client(self.server) as client:
+                return await client.call_tool('map_image', {'path': 'terrain.w3x'})
+        result = _run(go())
+        self.assertFalse(result.is_error, result.content)
+        text, image = result.content
+        self.assertTrue(json.loads(text.text)['source'].startswith('rendered from war3map.w3e'))
+        self.assertEqual((image.type, image.mime_type), ('image', 'image/png'))
+        self.assertTrue(base64.b64decode(image.data).startswith(b'\x89PNG'))
 
     def test_edit_tools_only_with_allow_write(self):
         # Without --allow-write no edit tool is listed, so the server stays

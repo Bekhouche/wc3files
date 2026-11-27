@@ -139,6 +139,7 @@ class CompileScriptResult(TypedDict):
 
 
 ComparePart = Literal['all', 'members', 'objects', 'strings']
+ImageKind = Literal['minimap', 'preview']
 
 
 class MemberAdded(TypedDict):
