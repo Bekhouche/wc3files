@@ -127,6 +127,14 @@ def save_mdl(model):
     version = model.get('version', 800)
     out.append('Version {')
     out.append(f'\tFormatVersion {version},')
+    # The order of the MDX chunks, so that the MDX written from this MDL has
+    # it too: tools differ (some put CAMS before EVTS, some keep an empty
+    # PREM), and it was lost through MDL (#363). A tag that is not four
+    # letters or digits could not be read back as one token, so then the
+    # order is left out and the default order is used.
+    order = model.get('chunkOrder') or []
+    if order and all(_CHUNK_TAG.match(tag) for tag in order):
+        out.append(f'\t{EXTENSION_COMMENT}ChunkOrder {" ".join(order)},')
     out.append('}')
 
     name = model.get('name', '')
@@ -359,6 +367,11 @@ def _parse_version(tokens, model):
         key = tokens.next()
         if key == 'FormatVersion':
             model['version'] = int(_parse_number(tokens.next()))
+        elif key == 'ChunkOrder':
+            order = []
+            while tokens.peek() not in (None, ',', '}'):
+                order.append(tokens.next())
+            model['chunkOrder'] = order
         elif tokens.peek() == '{':
             _skip_block(tokens)
         elif tokens.peek() not in (None, '}', '{'):
@@ -366,6 +379,9 @@ def _parse_version(tokens, model):
         if tokens.peek() == ',':
             tokens.next()
     tokens.expect('}')
+
+
+_CHUNK_TAG = re.compile(r'^[A-Z0-9]{4}$')
 
 
 def _parse_model(tokens, model):

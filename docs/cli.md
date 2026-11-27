@@ -521,8 +521,10 @@ wc3files model-info Footman.mdx                    # version, sequences, texture
 
 Data an MDX model has but MDL has no syntax for is written in a comment
 that starts with `// wc3files:`, such as `// wc3files: UnnamedFlags 24,` in
-a `GeosetAnim` block. Other MDL tools skip it as a comment; wc3files reads
-it back, so the MDX written from that MDL keeps the data.
+a `GeosetAnim` block, or the order of the MDX chunks in the `Version` block
+(`// wc3files: ChunkOrder VERS MODL SEQS ...,`). Other MDL tools skip it as
+a comment; wc3files reads it back, so the MDX written from that MDL keeps
+the data.
 
 ### Model edits
 

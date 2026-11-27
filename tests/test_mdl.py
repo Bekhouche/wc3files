@@ -629,6 +629,22 @@ class TestMdlKeepsMdxData(unittest.TestCase):
         self.assertEqual(set(layer['tracks']), {'KFCA'})
         self.assertSurvives(model)
 
+    def test_chunk_order(self):
+        model = self.model(
+            'EventObject "SNDxFOOT" {\n\tObjectId 5,\n\tEventTrack 1 {\n\t\t100,\n\t}\n}\n'
+            'Camera "Portrait" {\n\tPosition { 1, 2, 3 },\n\tFieldOfView 0.7,\n'
+            '\tFarClip 1000,\n\tNearClip 8,\n\tTarget {\n\t\tPosition { 0, 0, 0 },\n\t}\n}\n')
+        order = load_mdx(save_mdx(model))['chunkOrder']
+        # The camera before the event object, and an empty PREM, as some
+        # tools write them.
+        order.remove('CAMS')
+        order.insert(order.index('EVTS'), 'CAMS')
+        order.insert(order.index('CAMS'), 'PREM')
+        model['chunkOrder'] = order
+        self.assertEqual(load_mdx(save_mdx(model))['chunkOrder'], order)
+        self.assertIn(f'\t// wc3files: ChunkOrder {" ".join(order)},\n', save_mdl(model))
+        self.assertSurvives(model)
+
     TRACK = ' 2 {\n\t\tLinear,\n\t\t0: %s,\n\t\t500: %s,\n\t}\n'
 
     def test_particle_emitter2_tracks(self):
