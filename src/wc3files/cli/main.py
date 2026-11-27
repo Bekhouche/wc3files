@@ -400,6 +400,24 @@ def _cmd_model_keyframes(args):
         args, lambda data: remove_redundant_keys(data, args.tolerance, args.dead), describe)
 
 
+def _cmd_model_linear(args):
+    """Turn the Hermite and Bezier tracks of models into linear ones (#231)."""
+    from wc3files.mdl.keyframes import linearize
+    from wc3files.mdl.mdx_io import save_mdx
+
+    def edit(data):
+        before = len(save_mdx(data))
+        report = linearize(data, args.tolerance)
+        report['before'], report['after'] = before, len(save_mdx(data))
+        return report
+
+    def describe(report):
+        text = (f"{report['tracks']} track(s) made linear, as MDX {report['before']:,} "
+                f"-> {report['after']:,} bytes")
+        return text + (f", {report['added']} key(s) added" if args.tolerance is not None else '')
+    return _run_model_batch(args, edit, describe)
+
+
 def _cmd_model_convert(args):
     """Convert a model between MDX (binary) and MDL (text).
 
@@ -2625,6 +2643,17 @@ def build_parser():
     p_keys.add_argument('--dead', action='store_true',
                         help='Also remove the keys no sequence plays.')
     p_keys.set_defaults(func=_cmd_model_keyframes)
+
+    p_linear = subparsers.add_parser(
+        'model-linear', help='Turn the curved tracks of models into linear ones (lossy).',
+        description=('Turn Hermite and Bezier tracks into linear ones and drop their '
+                     'tangents, which halves their size. Lossy: the track then moves in '
+                     'straight lines. --tolerance adds keys where the line moves away from '
+                     'the curve by more than that. See ' + _DOCS + '#model-edits.'))
+    _add_model_batch_args(p_linear)
+    p_linear.add_argument('--tolerance', type=float, default=None,
+                          help='Add keys until the line is this close to the curve.')
+    p_linear.set_defaults(func=_cmd_model_linear)
 
     p_jass = subparsers.add_parser(
         'jass', help=('Parse a JASS or Lua script and print it back; optionally '
