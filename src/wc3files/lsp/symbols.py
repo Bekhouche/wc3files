@@ -28,7 +28,8 @@ class Symbol:
     parameter or local; `path` is the file it is in when it is not the
     document itself (a bundled file)."""
 
-    __slots__ = ('name', 'kind', 'type', 'line', 'col', 'detail', 'scope', 'path', 'container')
+    __slots__ = ('name', 'kind', 'type', 'line', 'col', 'detail', 'scope', 'path', 'container',
+                 'end_line')
 
     def __init__(self, name, kind, line, col, detail, type=None, scope=None, path=None,
                  container=None):
@@ -41,6 +42,7 @@ class Symbol:
         self.scope = scope
         self.path = path
         self.container = container
+        self.end_line = line  # a function's endfunction line, once known
 
     def __repr__(self):
         return f'Symbol({self.kind} {self.name} {self.line}:{self.col})'
@@ -135,6 +137,13 @@ def index_jass(text, path=None):
         symbols.append(symbol)
         if scoped:
             pending.append(symbol)
+        return symbol
+
+    def close(last_line):
+        """End the function being read on `last_line`."""
+        for symbol in pending:
+            symbol.scope = (function[1], last_line)
+        function[2].end_line = last_line
 
     for i, token in enumerate(tokens):
         if token.kind != 'KEYWORD':
@@ -145,15 +154,18 @@ def index_jass(text, path=None):
             add(at(i + 1), 'type', base.value if _ident(base) else None)
         elif word in ('native', 'function') and _ident(at(i + 1)):
             name = at(i + 1)
-            add(name, word, _header_returns(tokens, i))
+            if word == 'function' and function:
+                # The one before has no endfunction yet, as while typing:
+                # it ends where this one starts.
+                close(token.line - 1)
+            symbol = add(name, word, _header_returns(tokens, i))
             if word == 'function':
-                function = (name.value, token.line)
+                function = (name.value, token.line, symbol)
                 pending = []
                 for type_token, param in _header_params(tokens, i):
                     add(param, 'param', type_token.value, scoped=True)
         elif word == 'endfunction' and function:
-            for symbol in pending:
-                symbol.scope = (function[1], token.line)
+            close(token.line)
             function, pending = None, []
         elif word == 'local' and function and _ident(at(i + 1)):
             j = i + 2
@@ -162,9 +174,7 @@ def index_jass(text, path=None):
             if _ident(at(j)):
                 add(at(j), 'local', at(i + 1).value, scoped=True)
     if function:  # a function not closed yet, as while typing
-        last = len(lines) + 1
-        for symbol in pending:
-            symbol.scope = (function[1], last)
+        close(len(lines) + 1)
     # Globals: `[constant] type [array] name`, between globals and endglobals.
     symbols.extend(_jass_globals(tokens, lines, path))
     return Index(symbols, 'jass')
@@ -389,6 +399,50 @@ def prefix_at(text, line, character):
     before = lines[line][:character]
     match = re.search(r'[A-Za-z_][A-Za-z0-9_]*$', before)
     return match.group(0) if match else ''
+
+
+# The protocol's SymbolKind.
+_SYMBOL_KIND = {'type': 5, 'function': 12, 'native': 12, 'global': 13, 'local': 13,
+                'param': 13, 'constant': 14}
+
+
+def document_symbols(document_index, text):
+    """The outline of a document (#391): its types, globals and constants,
+    natives and functions, each function with its parameters and locals; in
+    Lua, its functions. A function's range runs to its endfunction."""
+    lines = text.splitlines()
+
+    def entry(symbol, children=None):
+        last = min(max(symbol.end_line, symbol.line), max(len(lines), symbol.line))
+        end_text = lines[last - 1] if 0 < last <= len(lines) else ''
+        name_start = {'line': symbol.line - 1, 'character': symbol.col - 1}
+        name_end = {'line': symbol.line - 1, 'character': symbol.col - 1 + len(symbol.name)}
+        item = {'name': symbol.name, 'detail': symbol.detail,
+                'kind': _SYMBOL_KIND.get(symbol.kind, 13),
+                'range': {'start': {'line': symbol.line - 1, 'character': 0},
+                          'end': {'line': last - 1, 'character': len(end_text)}},
+                'selectionRange': {'start': name_start, 'end': name_end}}
+        if children is not None:
+            item['children'] = children
+        return item
+
+    if document_index.language == 'lua':
+        return [entry(s) for s in document_index.symbols if s.kind == 'function']
+    members = {}
+    for symbol in document_index.symbols:
+        if symbol.container is not None:
+            members.setdefault((symbol.container, symbol.scope), []).append(symbol)
+    out = []
+    for symbol in sorted(document_index.symbols, key=lambda s: (s.line, s.col)):
+        if symbol.container is not None:
+            continue
+        if symbol.kind == 'function':
+            inside = [m for (name, scope), group in members.items() if name == symbol.name
+                      and scope and scope[0] == symbol.line for m in group]
+            out.append(entry(symbol, [entry(m) for m in sorted(inside, key=lambda s: (s.line, s.col))]))
+        else:
+            out.append(entry(symbol))
+    return out
 
 
 def lookup(document_index, name, line):

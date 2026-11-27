@@ -343,6 +343,41 @@ class TestCompletion(unittest.TestCase):
         self.assertIn('while', self.labels(result))
 
 
+def outline(text, uri='file:///map/war3map.j', language='jass'):
+    _, out = exchange(INITIALIZE, open_doc(text, uri=uri, language=language),
+                      {'id': 8, 'method': 'textDocument/documentSymbol', 'params': {
+                          'textDocument': {'uri': uri}}},
+                      SHUTDOWN, EXIT)
+    [reply] = [m for m in out if m.get('id') == 8]
+    return reply['result']
+
+
+class TestDocumentSymbols(unittest.TestCase):
+    def test_jass(self):
+        symbols = outline(SCRIPT)
+        self.assertEqual([(s['name'], s['kind']) for s in symbols],
+                         [('MAX_HEROES', 14), ('udg_Heroes', 13), ('Heal', 12), ('Init', 12)])
+        heal = symbols[2]
+        self.assertEqual((heal['range']['start']['line'], heal['range']['end']['line']), (4, 7))
+        self.assertEqual(heal['selectionRange']['start'], {'line': 4, 'character': 9})
+        self.assertEqual([c['name'] for c in heal['children']], ['target', 'amount', 'life'])
+        self.assertEqual(symbols[3]['children'], [])
+
+    def test_a_function_without_its_endfunction(self):
+        # While typing: Heal has no endfunction yet, and ends where Init starts;
+        # its parameters stay its own.
+        broken = SCRIPT.replace('endfunction\nfunction Init', 'function Init', 1)
+        symbols = outline(broken)
+        heal = [s for s in symbols if s['name'] == 'Heal'][0]
+        self.assertEqual(heal['range']['end']['line'], 6)
+        self.assertEqual([c['name'] for c in heal['children']], ['target', 'amount', 'life'])
+        self.assertNotIn('target', [s['name'] for s in symbols])
+
+    def test_lua(self):
+        symbols = outline(LUA_SCRIPT, uri='file:///map/war3map.lua', language='lua')
+        self.assertEqual([s['name'] for s in symbols], ['Spawn'])
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')

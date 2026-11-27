@@ -57,6 +57,12 @@ keywords. Each name comes with its declaration. Before anything is typed,
 only the names of the function you are in and the keywords are offered; the
 list holds at most 300 names, and the editor asks again as you type.
 
+## Outline
+
+The outline of a file (document symbols) lists its types, globals and
+constants, natives and functions, each function with its parameters and
+locals; in Lua, its functions.
+
 ## Neovim
 
 Neovim (0.10 or later) has a client built in. Give `.j` files a file type
