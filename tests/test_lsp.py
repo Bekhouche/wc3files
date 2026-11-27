@@ -378,6 +378,74 @@ class TestDocumentSymbols(unittest.TestCase):
         self.assertEqual([s['name'] for s in symbols], ['Spawn'])
 
 
+VJASS = (
+    'library Greeter initializer Init\n'
+    '    function Greet takes nothing returns nothing\n'
+    '        call BJDebugMsg("hello")\n'
+    '    endfunction\n'
+    '    private function Init takes nothing returns nothing\n'
+    '        call Greet()\n'
+    '    endfunction\n'
+    'endlibrary\n')
+
+
+class TestVJassDiagnostics(unittest.TestCase):
+    def diagnostics(self, text, uri='file:///map/Greeter.j', language='jass'):
+        _, out = exchange(INITIALIZE, open_doc(text, uri=uri, language=language), SHUTDOWN, EXIT)
+        return [(d['range']['start']['line'], d['severity'], d['message'])
+                for d in published(out)[0]['diagnostics']]
+
+    def test_a_clean_library(self):
+        self.assertEqual(self.diagnostics(VJASS), [])
+
+    def test_a_finding_at_its_source_line(self):
+        text = VJASS.replace('BJDebugMsg("hello")', 'BJDebugMsg("hello", 3)')
+        self.assertEqual(self.diagnostics(text),
+                         [(2, analysis.ERROR, 'BJDebugMsg takes 1 argument(s), 2 given')])
+
+    def test_a_leak_at_its_source_line(self):
+        # In a function the initializer does not call: code that runs once is
+        # not checked for leaks.
+        text = VJASS.replace('endlibrary\n',
+                             '    function Leaky takes nothing returns nothing\n'
+                             '        local location p = GetRectCenter(GetPlayableMapRect())\n'
+                             '    endfunction\n'
+                             'endlibrary\n')
+        found = self.diagnostics(text)
+        self.assertTrue(found)
+        self.assertEqual({(line, severity) for line, severity, _ in found}, {(8, analysis.WARNING)})
+
+    def test_a_compile_error(self):
+        [(line, severity, message)] = self.diagnostics(VJASS.replace('endlibrary\n', ''))
+        self.assertEqual((severity, message), (analysis.ERROR, 'Missing endlibrary'))
+
+    def test_vjass_by_extension_and_plain_jass_stays_jass(self):
+        text = VJASS.replace('BJDebugMsg("hello")', 'BJDebugMsg("hello", 3)')
+        self.assertEqual(len(self.diagnostics(text, uri='file:///map/Greeter.vj', language='plaintext')), 1)
+        self.assertEqual(analysis.effective_language(analysis.JASS, BAD_CALL), analysis.JASS)
+        self.assertEqual(analysis.effective_language(analysis.JASS, VJASS), analysis.VJASS)
+
+    def test_zinc(self):
+        text = ('library Z {\n'
+                '    function onInit() {\n'
+                '        BJDebugMsg("a", 2);\n'
+                '    }\n'
+                '}\n')
+        self.assertEqual(self.diagnostics(text, uri='file:///map/z.zn', language='zinc'),
+                         [(2, analysis.ERROR, 'BJDebugMsg takes 1 argument(s), 2 given')])
+
+    def test_an_error_in_an_imported_file(self):
+        import pathlib
+        import tempfile
+        with tempfile.TemporaryDirectory() as folder:
+            with open(os.path.join(folder, 'Other.j'), 'w', encoding='utf-8') as handle:
+                handle.write('library Other\nendlibrar\n')
+            uri = pathlib.Path(folder, 'Main.j').as_uri()
+            [(line, severity, message)] = self.diagnostics('//! import "Other.j"\n' + VJASS, uri=uri)
+        self.assertEqual((line, severity), (0, analysis.ERROR))
+        self.assertIn('Other.j', message)
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')

@@ -290,7 +290,9 @@ def _lua_line(lines, line):
 
 
 def index(language, text):
-    if language == 'jass':
+    # vJass and Zinc get the JASS index: their functions, globals and natives
+    # are found, their structs and methods are not.
+    if language in ('jass', 'vjass', 'zinc'):
         return index_jass(text)
     if language == 'lua':
         return index_lua(text)
@@ -332,7 +334,7 @@ _KIND_WORDS = {'native': 'native', 'function': 'function', 'global': 'global',
 def describe(symbol, language):
     """The hover text of `symbol`, as markdown: its declaration as code, and
     where it comes from."""
-    code_language = 'jass' if symbol.path or language == 'jass' else 'lua'
+    code_language = 'lua' if language == 'lua' and not symbol.path else 'jass'
     where = os.path.basename(symbol.path) if symbol.path else 'this file'
     what = _KIND_WORDS.get(symbol.kind, symbol.kind)
     if symbol.container:
@@ -377,7 +379,7 @@ def completions(document_index, language, prefix, line):
                 continue
             if not _visible(symbol, line, language):
                 continue
-            if not prefix and symbol.scope is None and language == 'jass':
+            if not prefix and symbol.scope is None and language != 'lua':
                 continue  # with no prefix, only the function's own names
             if len(items) >= COMPLETION_LIMIT:
                 complete = False

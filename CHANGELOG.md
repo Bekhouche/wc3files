@@ -17,6 +17,7 @@ section to the new version and its date.
 - Go to definition in `wc3files-lsp`: a name jumps to its declaration in the file, or for a native, BJ function or constant to its line in the bundled `common.j` or `blizzard.j` (#389).
 - Completion in `wc3files-lsp`: the names that start with what was typed, the file's own (parameters and locals only in their function) before the natives, BJ functions, constants and types of `common.j` and `blizzard.j`, then the keywords, each with its declaration, up to 300 at a time; in Lua, the file's names, the natives and Lua's keywords (#390).
 - The outline of a file in `wc3files-lsp`: its types, globals and constants, natives and functions, each function with its parameters and locals and its range up to `endfunction`; in Lua, its functions (#391).
+- vJass and Zinc diagnostics in `wc3files-lsp`: `.vj` and `.zn` files, and `.j` files with vJass blocks, are compiled with the vJass compiler, and the compile error, the warnings, and the JASS checker's findings and leaks on the compiled code are reported at their source line. The compiler's source map now covers the locals a function declares first, which mapped to nothing (#392).
 
 ## [0.12.0] - 2026-11-27
 

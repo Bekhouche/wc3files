@@ -262,10 +262,21 @@ class Server:
 
     def publish(self, uri):
         document = self.documents[uri]
-        params = {'uri': uri, 'diagnostics': analysis.diagnostics(document.language, document.text)}
+        params = {'uri': uri, 'diagnostics': analysis.diagnostics(
+            document.language, document.text, path_of(uri))}
         if document.version is not None:
             params['version'] = document.version
         self.notify('textDocument/publishDiagnostics', params)
+
+
+def path_of(uri):
+    """The local path of a file: URI, or None for another scheme."""
+    from urllib.parse import unquote, urlparse
+    from urllib.request import url2pathname
+    parsed = urlparse(uri)
+    if parsed.scheme != 'file':
+        return None
+    return url2pathname(unquote(parsed.path))
 
 
 def serve(reader=None, writer=None):

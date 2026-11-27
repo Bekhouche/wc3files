@@ -24,8 +24,15 @@ The same as `wc3files jass --check`:
   5.3 libraries, and native calls with the wrong number or kind of
   arguments.
 
-The language comes from the editor's language id (`jass` or `lua`), or
-else from the file's extension. Each change is checked again: the largest
+- vJass and Zinc (`.vj` and `.zn` files, and `.j` files with a `library`,
+  `scope`, `struct`, `module`, `interface` or `//! zinc` block): the file is
+  compiled with the vJass compiler, and its compile error, its warnings, and
+  the checks above on the compiled code are reported at the source line they
+  come from. A finding in code the compiler generated, with no source line,
+  is left out. `//! import` finds files next to the one you edit.
+
+The language comes from the editor's language id (`jass`, `vjass`, `zinc`
+or `lua`), or else from the file's extension. Each change is checked again: the largest
 `war3map.j` of the first 120 corpus maps, 89,392 lines, takes 1.9 s.
 
 ## Hover
