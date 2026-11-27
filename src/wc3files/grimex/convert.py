@@ -18,7 +18,7 @@ it.
 
 The borders are the classic ones this package bundles (wc3files.img.borders),
 not the TGA files of a Grim Extension Pack install; BLP output is the
-paletted kind (wc3files.img.BlpFile writes no JPEG).
+paletted kind, as it was before BlpFile could write JPEG (#261).
 
 `convert(source_name, data, archive)` returns [(archive path, bytes), ...],
 or None when the file is imported as it is.

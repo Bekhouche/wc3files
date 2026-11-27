@@ -456,6 +456,20 @@ Input format is detected from the file's own header, not its extension.
 `make-icon` is the classic icon workflow (resize, border, disabled variant);
 `--border` takes any image you supply, since no border artwork is bundled.
 
+A `.blp` is written paletted by default: at most 256 colours, lossless for
+most icons. `--blp-jpeg QUALITY` (1 to 100) writes the JPEG kind most of the
+game's own icons and textures are, with mipmaps down to 1x1 (`--no-mipmaps`
+for one, where the command has it). The game's icons use quality 68: its
+quantization table is that quality's, value for value. The JPEG stream is
+split between a shared header and each mip as the game's files split it, and
+both this package's decoder and Pillow read it back (Pillow as inverted CMYK,
+as it reads the game's own files), within 1 of each other on every plane.
+
+```bash
+wc3files img-convert icon.png BTNThing.blp --blp-jpeg 68
+wc3files make-icon source.png BTNThing.blp --blp-jpeg 68
+```
+
 ## Models
 
 ```bash
