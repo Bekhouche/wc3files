@@ -1031,6 +1031,63 @@ def _cmd_terrain_image(args):
     return 0
 
 
+def _cmd_shadow_image(args):
+    """war3map.shd as a PNG, and back (#203)."""
+    from wc3files.shd import ShadowMapFile
+    from wc3files.shd.image import shadow_from_png, shadow_png, shadow_size
+    from wc3files.w3e import TerrainFile
+    from wc3files.w3x.modes import archive_files, _find, _write_map
+    files = size = None
+    if args.input.lower().endswith(_MAP_EXTENSIONS):
+        files = archive_files(_open_map(args.input, args.deep))
+        key = _find(files, 'war3map.w3e')
+        if key is None:
+            raise ValueError(f'{args.input} has no war3map.w3e to take the size from')
+        terrain = TerrainFile()
+        terrain.read(files[key])
+        size = shadow_size(terrain.get_data())
+    elif args.input.lower().endswith('.w3e'):
+        terrain = TerrainFile()
+        terrain.read(args.input)
+        size = shadow_size(terrain.get_data())
+    elif args.size:
+        size = tuple(int(n) for n in args.size.lower().split('x'))
+    if args.action == 'export':
+        if files is not None:
+            key = _find(files, 'war3map.shd')
+            if key is None:
+                raise ValueError(f'{args.input} has no war3map.shd')
+            data = files[key]
+        elif args.input.lower().endswith('.w3e'):
+            raise ValueError('export: give the map or the war3map.shd, with --size')
+        else:
+            if size is None:
+                raise ValueError('export: a war3map.shd has no size of its own; give '
+                                 '--size WIDTHxHEIGHT in cells, or the map')
+            with open(args.input, 'rb') as handle:
+                data = handle.read()
+        shadow = ShadowMapFile()
+        shadow.read(data, *size)
+        with open(args.image, 'wb') as handle:
+            handle.write(shadow_png(shadow.get_data()))
+        cells = shadow.get_data()['cells']
+        print(f'Wrote {args.image} ({size[0]}x{size[1]}, '
+              f'{sum(1 for c in cells if c)} cells in shadow)')
+        return 0
+    if not args.output:
+        raise ValueError('shadow-image import: give the map or war3map.shd to write')
+    shadow = shadow_from_png(args.image, size)
+    data = shadow.to_bytes()
+    if files is not None and args.output.lower().endswith(_MAP_EXTENSIONS):
+        files[_find(files, 'war3map.shd') or 'war3map.shd'] = data
+        _write_map(files, args.output)
+    else:
+        with open(args.output, 'wb') as handle:
+            handle.write(data)
+    print(f'{sum(1 for c in data if c)} of {len(data)} cells in shadow; wrote {args.output}')
+    return 0
+
+
 def _cmd_map_description(args):
     """A Hive Workshop or GitHub description of a map (#253)."""
     from wc3files.w3x.description import TEMPLATES, map_summary, render
@@ -3194,6 +3251,24 @@ def build_parser():
                                  help='import: the values black and white stand for.')
     p_terrain_image.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
     p_terrain_image.set_defaults(func=_cmd_terrain_image)
+
+    p_shadow_image = subparsers.add_parser(
+        'shadow-image', help='Export or import the shadow map (war3map.shd) as a PNG.',
+        description=('One pixel per shadow cell, four per tile in each direction, north '
+                     'up: black for shadow, white for none. On import a pixel darker than '
+                     'half gray is shadow, and the size must match the map. See '
+                     + _DOCS + '#shadow-maps.'))
+    p_shadow_image.add_argument('action', choices=('export', 'import'))
+    p_shadow_image.add_argument('input', help=(
+        'The .w3x/.w3m map; or a war3map.shd with --size (export), or a war3map.w3e to '
+        'check the size against (import).'))
+    p_shadow_image.add_argument('image', help='The PNG to write (export) or read (import).')
+    p_shadow_image.add_argument('output', nargs='?',
+                                help='import: the map or war3map.shd to write.')
+    p_shadow_image.add_argument('--size', help='The size in cells, as 256x256, for a bare '
+                                               'war3map.shd.')
+    p_shadow_image.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)
+    p_shadow_image.set_defaults(func=_cmd_shadow_image)
 
     p_description = subparsers.add_parser(
         'map-description', help='Write a Hive Workshop (BBCode) or Markdown map description.',

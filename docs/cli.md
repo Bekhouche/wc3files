@@ -813,6 +813,27 @@ layer's lowest and highest values in the terrain it goes into. A colour image
 counts as the mean of its red, green and blue. For `water-flag`, a pixel
 brighter than half is water.
 
+### Shadow maps
+
+```bash
+wc3files shadow-image export MyMap.w3x shadow.png
+wc3files shadow-image import MyMap.w3x painted.png Shaded.w3x
+wc3files shadow-image export war3map.shd shadow.png --size 256x256
+```
+
+`war3map.shd` is the shadow the World Editor bakes onto the ground: one cell
+per quarter tile in each direction, either in shadow or not. `shadow-image`
+writes it as a PNG, one pixel per cell, north up, black for shadow and white
+for none, and reads it back from one. On import, a pixel darker than half gray
+is shadow, so a picture painted in any image editor works, and the image must
+be the size of the map's shadow map, which is taken from its `war3map.w3e`. A
+bare `war3map.shd` has no size of its own, so `export` needs `--size` for one,
+and `import` checks the size against a `war3map.w3e` given in place of the
+map. All 342 readable corpus maps hold only these two values, and their shadow
+maps came back byte for byte. The map is rebuilt without its old
+`(attributes)`, which would no longer match it, so it does not need to be
+deleted by hand.
+
 ## Scripts and triggers
 
 ```bash
