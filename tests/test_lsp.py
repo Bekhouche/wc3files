@@ -673,6 +673,171 @@ class TestSignatureHelp(unittest.TestCase):
         self.assertEqual(self.parameter(result), 'owner')
 
 
+POOLS = (
+    'library Pools initializer Init\n'                       # 0
+    '    globals\n'
+    '        private constant integer MAX = 8\n'
+    '        public integer count = 0\n'
+    '    endglobals\n'
+    '    module Counted\n'                                   # 5
+    '        static integer made = 0\n'
+    '    endmodule\n'
+    '    struct Pool\n'
+    '        readonly integer size\n'
+    '        unit array units[8]\n'                          # 10
+    '        thistype next\n'
+    '        implement Counted\n'
+    '        static method create takes integer size returns thistype\n'
+    '            local thistype this = thistype.allocate()\n'
+    '            set this.size = size\n'                     # 15
+    '            set thistype.made = thistype.made + 1\n'
+    '            return this\n'
+    '        endmethod\n'
+    '        method add takes unit u returns nothing\n'
+    '            set .units[.size] = u\n'                    # 20
+    '            set this.size = this.size + 1\n'
+    '        endmethod\n'
+    '    endstruct\n'
+    '    struct BigPool extends Pool\n'
+    '        real weight\n'                                  # 25
+    '    endstruct\n'
+    '    private function Init takes nothing returns nothing\n'
+    '        local Pool p = Pool.create(MAX)\n'
+    '        local BigPool b = BigPool.create(2)\n'
+    '        call p.add(null)\n'                             # 30
+    '        call p.next.add(null)\n'
+    '        set b.weight = 1.0\n'
+    '        set count = p.size\n'
+    '    endfunction\n'
+    'endlibrary\n')
+
+
+def column(text, line, word, nth=0):
+    """The 0-based character of the `nth` `word` on 0-based `line`."""
+    row = text.split('\n')[line]
+    start = -1
+    for _ in range(nth + 1):
+        start = row.index(word, start + 1)
+    return start
+
+
+class TestVJassStructs(unittest.TestCase):
+    def at(self, method, line, word, nth=0, **extra):
+        return request(method, POOLS, line, column(POOLS, line, word, nth) + 1,
+                       uri='file:///map/Pools.j', **extra)
+
+    def declared(self, line, word, nth=0):
+        result = self.at('textDocument/definition', line, word, nth)
+        return result and (result['range']['start']['line'], result['range']['start']['character'])
+
+    def test_members_after_a_dot(self):
+        self.assertEqual(self.declared(15, 'size'), (9, 25))         # this.size: the member
+        self.assertEqual(self.declared(15, 'size', 1), (13, 43))     # the parameter
+        self.assertEqual(self.declared(20, 'units'), (10, 19))       # .units
+        self.assertEqual(self.declared(20, 'size'), (9, 25))         # .size, in an index
+        self.assertEqual(self.declared(16, 'made'), (6, 23))         # from the module
+
+    def test_through_types(self):
+        self.assertEqual(self.declared(28, 'create'), (13, 22))      # Pool.create
+        self.assertEqual(self.declared(29, 'create'), (13, 22))      # inherited
+        self.assertEqual(self.declared(30, 'add'), (19, 15))         # a local of type Pool
+        self.assertEqual(self.declared(31, 'add'), (19, 15))         # p.next: thistype
+        self.assertEqual(self.declared(32, 'weight'), (25, 13))
+        self.assertEqual(self.declared(33, 'size'), (9, 25))
+        self.assertIsNone(self.declared(14, 'allocate'))             # made by the compiler
+
+    def test_hover(self):
+        value = self.at('textDocument/hover', 30, 'add')['contents']['value']
+        self.assertIn('method add takes unit u returns nothing', value)
+        self.assertIn('of `Pool`', value)
+
+    def test_library_globals(self):
+        self.assertEqual(self.declared(28, 'MAX'), (2, 33))
+        self.assertEqual(self.declared(33, 'count'), (3, 23))
+
+    def test_completion_after_a_dot(self):
+        line = 32
+        character = column(POOLS, line, 'b.') + 2
+        result = request('textDocument/completion', POOLS, line, character,
+                         uri='file:///map/Pools.j')
+        self.assertEqual([i['label'] for i in result['items']],
+                         ['add', 'allocate', 'create', 'deallocate', 'destroy', 'getType', 'made',
+                          'next', 'size', 'typeid', 'units', 'weight'])
+        self.assertFalse(result['isIncomplete'])
+
+    def test_what_the_compiler_makes(self):
+        value = self.at('textDocument/hover', 14, 'allocate')['contents']['value']
+        self.assertIn('static method allocate takes nothing returns thistype', value)
+        self.assertIn('made by the vJass compiler', value)
+        self.assertIsNone(self.declared(14, 'allocate'))
+        message = reply('textDocument/rename', POOLS, 14, column(POOLS, 14, 'allocate') + 1,
+                        uri='file:///map/Pools.j', newName='alloc')
+        self.assertIn('made by the vJass compiler', message['error']['message'])
+
+    def test_super(self):
+        text = POOLS.replace('        real weight\n',
+                             '        real weight\n'
+                             '        method add takes unit u returns nothing\n'
+                             '            call super.add(u)\n'
+                             '        endmethod\n')
+        line = text.split('\n').index('            call super.add(u)')
+        result = request('textDocument/definition', text, line, column(text, line, 'add') + 1,
+                         uri='file:///map/Pools.j')
+        self.assertEqual(result['range']['start'], {'line': 19, 'character': 15})
+
+    def test_a_delegate(self):
+        # BigPool does not extend Pool here: add comes through the delegate.
+        text = POOLS.replace('struct BigPool extends Pool\n        real weight\n',
+                             'struct BigPool\n        real weight\n        delegate Pool inner\n')
+        text = text.replace('        set b.weight = 1.0\n',
+                            '        call b.inner.add(null)\n        call b.add(null)\n')
+        line = text.split('\n').index('        call b.add(null)')
+        result = request('textDocument/definition', text, line, column(text, line, 'add') + 1,
+                         uri='file:///map/Pools.j')
+        self.assertEqual(result['range']['start'], {'line': 19, 'character': 15})
+
+    def test_members_are_not_bare_names(self):
+        result = request('textDocument/completion', POOLS, 33, column(POOLS, 33, 'count') + 2,
+                         uri='file:///map/Pools.j')
+        labels = [i['label'] for i in result['items']]
+        self.assertIn('count', labels)
+        self.assertNotIn('create', labels)
+
+    def test_references_and_rename_of_a_member(self):
+        result = self.at('textDocument/references', 9, 'size',
+                         context={'includeDeclaration': True})
+        self.assertEqual(starts(result), [(9, 25), (15, 21), (20, 24), (21, 21), (21, 33),
+                                          (33, 22)])
+        message = reply('textDocument/rename', POOLS, 9, 26, uri='file:///map/Pools.j',
+                        newName='length')
+        renamed = apply(POOLS, message['result'], 'file:///map/Pools.j')
+        self.assertIn('set this.length = size\n', renamed)
+        self.assertIn('set .units[.length] = u\n', renamed)
+        self.assertIn('set count = p.length\n', renamed)
+        message = reply('textDocument/rename', POOLS, 9, 26, uri='file:///map/Pools.j',
+                        newName='next')
+        self.assertIn('already a member of Pool', message['error']['message'])
+
+    def test_signature_help_of_a_method(self):
+        line = 30
+        result = request('textDocument/signatureHelp', POOLS, line,
+                         column(POOLS, line, '(') + 1, uri='file:///map/Pools.j')
+        self.assertEqual(result['signatures'][0]['label'],
+                         'method add takes unit u returns nothing')
+        self.assertEqual(result['activeParameter'], 0)
+
+    def test_outline(self):
+        def tree(items):
+            return [(i['name'], tree(i['children'])) if 'children' in i else i['name']
+                    for i in items]
+        [library] = tree(outline(POOLS, uri='file:///map/Pools.j'))
+        self.assertEqual(library, ('Pools', [
+            'MAX', 'count', ('Counted', ['made']),
+            ('Pool', ['size', 'units', 'next', ('create', ['size', 'this']), ('add', ['u'])]),
+            ('BigPool', ['weight']),
+            ('Init', ['p', 'b'])]))
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
