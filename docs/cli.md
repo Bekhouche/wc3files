@@ -1277,6 +1277,50 @@ and its last block may be cut short. Its players, chat and actions are read
 up to the last whole block, and `replay-actions` takes the length from the
 recorded time slots. Such a replay is written back only unchanged.
 
+## Desyncs
+
+```bash
+wc3files desync-info "Documents/Warcraft III/Errors/2026-01-01 12.00.00 0a1b2c3d"
+wc3files desync-info FOLDER --json --blocks     # with every block of the .log file
+wc3files desync-diff FOLDER_A FOLDER_B          # two players' logs of the same game
+```
+
+When a player desyncs, the game writes a folder in
+`Documents\Warcraft III\Errors`: `Desync.txt`, a `.log` file, the replay and
+`War3Log.txt`. `desync-info` shows the date (from the folder's name), map,
+build, game id and desync turn from `Desync.txt`, the records of the `.log`
+file, and the players and leaves of the replay.
+
+The `.log` file is text: blocks headed `[Desync - <category> - Turn(<turn>)
+= <checksum>]`, where the category is a four-character code written as a
+number (`gwar`, `rand`, `cust`, `cnet`, `chea`, `misc`, `ipse`, `slkd`,
+`absl`, `upsl`), and under each a tree of `#id#` groups and `#id#: 0x...`
+values, one tab per level. A desync writes a record: the 16 blocks of each
+of the three turns up to it, 48 in all. The file is named by the start of
+the game session and grows, so it can hold records of several desyncs and
+of earlier games. Ids are kept as numbers and shown as four characters
+where they read as such (`plys`, `tech`); what they stand for is not
+documented. A line of any other shape is an error rather than skipped.
+
+`desync-diff` lines two logs up by turn and category and lists the blocks
+whose checksum or items differ: by default those of the first turn that
+differs, with `--all` every one. For each it gives the two checksums and
+the path down to the first item apart, with both values. The game writes a
+folder for each player who desyncs; comparing the log of a dropped player
+with the log of one who stayed shows which part of the game state went
+apart first.
+
+This was measured on 64 desync folders of one machine, builds 23745 and
+24268: every log reads, every record has 48 blocks, and changing one value
+of a log at random, `desync-diff` finds that value and nothing else, in all
+64. They are all one player's logs, so the comparison has not been checked
+on a real pair of players. At the desync turn, the six custom checksums of
+`Desync.txt` are found among the log's blocks (in `cust` and `misc`), `game`
+in `gwar` in 42 of the 64 and `rand` in 25; `net`, `tempest` and `upgrade`
+are not found. In one folder a second desync of the same game, 8 seconds
+later, added no record, so the last record is not always the desync turn
+`Desync.txt` gives.
+
 ## An installed game
 
 ```bash
