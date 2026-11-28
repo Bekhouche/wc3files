@@ -13,7 +13,8 @@ from wc3files.table.wts_file import WtsFile
 from wc3files.w3o.object_file import ObjectFile
 from wc3files.w3x.imports import read_imports
 from wc3files.w3x.translation import (apply_translation, diff_strings, externalize_strings,
-                                      locale_tables, string_keys, translation)
+                                      locale_tables, locale_translations, string_keys,
+                                      translation)
 from wc3files.w3x.w3x_file import read_map
 
 SAMPLE = os.path.join(os.path.dirname(__file__), 'samples', 'w3x', 'sample.w3x')
@@ -163,6 +164,64 @@ class TestTranslation(unittest.TestCase):
         self.assertEqual(len(read_imports(again)[1]['files']), len(listed))
         with self.assertRaises(ValueError):
             locale_tables(files, {'fr': table})
+
+    def test_locale_translations(self):
+        german = translation(OLD)[0]
+        for key, text in {'w3u/h000/Name': 'Fußsoldat',
+                          'script/Trig_Intro_Actions/1': 'Willkommen!'}.items():
+            german['strings'][key]['translation'] = text
+        old, _ = locale_tables(OLD, {'deDE': german})
+        found = locale_translations(old)
+        self.assertEqual(list(found), ['deDE'])
+        read = found['deDE']['strings']
+        self.assertEqual(read['w3u/h000/Name']['translation'], 'Fußsoldat')
+        # a string the table gives its base text for reads as that text
+        self.assertEqual(read['script/Trig_Intro_Actions/2']['translation'], 'Defend the gate.')
+        # a string missing from the table reads as untranslated
+        old['_Locales\\deDE.w3mod\\war3map.wts'] = WtsFile().import_data(
+            {1: 'Fußsoldat'}).to_bytes()
+        self.assertEqual(locale_translations(old)['deDE']['strings']
+                         ['script/Trig_Intro_Actions/1']['translation'], '')
+        # carried over to the next version as a translation file is
+        table, counts = translation(NEW, found['deDE'])
+        self.assertEqual((counts['changed'], counts['new']), (1, 2))
+        self.assertEqual(table['strings']['w3u/h000/Name']['translation'], 'Fußsoldat')
+        self.assertEqual(table['strings']['script/Trig_Intro_Actions/1']['old_source'],
+                         'Welcome!')
+
+    def test_cli_locales(self):
+        from wc3files.w3x.modes import _write_map
+        with tempfile.TemporaryDirectory() as tmp:
+            old, new = os.path.join(tmp, 'v1.w3x'), os.path.join(tmp, 'v2.w3x')
+            _write_map(OLD, old)
+            _write_map(NEW, new)
+            french = os.path.join(tmp, 'fr.json')
+            with redirect_stderr(io.StringIO()):
+                main(['map-translate', 'export', old, '-o', french])
+            with open(french, encoding='utf-8') as handle:
+                table = json.load(handle)
+            table['strings']['script/Trig_Intro_Actions/2']['translation'] = 'Défendez la porte.'
+            with open(french, 'w', encoding='utf-8') as handle:
+                json.dump(table, handle)
+            both = os.path.join(tmp, 'both.w3x')
+            err = io.StringIO()
+            with redirect_stderr(err):
+                main(['map-translate', 'locales', old, '--locale', f'frFR={french}', '-o', both])
+            self.assertIn('frFR: 1 applied', err.getvalue())
+            carried = os.path.join(tmp, 'fr2.json')
+            with redirect_stderr(io.StringIO()):
+                main(['map-translate', 'export', new, '--previous', both, '--locale', 'frFR',
+                      '-o', carried])
+            with open(carried, encoding='utf-8') as handle:
+                strings = json.load(handle)['strings']
+            self.assertEqual(strings['script/Trig_Intro_Actions/2']['translation'],
+                             'Défendez la porte.')
+            err = io.StringIO()
+            with redirect_stderr(err):
+                code = main(['map-translate', 'export', new, '--previous', both,
+                             '--locale', 'deDE', '-o', carried])
+            self.assertNotEqual(code, 0)
+            self.assertIn('has no deDE string table (it has: frFR)', err.getvalue())
 
     def test_cli(self):
         from wc3files.w3x.modes import _write_map

@@ -316,6 +316,7 @@ wc3files map-translate export v2.w3x --previous fr.json -o fr2.json
 wc3files map-translate apply v2.w3x fr2.json -o v2-fr.w3x
 wc3files map-translate externalize map.w3x -o out.w3x  # inline texts into war3map.wts
 wc3files map-translate locales map.w3x --locale frFR=fr.json --locale deDE=de.json -o all.w3x
+wc3files map-translate export v2.w3x --previous all.w3x --locale deDE -o de2.json
 ```
 
 `TRIGSTR_` numbers change from one version of a map to the next, so
@@ -371,6 +372,17 @@ in the game yet (#225).
 On the 266 maps of the game with locale tables, rebuilding the 3,313 tables
 from their own translations gave the same text for every string that has a
 key, apart from the strings a table sets to empty.
+
+`export --locale deDE` reads a map's own `_Locales\deDE.w3mod\war3map.wts`
+as a translation file: the map's text as the source and the table's text as
+the translation, empty where the table does not have the string. With
+`--previous` set to the older map instead of a `.json` file, the table of
+that map carries over to the new version, with the same `changed` and `new`
+statuses. Between ETS Starlight v1.2 beta2 and v1.2 in the corpus, 12,102 of
+12,105 German strings carried over, and 3 came back as `changed`, among
+them the map name, whose German text still read `v1.2 beta`. That German
+table is mostly a copy of the English one: 12,098 of its strings have the
+English text.
 
 On seven pairs of versions of the same map in the corpus, the keys held: for
 example, between Balanced Hero Survival 0.91 and 0.92, 1,097 strings changed
