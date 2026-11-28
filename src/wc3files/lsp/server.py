@@ -132,6 +132,7 @@ class Server:
             'textDocument/hover': self.on_hover,
             'textDocument/definition': self.on_definition,
             'textDocument/completion': self.on_completion,
+            'textDocument/documentSymbol': self.on_document_symbol,
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -143,6 +144,7 @@ class Server:
             'hoverProvider': True,
             'definitionProvider': True,
             'completionProvider': {'triggerCharacters': []},
+            'documentSymbolProvider': True,
         }
 
     def on_initialize(self, params):
@@ -250,6 +252,13 @@ class Server:
         # Incomplete with no prefix too: the bundled names come once a letter
         # is typed, so the editor has to ask again.
         return {'isIncomplete': not complete or not prefix, 'items': items}
+
+    def on_document_symbol(self, params):
+        from .symbols import document_symbols
+        document = self.documents.get(params['textDocument']['uri'])
+        if document is None or document.language is None:
+            return None
+        return document_symbols(document.index, document.text)
 
     def publish(self, uri):
         document = self.documents[uri]
