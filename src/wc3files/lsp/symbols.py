@@ -54,10 +54,14 @@ class Index:
     name after `.` or `:` is a field or method, not a variable, and is left
     out."""
 
-    def __init__(self, symbols, language, names=()):
+    def __init__(self, symbols, language, names=(), dynamic=()):
         self.symbols = symbols
         self.language = language
         self.names = list(names)
+        # (string token, 'function' or 'global') for a name given as a
+        # string to ExecuteFunc or TriggerRegisterVariableEvent, which a
+        # rename changes too (#401).
+        self.dynamic = list(dynamic)
         self.by_name = {}
         for symbol in symbols:
             self.by_name.setdefault(symbol.name, []).append(symbol)
@@ -189,7 +193,34 @@ def index_jass(text, path=None):
         close(len(lines) + 1)
     # Globals: `[constant] type [array] name`, between globals and endglobals.
     symbols.extend(_jass_globals(tokens, lines, path))
-    return Index(symbols, 'jass', _names(tokens, 'IDENT'))
+    return Index(symbols, 'jass', _names(tokens, 'IDENT'), _dynamic_names(tokens))
+
+
+def _dynamic_names(tokens):
+    """The string tokens that name a function to ExecuteFunc, or a global to
+    TriggerRegisterVariableEvent, as the optimizer reads them."""
+    from wc3files.scripts.optimizer import DYNAMIC_DISPATCH_NATIVES, VARIABLE_EVENT_NATIVE
+    out = []
+    for i, token in enumerate(tokens):
+        if token.kind != 'IDENT' or i + 2 >= len(tokens) or tokens[i + 1].kind != 'LPAREN':
+            continue
+        if token.value in DYNAMIC_DISPATCH_NATIVES and tokens[i + 2].kind == 'STRING':
+            out.append((tokens[i + 2], 'function'))
+        elif token.value == VARIABLE_EVENT_NATIVE:
+            depth = 0
+            for j in range(i + 2, min(i + 40, len(tokens) - 1)):
+                kind = tokens[j].kind
+                if kind in ('LPAREN', 'LBRACKET'):
+                    depth += 1
+                elif kind in ('RPAREN', 'RBRACKET'):
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif kind == 'COMMA' and depth == 0:
+                    if tokens[j + 1].kind == 'STRING':
+                        out.append((tokens[j + 1], 'global'))
+                    break
+    return out
 
 
 def _header_returns(tokens, i):
@@ -484,6 +515,76 @@ def references(document_index, symbol, include_declaration=True):
                 continue
             found[(token.line, token.col)] = is_declaration
     return [(line, col, found[(line, col)]) for line, col in sorted(found)]
+
+
+_JASS_NAME = re.compile(r'[A-Za-z][A-Za-z0-9_]*\Z')
+_LUA_NAME = re.compile(r'[A-Za-z_][A-Za-z0-9_]*\Z')
+
+
+class RenameError(ValueError):
+    """A rename that cannot be done; the message says why."""
+
+
+def can_rename(symbol):
+    """Raise RenameError for a symbol a rename cannot change: one declared in
+    the bundled files."""
+    if symbol.path is not None:
+        raise RenameError(f'{symbol.name} is declared in {os.path.basename(symbol.path)}, '
+                          f'not in this file')
+
+
+def rename_edits(document_index, symbol, new_name):
+    """The (line, col, length) of each text to replace by `new_name` to
+    rename `symbol`, 1-based: its declaration, its uses, and in JASS the
+    ExecuteFunc and TriggerRegisterVariableEvent strings that name it.
+    Raises RenameError when `new_name` is not a name, is a keyword, or would
+    change what another name refers to."""
+    from wc3files.scripts.jass_lexer import KEYWORDS
+    from wc3files.scripts.lua_lexer import LUA_KEYWORDS
+    can_rename(symbol)
+    lua = document_index.language == 'lua'
+    if not (_LUA_NAME if lua else _JASS_NAME).match(new_name):
+        raise RenameError(f'{new_name!r} is not a name')
+    if new_name in (LUA_KEYWORDS if lua else KEYWORDS):
+        raise RenameError(f'{new_name} is a keyword')
+    uses = references(document_index, symbol)
+    if new_name != symbol.name:
+        _check_conflict(document_index, symbol, new_name, uses)
+    edits = [(line, col, len(symbol.name)) for line, col, _ in uses]
+    if not lua and symbol.scope is None and symbol.kind in ('function', 'global'):
+        for token, kind in document_index.dynamic:
+            if token.value == symbol.name and kind == symbol.kind:
+                edits.append((token.line, token.col + 1, len(symbol.name)))  # after the quote
+    return sorted(set(edits))
+
+
+def _check_conflict(document_index, symbol, new_name, uses):
+    """Raise RenameError when a declaration or use of `new_name` would be
+    shadowed by the renamed symbol, or would shadow it."""
+    taken = [s for s in document_index.by_name.get(new_name, [])]
+    outside = bundled().resolve(new_name, 0)
+    if document_index.language == 'lua':
+        tokens = [t for t in document_index.names if t.value == new_name]
+        if taken or tokens or outside:
+            raise RenameError(f'{new_name} is already used in this file'
+                              if taken or tokens else f'{new_name} is a native or BJ name')
+        return
+    if symbol.scope:
+        first, last = symbol.scope
+        for token in document_index.names:
+            if token.value == new_name and first <= token.line <= last:
+                raise RenameError(f'{new_name} is already used in {symbol.container}')
+        return
+    if outside is not None:
+        raise RenameError(f'{new_name} is declared in {os.path.basename(outside.path)}')
+    if any(s.scope is None for s in taken):
+        raise RenameError(f'{new_name} is already declared in this file')
+    resolves = _resolver(document_index, new_name)
+    for line, _, _ in uses:
+        shadow = resolves(line)
+        if shadow is not None and shadow.scope:
+            raise RenameError(f'{new_name} is a {_KIND_WORDS.get(shadow.kind, shadow.kind)} '
+                              f'of {shadow.container}, where {symbol.name} is used')
 
 
 def _resolver(document_index, name):

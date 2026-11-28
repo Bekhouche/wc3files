@@ -76,6 +76,18 @@ function, the uses are those in the file: the bundled files are not
 searched. In Lua, a key of a table constructor (`{x = 1}`) is still taken
 as a use of `x`.
 
+## Rename
+
+Rename changes a name's declaration and every use found by references. In
+JASS it changes the strings that name it too: a function given to
+`ExecuteFunc("...")`, and a global given to `TriggerRegisterVariableEvent`,
+since the game looks those up by name. The new name is refused when it is
+not a name, is a keyword, or would change what another name refers to: a
+local named as another name its function uses, a global or function named
+as one of the file or of `common.j` and `blizzard.j`, or a global named as
+a local of a function that uses it. In Lua, a name used anywhere in the file
+is refused. Names declared in `common.j` and `blizzard.j` cannot be renamed.
+
 ## Outline
 
 The outline of a file (document symbols) lists its types, globals and

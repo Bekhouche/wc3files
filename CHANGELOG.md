@@ -13,6 +13,7 @@ section to the new version and its date.
 ### Added
 
 - Find references and highlights in `wc3files-lsp`: every use in the file of the name under the cursor, resolved as hover resolves it, so a local is not taken for a global or another function's local of the same name; the editor highlights them with the declaration marked as a write (#400).
+- Rename in `wc3files-lsp`: a name's declaration, its uses, and in JASS the `ExecuteFunc` and `TriggerRegisterVariableEvent` strings that name it, changed in one edit; a new name that is a keyword, or that would change what another name refers to, is refused with the reason (#401).
 
 ## [0.13.0] - 2026-11-28
 
