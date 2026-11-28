@@ -28,6 +28,20 @@ The language comes from the editor's language id (`jass` or `lua`), or
 else from the file's extension. Each change is checked again: the largest
 `war3map.j` of the first 120 corpus maps, 89,392 lines, takes 1.9 s.
 
+## Hover
+
+Hovering over a name shows its declaration and where it comes from: a
+native or BJ function with its signature from the bundled `common.j` and
+`blizzard.j`, a constant or `bj_` global of those files, or a type, global,
+native, function, parameter or local of the file itself. It works while a
+file has errors too, since the declarations are found from the file's
+tokens, not from a parse of the whole file.
+
+In JASS a name is looked up as JASS scopes it: a parameter or local of the
+function you are in, then the file, then `common.j` and `blizzard.j`. In
+Lua it is the nearest declaration above the cursor (`function`, `local`, or
+a parameter), then the natives: Lua's block scopes are not followed.
+
 ## Neovim
 
 Neovim (0.10 or later) has a client built in. Give `.j` files a file type

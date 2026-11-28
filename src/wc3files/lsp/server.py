@@ -26,9 +26,25 @@ FULL_SYNC = 1
 class Document:
     def __init__(self, uri, text, language, version=None):
         self.uri = uri
-        self.text = text
         self.language = language
         self.version = version
+        self.text = text
+
+    @property
+    def text(self):
+        return self._text
+
+    @text.setter
+    def text(self, value):
+        self._text = value
+        self._index = None  # built again on the next request that needs it
+
+    @property
+    def index(self):
+        if self._index is None:
+            from .symbols import index
+            self._index = index(self.language, self._text)
+        return self._index
 
 
 class Server:
@@ -113,6 +129,7 @@ class Server:
             'textDocument/didChange': self.on_did_change,
             'textDocument/didSave': self.on_did_save,
             'textDocument/didClose': self.on_did_close,
+            'textDocument/hover': self.on_hover,
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -121,6 +138,7 @@ class Server:
         return {
             'textDocumentSync': {'openClose': True, 'change': FULL_SYNC,
                                  'save': {'includeText': True}},
+            'hoverProvider': True,
         }
 
     def on_initialize(self, params):
@@ -171,6 +189,36 @@ class Server:
         self.documents.pop(uri, None)
         # Clear what the editor shows for a closed file.
         self.notify('textDocument/publishDiagnostics', {'uri': uri, 'diagnostics': []})
+
+    # -- language features -------------------------------------------------
+
+    def symbol_at(self, params):
+        """(document, symbol, word range) for the name at the request's
+        position, or None."""
+        from .symbols import lookup, word_at
+        document = self.documents.get(params['textDocument']['uri'])
+        if document is None or document.language is None:
+            return None
+        position = params['position']
+        found = word_at(document.text, position['line'], position['character'])
+        if found is None:
+            return None
+        word, start, end = found
+        symbol = lookup(document.index, word, position['line'] + 1)
+        if symbol is None:
+            return None
+        line = position['line']
+        return document, symbol, {'start': {'line': line, 'character': start},
+                                  'end': {'line': line, 'character': end}}
+
+    def on_hover(self, params):
+        from .symbols import describe
+        found = self.symbol_at(params)
+        if found is None:
+            return None
+        document, symbol, word_range = found
+        return {'contents': {'kind': 'markdown', 'value': describe(symbol, document.language)},
+                'range': word_range}
 
     def publish(self, uri):
         document = self.documents[uri]
