@@ -49,9 +49,15 @@ class Symbol:
 
 
 class Index:
-    def __init__(self, symbols, language):
+    """The declarations of a document, and `names`: the identifier tokens
+    that can refer to one, which references and rename search (#400). A
+    name after `.` or `:` is a field or method, not a variable, and is left
+    out."""
+
+    def __init__(self, symbols, language, names=()):
         self.symbols = symbols
         self.language = language
+        self.names = list(names)
         self.by_name = {}
         for symbol in symbols:
             self.by_name.setdefault(symbol.name, []).append(symbol)
@@ -119,6 +125,12 @@ def _ident(token):
     return token is not None and token.kind == 'IDENT'
 
 
+def _names(tokens, kind):
+    """The tokens of `kind` that are not after `.` or `:`."""
+    return [token for i, token in enumerate(tokens) if token.kind == kind and
+            not (i and tokens[i - 1].value in ('.', ':'))]
+
+
 def index_jass(text, path=None):
     from wc3files.scripts.jass_lexer import tokenize
     tokens = [t for t in _tokens(tokenize, text) if t.kind != 'EOF']
@@ -177,7 +189,7 @@ def index_jass(text, path=None):
         close(len(lines) + 1)
     # Globals: `[constant] type [array] name`, between globals and endglobals.
     symbols.extend(_jass_globals(tokens, lines, path))
-    return Index(symbols, 'jass')
+    return Index(symbols, 'jass', _names(tokens, 'IDENT'))
 
 
 def _header_returns(tokens, i):
@@ -269,7 +281,7 @@ def index_lua(text):
                     j += 2
                 else:
                     break
-    return Index(symbols, 'lua')
+    return Index(symbols, 'lua', _names(tokens, 'NAME'))
 
 
 def _lua_params(tokens, j, lines):
@@ -445,6 +457,69 @@ def document_symbols(document_index, text):
         else:
             out.append(entry(symbol))
     return out
+
+
+def references(document_index, symbol, include_declaration=True):
+    """The (line, col, is_declaration) of each use of `symbol` in the
+    document, 1-based, in order: each name token that resolves to it, as
+    hover resolves it. The declaration is one of them when `symbol` is
+    declared in the document and `include_declaration` is set.
+
+    Each token is resolved by bisecting the declarations of its name, not
+    with `Index.resolve`, which reads them all: a war3map.j can have
+    thousands of parameters of one name."""
+    resolves = _resolver(document_index, symbol.name)
+    found = {}
+    if symbol.path is None and include_declaration:
+        found[(symbol.line, symbol.col)] = True
+    for token in document_index.names:
+        if token.value != symbol.name or (token.line, token.col) in found:
+            continue
+        if symbol.scope and not symbol.scope[0] <= token.line <= symbol.scope[1]:
+            continue
+        if resolves(token.line) is symbol:
+            is_declaration = symbol.path is None and (token.line, token.col) == (
+                symbol.line, symbol.col)
+            if is_declaration and not include_declaration:
+                continue
+            found[(token.line, token.col)] = is_declaration
+    return [(line, col, found[(line, col)]) for line, col in sorted(found)]
+
+
+def _resolver(document_index, name):
+    """A function of a 1-based line giving the declaration `name` resolves
+    to there, as `lookup` does."""
+    import bisect
+    candidates = document_index.by_name.get(name) or []
+    outside = bundled().resolve(name, 0)
+    if document_index.language == 'lua':
+        ordered = sorted(candidates, key=lambda s: (s.line, s.col))
+        lines = [s.line for s in ordered]
+
+        def lua(line):
+            i = bisect.bisect_right(lines, line)
+            if i:
+                return ordered[i - 1]
+            return ordered[0] if ordered else outside
+        return lua
+    file_level = next((s for s in candidates if s.scope is None), None) or outside
+    scoped = {}
+    for s in candidates:  # the first declaration of a scope wins, as in resolve
+        if s.scope:
+            scoped.setdefault(s.scope, s)
+    ranges = sorted(scoped)
+    firsts = [r[0] for r in ranges]
+
+    def jass(line):
+        i = bisect.bisect_right(firsts, line)
+        # Scopes are functions, which do not nest; look back past the one
+        # that starts here in case two share a first line.
+        for j in range(i - 1, max(i - 3, -1), -1):
+            first, last = ranges[j]
+            if first <= line <= last:
+                return scoped[ranges[j]]
+        return file_level
+    return jass
 
 
 def lookup(document_index, name, line):

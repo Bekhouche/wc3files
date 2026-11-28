@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Added
+
+- Find references and highlights in `wc3files-lsp`: every use in the file of the name under the cursor, resolved as hover resolves it, so a local is not taken for a global or another function's local of the same name; the editor highlights them with the declaration marked as a write (#400).
+
 ## [0.13.0] - 2026-11-28
 
 ### Added

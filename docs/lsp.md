@@ -64,6 +64,18 @@ keywords. Each name comes with its declaration. Before anything is typed,
 only the names of the function you are in and the keywords are offered; the
 list holds at most 300 names, and the editor asks again as you type.
 
+## References and highlights
+
+Find references lists every use of the name under the cursor in the file,
+resolved as hover resolves it: in JASS, a local `count` of one function is
+not the local `count` of another, nor the global `count`. The editor also
+highlights the uses of the name under the cursor, its declaration marked as
+a write. A name after `.` or `:` is a field or method and is not a use, and
+names in strings and comments are not uses either. For a native or BJ
+function, the uses are those in the file: the bundled files are not
+searched. In Lua, a key of a table constructor (`{x = 1}`) is still taken
+as a use of `x`.
+
 ## Outline
 
 The outline of a file (document symbols) lists its types, globals and

@@ -446,6 +446,82 @@ class TestVJassDiagnostics(unittest.TestCase):
         self.assertIn('Other.j', message)
 
 
+def request(method, text, line, character, uri='file:///map/war3map.j', language='jass',
+            **extra):
+    """The result of `method` at a position in a document `text`."""
+    params = dict({'textDocument': {'uri': uri},
+                   'position': {'line': line, 'character': character}}, **extra)
+    _, out = exchange(INITIALIZE, open_doc(text, uri=uri, language=language),
+                      {'id': 5, 'method': method, 'params': params}, SHUTDOWN, EXIT)
+    [reply] = [m for m in out if m.get('id') == 5]
+    return reply['result']
+
+
+SHADOWED = (
+    'globals\n'
+    '    integer count = 0\n'
+    'endglobals\n'
+    'function A takes nothing returns nothing\n'
+    '    local integer count = 1\n'
+    '    set count = count + 1 // count\n'
+    'endfunction\n'
+    'function B takes nothing returns nothing\n'
+    '    set count = count + 2\n'
+    '    call BJDebugMsg("count")\n'
+    '    call A()\n'
+    'endfunction\n')
+
+
+def starts(locations):
+    return [(r['range']['start']['line'], r['range']['start']['character']) for r in locations]
+
+
+class TestReferences(unittest.TestCase):
+    def references(self, text, line, character, include=True, **kwargs):
+        return request('textDocument/references', text, line, character,
+                       context={'includeDeclaration': include}, **kwargs)
+
+    def test_a_local_is_not_the_global_of_the_same_name(self):
+        result = self.references(SHADOWED, 5, 9)  # count in A
+        self.assertEqual(starts(result), [(4, 18), (5, 8), (5, 16)])
+        self.assertEqual({r['uri'] for r in result}, {'file:///map/war3map.j'})
+
+    def test_a_global_outside_the_function_that_shadows_it(self):
+        # Not in A, where `count` is the local; not in the string or comment.
+        self.assertEqual(starts(self.references(SHADOWED, 8, 9)), [(1, 12), (8, 8), (8, 16)])
+
+    def test_without_the_declaration(self):
+        self.assertEqual(starts(self.references(SHADOWED, 1, 12, include=False)),
+                         [(8, 8), (8, 16)])
+
+    def test_a_function_and_a_native(self):
+        self.assertEqual(starts(self.references(SCRIPT, 9, 10)), [(4, 9), (9, 9)])  # Heal
+        self.assertEqual(starts(self.references(SCRIPT, 6, 10)), [(6, 9)])  # SetUnitState
+
+    def test_a_parameter(self):
+        self.assertEqual(starts(self.references(SCRIPT, 6, 22)),
+                         [(4, 25), (5, 35), (6, 22)])  # target
+
+    def test_lua(self):
+        result = self.references(LUA_SCRIPT, 2, 4, uri='file:///map/war3map.lua', language='lua')
+        self.assertEqual(starts(result), [(0, 6), (2, 4), (2, 12)])  # count
+
+    def test_a_field_is_not_a_use(self):
+        text = 'local x = 1\nlocal t = {}\nt.x = x\n'
+        result = self.references(text, 0, 6, uri='file:///map/war3map.lua', language='lua')
+        self.assertEqual(starts(result), [(0, 6), (2, 6)])
+
+    def test_nothing_under_the_cursor(self):
+        self.assertIsNone(self.references(SHADOWED, 3, 0))  # `function`
+
+
+class TestDocumentHighlight(unittest.TestCase):
+    def test_the_declaration_is_a_write(self):
+        result = request('textDocument/documentHighlight', SHADOWED, 4, 18)
+        self.assertEqual([(r['range']['start']['line'], r['kind']) for r in result],
+                         [(4, 3), (5, 2), (5, 2)])
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
