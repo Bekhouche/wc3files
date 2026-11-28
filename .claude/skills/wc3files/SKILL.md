@@ -147,6 +147,11 @@ targets - MPQ is documented well enough to implement natively.
   is read (`mmd.py`; CLI `replay-mmd`, `replay-actions`). An unfinished
   replay (the `TempReplay.w3g` left after a crash, with no header yet) reads
   up to its last whole block and is written back only unchanged.
+- `src/wc3files/desync/` - the desync folders the game writes in
+  `Documents\Warcraft III\Errors` (#258): `DesyncReport` (`Desync.txt`),
+  `DesyncLog` (the `.log` file: blocks of a category, turn and checksum, each
+  a tree of `#id#` groups and values; raises on an unknown line shape),
+  `summarize_folder` and `diff_logs`. CLI `desync-info`, `desync-diff`.
 - `src/wc3files/doo/` - `MapDoodadsFile` (`war3map.doo`, doodad and
   destructable placement) and `MapUnitsFile` (`war3mapUnits.doo`, unit and
   item placement). The two share the `.doo` extension and the `W3do` magic

@@ -10,6 +10,10 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+### Added
+
+- `desync-info` and `desync-diff`: the desync folders the game writes in `Documents\Warcraft III\Errors` are read (`Desync.txt`, the `.log` file and the replay), summarised, and two players' logs of the same game compared, block by block, down to the first value apart (#258).
+
 ## [0.15.0] - 2026-11-28
 
 ### Added

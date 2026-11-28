@@ -2063,6 +2063,83 @@ def _clock(ms):
     return f'{seconds // 3600}:{seconds // 60 % 60:02d}:{seconds % 60:02d}'
 
 
+def _cmd_desync_info(args):
+    """Summarize a desync folder (#258)."""
+    from wc3files.desync import DesyncLog, find_files, summarize_folder
+
+    summary = summarize_folder(args.folder)
+    if args.json:
+        if args.blocks:
+            log = find_files(args.folder)['log']
+            summary['log'] = DesyncLog().read(log).to_dict() if log else None
+        _write_json(summary, args.out)
+        return 0
+    for label, key in (('date', 'date'), ('map', 'map'), ('build', 'build'),
+                       ('game', 'game'), ('game type', 'game_type'),
+                       ('players', 'player_count'), ('desync turn', 'turn')):
+        if summary.get(key) is not None:
+            print(f'{label:12}: {summary[key]}')
+    for record in summary.get('records') or ():
+        print(f"{'log record':12}: turns {record['turns'][0]} to {record['turns'][-1]}, "
+              f"{record['blocks']} blocks")
+    found = summary.get('checksums_in_log') or {}
+    if found:
+        print(f"{'checksums':12}: {sum(found.values())} of {len(found)} non-zero checksums "
+              f'of Desync.txt are in the log at the desync turn')
+    if summary.get('players'):
+        print()
+        for player in summary['players']:
+            team = 'obs' if player['observer'] else str(player['team'] + 1)
+            print(f"{player['slot'] + 1:>4}  {str(player['name'])[:28]:28} {team:>4}"
+                  + ('  host' if player['host'] else ''))
+    if summary.get('leaves'):
+        print()
+        print('left:')
+        for leave in summary['leaves']:
+            print(f"  {_clock(leave['time_ms'])}  {leave['name']} ({leave['reason']})")
+    if summary.get('replay_error'):
+        print(f"replay: {summary['replay_error']}", file=sys.stderr)
+    return 0
+
+
+def _cmd_desync_diff(args):
+    """The differences between two players' desync logs (#258)."""
+    from wc3files.desync import DesyncLog, code_name, diff_logs, find_files
+
+    def log_of(path):
+        if os.path.isdir(path):
+            found = find_files(path)['log']
+            if not found:
+                raise ValueError(f'{path}: no desync .log file')
+            path = found
+        return DesyncLog().read(path)
+
+    differences = diff_logs(log_of(args.first), log_of(args.second))
+    if differences and not args.all:
+        first_turn = differences[0]['turn']
+        differences = [d for d in differences if d['turn'] == first_turn]
+    if args.json:
+        _write_json([dict(d, category=code_name(d['category']) or d['category'],
+                          path=[[code_name(i) or i, n] for i, n in d['path']])
+                     for d in differences], args.out)
+        return 0
+    if not differences:
+        print('the two logs have the same blocks')
+        return 0
+    for d in differences:
+        one, two = (('-' if c is None else f'{c:08x}') for c in d['checksums'])
+        path = '/'.join(f'{code_name(i) or i}[{n}]' for i, n in d['path'])
+        line = f"turn {d['turn']}  {code_name(d['category']) or d['category']}"
+        if d['index']:
+            line += f" #{d['index'] + 1}"
+        line += f'  {one} / {two}'
+        if path:
+            values = ' / '.join('-' if v is None else f'0x{v:08X}' for v in d['values'])
+            line += f'  first at {path}: {values}'
+        print(line)
+    return 0
+
+
 def _cmd_replay_info(args):
     """Summarize a replay: game, players, chat, leaves and W3MMD results."""
     from wc3files import ReplayFile
@@ -3220,6 +3297,31 @@ def build_parser():
     p_replay_info.add_argument('--max-chat', type=int, default=50,
                                help='How many chat messages the summary shows (default 50).')
     p_replay_info.set_defaults(func=_cmd_replay_info)
+
+    p_desync_info = subparsers.add_parser(
+        'desync-info',
+        help=('Summarize a desync folder of Documents\\Warcraft III\\Errors: map, build, '
+              'game, desync turn, the records of its .log file, and the players and '
+              'leaves of its replay.'))
+    p_desync_info.add_argument('folder', help='A desync folder.')
+    p_desync_info.add_argument('--json', action='store_true',
+                               help='Emit JSON instead of a readable summary.')
+    p_desync_info.add_argument('--blocks', action='store_true',
+                               help='JSON: add every block of the .log file.')
+    p_desync_info.add_argument('--out', default='-', help='Where to write JSON (default stdout).')
+    p_desync_info.set_defaults(func=_cmd_desync_info)
+
+    p_desync_diff = subparsers.add_parser(
+        'desync-diff',
+        help=("The first differences between two players' desync logs of the same game: "
+              'by turn, the blocks whose checksum differs and the first item apart.'))
+    p_desync_diff.add_argument('first', help='A desync folder or its .log file.')
+    p_desync_diff.add_argument('second', help='The other player\'s folder or .log file.')
+    p_desync_diff.add_argument('--all', action='store_true',
+                               help='List every differing block, not only the first turn.')
+    p_desync_diff.add_argument('--json', action='store_true', help='Emit JSON.')
+    p_desync_diff.add_argument('--out', default='-', help='Where to write JSON (default stdout).')
+    p_desync_diff.set_defaults(func=_cmd_desync_diff)
 
     p_replay_mmd = subparsers.add_parser(
         'replay-mmd',
