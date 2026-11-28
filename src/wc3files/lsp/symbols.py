@@ -29,7 +29,7 @@ class Symbol:
     document itself (a bundled file)."""
 
     __slots__ = ('name', 'kind', 'type', 'line', 'col', 'detail', 'scope', 'path', 'container',
-                 'end_line')
+                 'end_line', 'owner')
 
     def __init__(self, name, kind, line, col, detail, type=None, scope=None, path=None,
                  container=None):
@@ -43,6 +43,9 @@ class Symbol:
         self.path = path
         self.container = container
         self.end_line = line  # a function's endfunction line, once known
+        # The struct, interface or module a vJass member or method is in
+        # (#403); such a name is found after a `.`, not on its own.
+        self.owner = None
 
     def __repr__(self):
         return f'Symbol({self.kind} {self.name} {self.line}:{self.col})'
@@ -54,7 +57,7 @@ class Index:
     name after `.` or `:` is a field or method, not a variable, and is left
     out."""
 
-    def __init__(self, symbols, language, names=(), dynamic=()):
+    def __init__(self, symbols, language, names=(), dynamic=(), bases=None, tokens=None):
         self.symbols = symbols
         self.language = language
         self.names = list(names)
@@ -62,9 +65,18 @@ class Index:
         # string to ExecuteFunc or TriggerRegisterVariableEvent, which a
         # rename changes too (#401).
         self.dynamic = list(dynamic)
+        # vJass (#403): the structs each struct extends and the modules it
+        # implements, and every token, to read what comes before a `.`.
+        self.bases = bases or {}
+        self.tokens = tokens
+        self._positions = None
         self.by_name = {}
+        self.members = {}
         for symbol in symbols:
-            self.by_name.setdefault(symbol.name, []).append(symbol)
+            if symbol.owner is None:
+                self.by_name.setdefault(symbol.name, []).append(symbol)
+            elif symbol.scope is None:
+                self.members.setdefault(symbol.owner, {}).setdefault(symbol.name, symbol)
 
     def resolve(self, name, line):
         """The declaration `name` refers to on 1-based `line`, or None."""
@@ -135,21 +147,53 @@ def _names(tokens, kind):
             not (i and tokens[i - 1].value in ('.', ':'))]
 
 
-def index_jass(text, path=None):
-    from wc3files.scripts.jass_lexer import tokenize
-    tokens = [t for t in _tokens(tokenize, text) if t.kind != 'EOF']
+# The words vJass adds to JASS's keywords, as the indexer reads them (#403).
+VJASS_WORDS = frozenset((
+    'library', 'library_once', 'endlibrary', 'scope', 'endscope', 'struct', 'endstruct',
+    'interface', 'endinterface', 'module', 'endmodule', 'method', 'endmethod', 'static',
+    'private', 'public', 'readonly', 'stub', 'delegate', 'operator', 'implement', 'requires',
+    'uses', 'needs', 'initializer', 'optional', 'defaults'))
+_BLOCK_ENDS = {'endlibrary': ('library', 'library_once'), 'endscope': ('scope',),
+               'endstruct': ('struct',), 'endinterface': ('interface',),
+               'endmodule': ('module',)}
+_STRUCTS = ('struct', 'interface', 'module')
+# Words before a declaration's type: `private static constant integer x`.
+_MODIFIERS = frozenset(('constant', 'private', 'public', 'readonly', 'static', 'stub',
+                        'delegate'))
+
+
+def index_jass(text, path=None, vjass=False):
+    """The index of a JASS script, or with `vjass` of a vJass one: its
+    libraries, scopes, structs, interfaces and modules too, with their
+    methods and members."""
+    if vjass:
+        tokens = _vjass_tokens(text)
+    else:
+        from wc3files.scripts.jass_lexer import tokenize
+        tokens = [t for t in _tokens(tokenize, text) if t.kind != 'EOF']
     lines = text.splitlines()
     symbols = []
-    function = None  # (name, first line) of the function being read
-    pending = []     # its parameters and locals, given their scope at endfunction
+    function = None  # (name, first line, symbol) of the function or method being read
+    pending = []     # its parameters and locals, given their scope at its end
+    blocks = []      # the library, scope, struct, interface and module symbols open
+    bases = {}       # struct or module name: what it extends and implements
 
     def at(i):
         return tokens[i] if 0 <= i < len(tokens) else None
 
-    def add(token, kind, value_type=None, scoped=False):
+    def is_word(token, *words):
+        return token is not None and token.kind == 'KEYWORD' and token.value in words
+
+    def owner():
+        """The struct, interface or module being read, or None."""
+        return blocks[-1].name if blocks and blocks[-1].kind in _STRUCTS else None
+
+    def add(token, kind, value_type=None, scoped=False, owned=False):
         symbol = Symbol(token.value, kind, token.line, token.col, _source_line(lines, token.line),
                         type=value_type, path=path,
                         container=function[0] if scoped and function else None)
+        if owned:
+            symbol.owner = owner()
         symbols.append(symbol)
         if scoped:
             pending.append(symbol)
@@ -161,8 +205,34 @@ def index_jass(text, path=None):
             symbol.scope = (function[1], last_line)
         function[2].end_line = last_line
 
+    def open_function(i, name, symbol):
+        nonlocal function, pending
+        function = (name.value, tokens[i].line, symbol)
+        pending = []
+        for type_token, param in _header_params(tokens, i):
+            add(param, 'param', type_token.value, scoped=True)
+
+    def starts_declaration(i):
+        """Whether the identifier at `i` is the type that opens its line,
+        after any modifiers."""
+        j = i - 1
+        while j >= 0 and tokens[j].line == tokens[i].line and is_word(tokens[j], *_MODIFIERS):
+            j -= 1
+        return j < 0 or tokens[j].line != tokens[i].line
+
     for i, token in enumerate(tokens):
         if token.kind != 'KEYWORD':
+            # A struct member: `[modifiers] type [array] name`, outside methods.
+            if vjass and owner() and function is None and _ident(token) and \
+                    starts_declaration(i):
+                j = i + 2 if is_word(at(i + 1), 'array') else i + 1
+                if _ident(at(j)) and at(j).line == token.line:
+                    add(at(j), 'member', token.value, owned=True)
+                    k = i - 1
+                    while k >= 0 and tokens[k].line == token.line:
+                        if is_word(tokens[k], 'delegate'):  # its members are the struct's
+                            bases.setdefault(owner(), []).append(token.value)
+                        k -= 1
             continue
         word = token.value
         if word == 'type' and _ident(at(i + 1)):
@@ -176,24 +246,106 @@ def index_jass(text, path=None):
                 close(token.line - 1)
             symbol = add(name, word, _header_returns(tokens, i))
             if word == 'function':
-                function = (name.value, token.line, symbol)
-                pending = []
-                for type_token, param in _header_params(tokens, i):
-                    add(param, 'param', type_token.value, scoped=True)
-        elif word == 'endfunction' and function:
+                open_function(i, name, symbol)
+        elif word in ('endfunction', 'endmethod') and function:
             close(token.line)
             function, pending = None, []
         elif word == 'local' and function and _ident(at(i + 1)):
             j = i + 2
-            if at(j) is not None and at(j).kind == 'KEYWORD' and at(j).value == 'array':
+            if is_word(at(j), 'array'):
                 j += 1
             if _ident(at(j)):
                 add(at(j), 'local', at(i + 1).value, scoped=True)
+        elif not vjass:
+            continue
+        elif word in ('library', 'library_once', 'scope', 'struct', 'interface', 'module') \
+                and _ident(at(i + 1)) and not is_word(at(i - 1), 'function'):
+            parent = at(i + 3) if is_word(at(i + 2), 'extends') and _ident(at(i + 3)) else None
+            symbol = add(at(i + 1), word, parent.value if parent else None)
+            if parent is not None and word == 'struct':
+                bases.setdefault(symbol.name, []).append(parent.value)
+            blocks.append(symbol)
+        elif word in _BLOCK_ENDS and blocks:
+            if function:  # a method with no endmethod yet
+                close(token.line - 1)
+                function, pending = None, []
+            for k in range(len(blocks) - 1, -1, -1):
+                if blocks[k].kind in _BLOCK_ENDS[word]:
+                    blocks[k].end_line = token.line
+                    del blocks[k:]
+                    break
+        elif word == 'implement' and owner():
+            j = i + 2 if is_word(at(i + 1), 'optional') else i + 1
+            if _ident(at(j)):
+                bases.setdefault(owner(), []).append(at(j).value)
+        elif word == 'method' and owner():
+            j = i + 2 if is_word(at(i + 1), 'operator') else i + 1
+            if not _ident(at(j)):
+                continue
+            if function:
+                close(token.line - 1)
+                function, pending = None, []
+            symbol = add(at(j), 'method', _header_returns(tokens, i), owned=True)
+            if blocks[-1].kind != 'interface':  # an interface's methods have no body
+                open_function(j - 1, at(j), symbol)
     if function:  # a function not closed yet, as while typing
         close(len(lines) + 1)
+    for block in blocks:  # blocks not closed yet
+        block.end_line = len(lines) + 1
     # Globals: `[constant] type [array] name`, between globals and endglobals.
     symbols.extend(_jass_globals(tokens, lines, path))
-    return Index(symbols, 'jass', _names(tokens, 'IDENT'), _dynamic_names(tokens))
+    return Index(symbols, 'jass', _names(tokens, 'IDENT'), _dynamic_names(tokens), bases,
+                 tokens if vjass else None)
+
+
+class _VToken:
+    """A vJass token in the JASS lexer's kinds, which the indexer reads."""
+
+    __slots__ = ('kind', 'value', 'line', 'col')
+
+    def __init__(self, kind, value, line, col):
+        self.kind = kind
+        self.value = value
+        self.line = line
+        self.col = col
+
+    def __repr__(self):
+        return f'Token({self.kind}, {self.value!r}, {self.line}:{self.col})'
+
+
+_OP_KINDS = {'(': 'LPAREN', ')': 'RPAREN', '[': 'LBRACKET', ']': 'RBRACKET', ',': 'COMMA'}
+
+
+def _vjass_tokens(text):
+    """The tokens of a vJass script from the vJass compiler's lexer, which
+    reads `.`, `/* */` and the words JASS does not have; when the whole text
+    does not lex, each line that lexes on its own."""
+    from wc3files.scripts.jass_lexer import KEYWORDS
+    from wc3files.vjass.errors import SourceLine, VJassError
+    from wc3files.vjass.lexer import tokenize
+    lines = text.splitlines()
+    try:
+        raw = tokenize([SourceLine(line, None, n) for n, line in enumerate(lines, 1)])
+    except VJassError:
+        raw = []
+        for n, line in enumerate(lines, 1):
+            try:
+                raw.extend(tokenize([SourceLine(line, None, n)]))
+            except VJassError:
+                continue
+    out = []
+    for token in raw:
+        if token.kind in ('NL', 'EOF', 'DIRECTIVE'):
+            continue
+        if token.kind == 'ID':
+            kind = 'KEYWORD' if token.value in KEYWORDS or token.value in VJASS_WORDS else 'IDENT'
+        elif token.kind == 'OP':
+            kind = _OP_KINDS.get(token.value, 'OP')
+        else:
+            kind = token.kind
+        value = token.value if token.kind in ('ID', 'OP', 'STRING') else token.raw
+        out.append(_VToken(kind, value, token.line, token.col))
+    return out
 
 
 def _dynamic_names(tokens):
@@ -238,6 +390,10 @@ def _header_params(tokens, i):
     """(type token, name token) of each parameter of the header at `i`."""
     out = []
     j = i + 2
+    # A vJass operator's name is followed by `=` or `[]` before `takes`.
+    while j < len(tokens) and tokens[j].line == tokens[i].line and tokens[j].kind in (
+            'OP', 'LBRACKET', 'RBRACKET'):
+        j += 1
     if not (j < len(tokens) and tokens[j].kind == 'KEYWORD' and tokens[j].value == 'takes'):
         return out
     j += 1
@@ -265,18 +421,21 @@ def _jass_globals(tokens, lines, path):
             continue
         if not inside or not _ident(token):
             continue
-        previous = tokens[i - 1] if i else None
-        # The type opens a declaration: first on its line, or after `constant`.
-        starts = previous is None or previous.line != token.line or (
-            previous.kind == 'KEYWORD' and previous.value == 'constant')
-        if not starts:
+        # The type opens a declaration: first on its line, or after
+        # `constant` (and in vJass `private` or `public`).
+        k = i - 1
+        modifiers = set()
+        while k >= 0 and tokens[k].line == token.line and tokens[k].kind == 'KEYWORD' and \
+                tokens[k].value in _MODIFIERS:
+            modifiers.add(tokens[k].value)
+            k -= 1
+        if k >= 0 and tokens[k].line == token.line:
             continue
         j = i + 1
         if j < len(tokens) and tokens[j].kind == 'KEYWORD' and tokens[j].value == 'array':
             j += 1
         if j < len(tokens) and _ident(tokens[j]) and tokens[j].line == token.line:
-            is_constant = previous is not None and previous.kind == 'KEYWORD' and \
-                previous.value == 'constant' and previous.line == token.line
+            is_constant = 'constant' in modifiers
             name = tokens[j]
             symbols.append(Symbol(name.value, 'constant' if is_constant else 'global',
                                   name.line, name.col, _source_line(lines, name.line),
@@ -333,9 +492,11 @@ def _lua_line(lines, line):
 
 
 def index(language, text):
-    # vJass and Zinc get the JASS index: their functions, globals and natives
-    # are found, their structs and methods are not.
-    if language in ('jass', 'vjass', 'zinc'):
+    # Zinc gets the JASS index: its functions, globals and natives are found,
+    # its structs and methods are not (Zinc's syntax is not read here).
+    if language == 'vjass':
+        return index_jass(text, vjass=True)
+    if language in ('jass', 'zinc'):
         return index_jass(text)
     if language == 'lua':
         return index_lua(text)
@@ -371,7 +532,8 @@ def word_at(text, line, character):
 
 
 _KIND_WORDS = {'native': 'native', 'function': 'function', 'global': 'global',
-               'constant': 'constant', 'type': 'type', 'param': 'parameter', 'local': 'local'}
+               'constant': 'constant', 'type': 'type', 'param': 'parameter', 'local': 'local',
+               'library_once': 'library'}
 
 
 def describe(symbol, language):
@@ -380,8 +542,10 @@ def describe(symbol, language):
     code_language = 'lua' if language == 'lua' and not symbol.path else 'jass'
     where = os.path.basename(symbol.path) if symbol.path else 'this file'
     what = _KIND_WORDS.get(symbol.kind, symbol.kind)
-    if symbol.container:
-        origin = f'{what} of `{symbol.container}`'
+    if not symbol.line:
+        origin = f'{what} of `{symbol.owner}`, made by the vJass compiler'
+    elif symbol.container or symbol.owner:
+        origin = f'{what} of `{symbol.container or symbol.owner}`'
     else:
         origin = f'{what}, {where}, line {symbol.line}'
     return f'```{code_language}\n{symbol.detail}\n```\n{origin}'
@@ -389,7 +553,8 @@ def describe(symbol, language):
 
 # The protocol's CompletionItemKind.
 _ITEM_KIND = {'native': 3, 'function': 3, 'global': 6, 'local': 6, 'param': 6,
-              'constant': 21, 'type': 7}
+              'constant': 21, 'type': 7, 'method': 2, 'member': 5, 'struct': 22,
+              'interface': 8, 'module': 9, 'library': 9, 'library_once': 9, 'scope': 9}
 KEYWORD_ITEM = 14
 COMPLETION_LIMIT = 300
 
@@ -420,6 +585,8 @@ def completions(document_index, language, prefix, line):
         for symbol in symbols:
             if symbol.name in seen or not symbol.name.lower().startswith(lowered):
                 continue
+            if symbol.owner is not None:
+                continue  # a member or method comes after a `.`
             if not _visible(symbol, line, language):
                 continue
             if not prefix and symbol.scope is None and language != 'lua':
@@ -448,7 +615,11 @@ def prefix_at(text, line, character):
 
 # The protocol's SymbolKind.
 _SYMBOL_KIND = {'type': 5, 'function': 12, 'native': 12, 'global': 13, 'local': 13,
-                'param': 13, 'constant': 14}
+                'param': 13, 'constant': 14, 'library': 4, 'library_once': 4, 'scope': 3,
+                'struct': 23, 'interface': 11, 'module': 2, 'method': 6, 'member': 8}
+# What other declarations nest in, in the outline.
+_CONTAINERS = frozenset(('library', 'library_once', 'scope', 'struct', 'interface', 'module',
+                         'function', 'method'))
 
 
 def document_symbols(document_index, text):
@@ -477,16 +648,26 @@ def document_symbols(document_index, text):
     for symbol in document_index.symbols:
         if symbol.container is not None:
             members.setdefault((symbol.container, symbol.scope), []).append(symbol)
+    # Each declaration goes in the innermost library, scope, struct,
+    # interface, module, function or method whose lines hold it (#403).
     out = []
+    stack = []  # (container symbol, its entry)
     for symbol in sorted(document_index.symbols, key=lambda s: (s.line, s.col)):
         if symbol.container is not None:
             continue
-        if symbol.kind == 'function':
-            inside = [m for (name, scope), group in members.items() if name == symbol.name
-                      and scope and scope[0] == symbol.line for m in group]
-            out.append(entry(symbol, [entry(m) for m in sorted(inside, key=lambda s: (s.line, s.col))]))
-        else:
-            out.append(entry(symbol))
+        while stack and stack[-1][0].end_line < symbol.line:
+            stack.pop()
+        children = None
+        if symbol.kind in _CONTAINERS:
+            children = []
+            if symbol.kind in ('function', 'method'):
+                inside = [m for (name, scope), group in members.items() if name == symbol.name
+                          and scope and scope[0] == symbol.line for m in group]
+                children = [entry(m) for m in sorted(inside, key=lambda s: (s.line, s.col))]
+        item = entry(symbol, children)
+        (stack[-1][1]['children'] if stack else out).append(item)
+        if children is not None and symbol.end_line > symbol.line:
+            stack.append((symbol, item))
     return out
 
 
@@ -499,10 +680,20 @@ def references(document_index, symbol, include_declaration=True):
     Each token is resolved by bisecting the declarations of its name, not
     with `Index.resolve`, which reads them all: a war3map.j can have
     thousands of parameters of one name."""
-    resolves = _resolver(document_index, symbol.name)
     found = {}
-    if symbol.path is None and include_declaration:
+    if symbol.path is None and include_declaration and symbol.line:
         found[(symbol.line, symbol.col)] = True
+    if symbol.owner is not None:
+        # A member or method: the names after a `.` that resolve to it.
+        tokens = document_index.tokens or []
+        for i, token in enumerate(tokens):
+            if token.value == symbol.name and _ident(token) and i and \
+                    _is_dot(tokens[i - 1]) and (token.line, token.col) not in found and \
+                    member(document_index, owner_before(document_index, i - 1),
+                           token.value) is symbol:
+                found[(token.line, token.col)] = False
+        return [(line, col, found[(line, col)]) for line, col in sorted(found)]
+    resolves = _resolver(document_index, symbol.name)
     for token in document_index.names:
         if token.value != symbol.name or (token.line, token.col) in found:
             continue
@@ -531,6 +722,8 @@ def can_rename(symbol):
     if symbol.path is not None:
         raise RenameError(f'{symbol.name} is declared in {os.path.basename(symbol.path)}, '
                           f'not in this file')
+    if not symbol.line:
+        raise RenameError(f'{symbol.name} is made by the vJass compiler')
 
 
 def rename_edits(document_index, symbol, new_name):
@@ -561,6 +754,10 @@ def rename_edits(document_index, symbol, new_name):
 def _check_conflict(document_index, symbol, new_name, uses):
     """Raise RenameError when a declaration or use of `new_name` would be
     shadowed by the renamed symbol, or would shadow it."""
+    if symbol.owner is not None:
+        if member(document_index, symbol.owner, new_name) is not None:
+            raise RenameError(f'{new_name} is already a member of {symbol.owner}')
+        return
     taken = [s for s in document_index.by_name.get(new_name, [])]
     outside = bundled().resolve(new_name, 0)
     if document_index.language == 'lua':
@@ -627,10 +824,11 @@ _OPENERS = {'(': ')', '[': ']', '{': '}'}
 
 
 def call_at(text, line, character, language):
-    """(function name, 1-based line of the name, index of the argument) of
-    the innermost call the 0-based position is in, or None. In JASS a
-    statement is one line, so only the line is read; in Lua a call can span
-    lines, so up to 30 lines before it are."""
+    """(function name, 1-based line and column of the name, index of the
+    argument) of the innermost call the 0-based position is in, or None. In
+    JASS a statement is one line, so only the line is read; in Lua a call can
+    span lines, so up to 30 lines before it are. In vJass a method call
+    (`.name(`) counts too, and its name is resolved from the document."""
     lines = text.splitlines()
     if not 0 <= line < len(lines):
         return None
@@ -647,7 +845,8 @@ def call_at(text, line, character, language):
         if value in _OPENERS:
             is_call = (value == '(' and previous is not None
                        and previous.kind in ('IDENT', 'NAME')
-                       and not (second is not None and second.value in ('.', ':')))
+                       and (language == 'vjass' or not (
+                           second is not None and second.value in ('.', ':'))))
             stack.append([previous if is_call else None, value, 0])
         elif value in (')', ']', '}') and stack:
             stack.pop()
@@ -658,7 +857,7 @@ def call_at(text, line, character, language):
         if opener == '(':
             if name is None:
                 return None  # a parenthesis, not a call, or a method call
-            return name.value, name.line + first, commas
+            return name.value, name.line + first, name.col, commas
     return None
 
 
@@ -667,6 +866,15 @@ def _call_tokens(text, language):
     at the end is closed so that the rest lexes."""
     if language == 'lua':
         from wc3files.scripts.lua_lexer import tokenize
+    elif language == 'vjass':
+        def tokenize(source):
+            from wc3files.vjass.errors import SourceLine, VJassError
+            from wc3files.vjass.lexer import tokenize as lex
+            try:
+                lex([SourceLine(source, None, 1)])
+            except VJassError as error:
+                raise ValueError(str(error)) from None
+            return _vjass_tokens(source)
     else:
         from wc3files.scripts.jass_lexer import tokenize
     for tail in ('', '"', "'"):
@@ -709,3 +917,208 @@ def lookup(document_index, name, line):
     """The declaration of `name` on 1-based `line`: in the document, then in
     the bundled files."""
     return document_index.resolve(name, line) or bundled().resolve(name, line)
+
+
+# -- vJass names after a dot (#403) -----------------------------------------
+
+def token_index(document_index, line, col):
+    """The position in `document_index.tokens` of the token at 1-based
+    `line` and `col`, or None (and always None outside vJass)."""
+    if document_index.tokens is None:
+        return None
+    if document_index._positions is None:
+        document_index._positions = {(t.line, t.col): i
+                                     for i, t in enumerate(document_index.tokens)}
+    return document_index._positions.get((line, col))
+
+
+def enclosing(document_index, line):
+    """The innermost struct, interface or module around 1-based `line`."""
+    best = None
+    for symbol in document_index.symbols:
+        if symbol.kind in _STRUCTS and symbol.line <= line <= symbol.end_line:
+            if best is None or symbol.line > best.line:
+                best = symbol
+    return best
+
+
+def _struct_named(document_index, name, line):
+    """The struct, interface or module `name` stands for on `line`."""
+    if name == 'thistype':
+        around = enclosing(document_index, line)
+        return around.name if around else None
+    for symbol in document_index.by_name.get(name, ()):
+        if symbol.kind in _STRUCTS:
+            return symbol.name
+    return None
+
+
+# What the compiler gives every struct, as JassHelper's manual names them.
+GENERATED = {
+    'create': ('method', 'static method create takes nothing returns thistype'),
+    'allocate': ('method', 'static method allocate takes nothing returns thistype'),
+    'destroy': ('method', 'method destroy takes nothing returns nothing'),
+    'deallocate': ('method', 'method deallocate takes nothing returns nothing'),
+    'getType': ('method', 'method getType takes nothing returns integer'),
+    'typeid': ('member', 'static constant integer typeid'),
+}
+
+
+def _generated(document_index, owner, name):
+    """The member `name` the compiler gives `owner`, a struct or module, as
+    a symbol with no line; the same object each time, so references can
+    compare it."""
+    if name not in GENERATED or not any(
+            s.kind in ('struct', 'module') for s in document_index.by_name.get(owner, ())):
+        return None
+    cache = document_index.__dict__.setdefault('_generated', {})
+    if (owner, name) not in cache:
+        kind, detail = GENERATED[name]
+        symbol = Symbol(name, kind, 0, 0, detail, type='thistype' if name in (
+            'create', 'allocate') else None)
+        symbol.owner = owner
+        cache[(owner, name)] = symbol
+    return cache[(owner, name)]
+
+
+def member(document_index, owner, name, seen=None):
+    """The member or method `name` of `owner`, its own first, then those of
+    what it extends, implements and delegates to, then what the compiler
+    gives it."""
+    top = seen is None
+    seen = set() if seen is None else seen
+    if owner is None or owner in seen:
+        return None
+    seen.add(owner)
+    found = document_index.members.get(owner, {}).get(name)
+    if found is not None:
+        return found
+    for base in document_index.bases.get(owner, ()):
+        found = member(document_index, base, name, seen)
+        if found is not None:
+            return found
+    return _generated(document_index, owner, name) if top else None
+
+
+def members_of(document_index, owner, seen=None):
+    """Every member and method of `owner`, by name, its own first."""
+    top = seen is None
+    seen = set() if seen is None else seen
+    if owner is None or owner in seen:
+        return {}
+    seen.add(owner)
+    out = dict(document_index.members.get(owner, {}))
+    for base in document_index.bases.get(owner, ()):
+        for name, symbol in members_of(document_index, base, seen).items():
+            out.setdefault(name, symbol)
+    if top:
+        for name in GENERATED:
+            if name not in out:
+                symbol = _generated(document_index, owner, name)
+                if symbol is not None:
+                    out[name] = symbol
+    return out
+
+
+def _type_struct(document_index, symbol):
+    """The struct a symbol's value has, from its type, or None."""
+    if symbol is None:
+        return None
+    if symbol.kind in _STRUCTS:
+        return symbol.name
+    if symbol.type == 'thistype':
+        if symbol.owner is not None:
+            return symbol.owner
+        around = enclosing(document_index, symbol.line)
+        return around.name if around else None
+    if symbol.type is None or symbol.path is not None:
+        return None
+    return _struct_named(document_index, symbol.type, symbol.line)
+
+
+def _matching(tokens, close):
+    """The position of the bracket that opens the one at `close`."""
+    pair = {'RPAREN': 'LPAREN', 'RBRACKET': 'LBRACKET'}[tokens[close].kind]
+    depth = 0
+    for k in range(close, -1, -1):
+        if tokens[k].line != tokens[close].line:
+            return None
+        if tokens[k].kind == tokens[close].kind:
+            depth += 1
+        elif tokens[k].kind == pair:
+            depth -= 1
+            if depth == 0:
+                return k
+    return None
+
+
+def _is_dot(token):
+    return token is not None and token.kind == 'OP' and token.value == '.'
+
+
+def _symbol_of(document_index, i):
+    """The declaration the identifier token at `i` names."""
+    tokens = document_index.tokens
+    token = tokens[i]
+    if i and _is_dot(tokens[i - 1]):
+        return member(document_index, owner_before(document_index, i - 1), token.value)
+    return lookup(document_index, token.value, token.line)
+
+
+def owner_before(document_index, dot):
+    """The struct of what comes before the `.` token at `dot`: `this`,
+    `thistype` or a struct name; a name, call or array element of a struct
+    type; or, with nothing before it (`.x`), the struct the line is in."""
+    tokens = document_index.tokens
+    line = tokens[dot].line
+    j = dot - 1
+    previous = tokens[j] if j >= 0 and tokens[j].line == line else None
+    if previous is not None and _ident(previous):
+        if previous.value in ('this', 'thistype', 'super'):
+            around = enclosing(document_index, line)
+            if around is None:
+                return None
+            # super: the struct this one extends.
+            return around.type if previous.value == 'super' else around.name
+        if not (j and _is_dot(tokens[j - 1])):
+            named = _struct_named(document_index, previous.value, line)
+            if named is not None:
+                return named
+        return _type_struct(document_index, _symbol_of(document_index, j))
+    if previous is not None and previous.kind in ('RPAREN', 'RBRACKET'):
+        k = _matching(tokens, j)
+        if k and _ident(tokens[k - 1]):
+            return _type_struct(document_index, _symbol_of(document_index, k - 1))
+        return None
+    around = enclosing(document_index, line)
+    return around.name if around else None
+
+
+def resolve_at(document_index, name, line, col):
+    """The declaration of the name at 1-based `line` and `col`: after a
+    `.`, a member or method of the struct before it; otherwise as
+    `lookup` finds it."""
+    i = token_index(document_index, line, col)
+    if i is not None and i and _is_dot(document_index.tokens[i - 1]):
+        return member(document_index, owner_before(document_index, i - 1), name)
+    for members in document_index.members.values():
+        declared = members.get(name)
+        if declared is not None and (declared.line, declared.col) == (line, col):
+            return declared  # a member or method where it is declared
+    return lookup(document_index, name, line)
+
+
+def member_completions(document_index, line, dot_col, prefix):
+    """The members and methods that start with `prefix` of the struct
+    before the `.` at 1-based `line` and `dot_col`, or None when that is
+    not a struct."""
+    i = token_index(document_index, line, dot_col)
+    if i is None or not _is_dot(document_index.tokens[i]):
+        return None
+    owner = owner_before(document_index, i)
+    if owner is None:
+        return None
+    lowered = prefix.lower()
+    return [{'label': name, 'kind': _ITEM_KIND.get(symbol.kind, 6), 'detail': symbol.detail}
+            for name, symbol in sorted(members_of(document_index, owner).items())
+            if name.lower().startswith(lowered)]

@@ -52,7 +52,9 @@ class Document:
     def index(self):
         if self._index is None:
             from .symbols import index
-            self._index = index(self.language, self._text)
+            # A .j file with vJass blocks is indexed as vJass, as it is checked.
+            language = analysis.effective_language(self.language, self._text)
+            self._index = index(language, self._text)
         return self._index
 
 
@@ -161,7 +163,7 @@ class Server:
                                  'save': {'includeText': True}},
             'hoverProvider': True,
             'definitionProvider': True,
-            'completionProvider': {'triggerCharacters': []},
+            'completionProvider': {'triggerCharacters': ['.']},
             'documentSymbolProvider': True,
             'referencesProvider': True,
             'documentHighlightProvider': True,
@@ -224,7 +226,7 @@ class Server:
     def symbol_at(self, params):
         """(document, symbol, word range) for the name at the request's
         position, or None."""
-        from .symbols import lookup, word_at
+        from .symbols import resolve_at, word_at
         document = self.documents.get(params['textDocument']['uri'])
         if document is None or document.language is None:
             return None
@@ -233,7 +235,7 @@ class Server:
         if found is None:
             return None
         word, start, end = found
-        symbol = lookup(document.index, word, position['line'] + 1)
+        symbol = resolve_at(document.index, word, position['line'] + 1, start + 1)
         if symbol is None:
             return None
         line = position['line']
@@ -258,18 +260,27 @@ class Server:
         if found is None:
             return None
         document, symbol, _ = found
+        if not symbol.line:
+            return None  # made by the vJass compiler: there is no declaration
         uri = pathlib.Path(symbol.path).as_uri() if symbol.path else document.uri
         start = {'line': symbol.line - 1, 'character': symbol.col - 1}
         end = {'line': symbol.line - 1, 'character': symbol.col - 1 + len(symbol.name)}
         return {'uri': uri, 'range': {'start': start, 'end': end}}
 
     def on_completion(self, params):
-        from .symbols import completions, prefix_at
+        from .symbols import completions, member_completions, prefix_at
         document = self.documents.get(params['textDocument']['uri'])
         if document is None or document.language is None:
             return None
         position = params['position']
         prefix = prefix_at(document.text, position['line'], position['character'])
+        dot = position['character'] - len(prefix) - 1
+        lines = document.text.splitlines()
+        if 0 <= dot and position['line'] < len(lines) and lines[position['line']][dot:dot + 1] == '.':
+            # vJass: the members and methods of the struct before the dot.
+            # Elsewhere a dot is a Lua field or a real number: nothing to offer.
+            items = member_completions(document.index, position['line'] + 1, dot + 1, prefix)
+            return {'isIncomplete': False, 'items': items or []}
         items, complete = completions(document.index, document.language, prefix,
                                       position['line'] + 1)
         # Incomplete with no prefix too: the bundled names come once a letter
@@ -353,18 +364,18 @@ class Server:
     def on_signature_help(self, params):
         """The signature of the function called at the position, and the
         argument the cursor is on (#402)."""
-        from .symbols import call_at, lookup, signature
+        from .symbols import call_at, resolve_at, signature
         document = self.documents.get(params['textDocument']['uri'])
         if document is None or document.language is None:
             return None
         position = params['position']
-        call = call_at(document.text, position['line'], position['character'],
-                       document.language)
+        language = analysis.effective_language(document.language, document.text)
+        call = call_at(document.text, position['line'], position['character'], language)
         if call is None:
             return None
-        name, line, argument = call
-        symbol = lookup(document.index, name, line)
-        if symbol is None or symbol.kind not in ('function', 'native'):
+        name, line, col, argument = call
+        symbol = resolve_at(document.index, name, line, col)
+        if symbol is None or symbol.kind not in ('function', 'native', 'method'):
             return None
         label, parameters = signature(symbol)
         active = min(argument, len(parameters) - 1) if parameters else None

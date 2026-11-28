@@ -49,6 +49,32 @@ function you are in, then the file, then `common.j` and `blizzard.j`. In
 Lua it is the nearest declaration above the cursor (`function`, `local`, or
 a parameter), then the natives: Lua's block scopes are not followed.
 
+## vJass
+
+In vJass (`.vj` files, and `.j` files with vJass blocks), hover, go to
+definition, completion, references, rename, signature help and the outline
+know its libraries, scopes, structs, interfaces and modules, with their
+methods and members, and the globals and functions of libraries and scopes,
+`private` and `public` ones too.
+
+A member or method is found after a `.`, from what comes before it: `this`,
+`thistype`, `super` or a struct name; a local, parameter, global or member whose
+type is a struct; a call that returns one (`Pool.create().add`); an array
+element; or nothing (`.size`), which is the struct the line is in. A struct
+has the members of the struct it extends, of the modules it implements and
+of its delegates, and those the compiler makes (`create`, `allocate`,
+`destroy`, `deallocate`, `getType`, `typeid`), which hover shows but which
+have no declaration to go to and cannot be renamed. After a `.`, completion
+offers the members and methods of that struct. The outline nests methods
+and members in their struct, and structs, functions and globals in their
+library or scope.
+
+The members of functions and function interfaces (`.evaluate`, `.execute`,
+`.name`) and of arrays and dynamic array types (`.size`, `create`) are not
+found: on the 17 vJass samples of the tests, they are 27 of the 140 names
+after a dot, and the other 113 are found. Zinc is checked but not indexed
+this way: in a Zinc file, only its plain JASS names are found.
+
 ## Go to definition
 
 Go to definition jumps to a name's declaration, found as hover finds it. A
