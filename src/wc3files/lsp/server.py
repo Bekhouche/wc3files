@@ -22,6 +22,9 @@ SERVER_NOT_INITIALIZED = -32002
 
 FULL_SYNC = 1
 
+# The protocol's DocumentHighlightKind.
+READ, WRITE = 2, 3
+
 
 class Document:
     def __init__(self, uri, text, language, version=None):
@@ -133,6 +136,8 @@ class Server:
             'textDocument/definition': self.on_definition,
             'textDocument/completion': self.on_completion,
             'textDocument/documentSymbol': self.on_document_symbol,
+            'textDocument/references': self.on_references,
+            'textDocument/documentHighlight': self.on_document_highlight,
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -145,6 +150,8 @@ class Server:
             'definitionProvider': True,
             'completionProvider': {'triggerCharacters': []},
             'documentSymbolProvider': True,
+            'referencesProvider': True,
+            'documentHighlightProvider': True,
         }
 
     def on_initialize(self, params):
@@ -259,6 +266,39 @@ class Server:
         if document is None or document.language is None:
             return None
         return document_symbols(document.index, document.text)
+
+    def uses(self, params, include_declaration=True):
+        """(document, [(range, is_declaration)]) for the uses in the
+        document of the name at the request's position, or None."""
+        from .symbols import references
+        found = self.symbol_at(params)
+        if found is None:
+            return None
+        document, symbol, _ = found
+        out = []
+        for line, col, is_declaration in references(document.index, symbol, include_declaration):
+            start = {'line': line - 1, 'character': col - 1}
+            end = {'line': line - 1, 'character': col - 1 + len(symbol.name)}
+            out.append(({'start': start, 'end': end}, is_declaration))
+        return document, out
+
+    def on_references(self, params):
+        """Every use in the document of the name at the position (#400).
+        For a native or BJ function, the uses in the document only: the
+        bundled files are not searched."""
+        include = (params.get('context') or {}).get('includeDeclaration', True)
+        found = self.uses(params, include)
+        if found is None:
+            return None
+        document, uses = found
+        return [{'uri': document.uri, 'range': range_} for range_, _ in uses]
+
+    def on_document_highlight(self, params):
+        found = self.uses(params)
+        if found is None:
+            return None
+        return [{'range': range_, 'kind': WRITE if is_declaration else READ}
+                for range_, is_declaration in found[1]]
 
     def publish(self, uri):
         document = self.documents[uri]

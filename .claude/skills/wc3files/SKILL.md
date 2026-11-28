@@ -263,7 +263,9 @@ targets - MPQ is documented well enough to implement natively.
 - `src/wc3files/lsp/` - the language server, `wc3files-lsp` (#257), standard
   library only: `protocol.py` frames JSON-RPC over stdio, `server.py` keeps
   the documents and the handlers, `analysis.py` turns the JASS and Lua
-  checkers' findings into diagnostics. See `docs/lsp.md`.
+  checkers' findings into diagnostics, and `symbols.py` indexes the
+  declarations and name tokens for hover, definition, completion, outline
+  and references. See `docs/lsp.md`.
 - `w3x2lni/` - a mature Lua/C++ WC3 map converter/protector, kept as a local
   dev-only reference clone (gitignored, not part of the versioned project -
   not every checkout will have it). When adding a new format parser, check
