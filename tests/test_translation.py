@@ -11,8 +11,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from wc3files.cli.main import main
 from wc3files.table.wts_file import WtsFile
 from wc3files.w3o.object_file import ObjectFile
-from wc3files.w3x.translation import (apply_translation, diff_strings, string_keys,
-                                      translation)
+from wc3files.w3x.translation import (apply_translation, diff_strings, externalize_strings,
+                                      string_keys, translation)
 from wc3files.w3x.w3x_file import read_map
 
 SAMPLE = os.path.join(os.path.dirname(__file__), 'samples', 'w3x', 'sample.w3x')
@@ -102,6 +102,32 @@ class TestTranslation(unittest.TestCase):
         self.assertEqual(string_keys(out)['w3u/h000/Name'],
                          {'text': 'Fantassin', 'string_id': None,
                           'source': ('object', 'war3map.w3u', 'w3u', 'h000', 'unam', None)})
+
+    def test_externalize(self):
+        files = version({5: 'Welcome!'}, {'h000': ('hfoo', 'Footman'), 'h001': ('hkni', '')},
+                        [5])
+        before = string_keys(files)
+        inline = [k for k, e in before.items() if e['string_id'] is None and e['text']]
+        self.assertIn('w3u/h000/Name', inline)
+        self.assertIn('w3i/map_name', inline)
+        out, count = externalize_strings(files)
+        self.assertEqual(count, len(inline))
+        after = string_keys(out)
+        self.assertEqual({k: e['text'] for k, e in after.items()},
+                         {k: e['text'] for k, e in before.items()})
+        moved = {after[k]['string_id'] for k in inline}
+        self.assertNotIn(None, moved)
+        self.assertEqual(min(moved), 6)            # after the highest number in use
+        self.assertEqual(after['script/Trig_Intro_Actions/1']['string_id'], 5)
+        # an empty text stays inline, and a second pass has nothing left to move
+        self.assertEqual(after['w3u/h001/Name']['string_id'], None)
+        self.assertEqual(externalize_strings(out)[1], 0)
+        # a translation then reaches the text through war3map.wts
+        table, _ = translation(out)
+        table['strings']['w3u/h000/Name']['translation'] = 'Fantassin'
+        translated, _ = apply_translation(out, table)
+        self.assertEqual(string_keys(translated)['w3u/h000/Name']['text'], 'Fantassin')
+        self.assertEqual(translated['war3map.w3u'], out['war3map.w3u'])
 
     def test_cli(self):
         from wc3files.w3x.modes import _write_map

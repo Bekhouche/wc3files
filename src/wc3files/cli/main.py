@@ -2118,8 +2118,8 @@ def _cmd_map_translate(args):
     """Stable string keys, a diff of two map versions, and translation files
     (#224)."""
     from wc3files.w3x.modes import archive_files, _write_map
-    from wc3files.w3x.translation import (apply_translation, diff_strings, string_keys,
-                                          translation)
+    from wc3files.w3x.translation import (apply_translation, diff_strings,
+                                          externalize_strings, string_keys, translation)
 
     def files_of(path):
         return archive_files(_open_map(path, args.deep))
@@ -2161,6 +2161,14 @@ def _cmd_map_translate(args):
             summary += (f": {counts['kept']} translation(s) kept, {counts['changed']} source(s) "
                         f"changed, {counts['new']} new, {counts['dropped']} key(s) dropped")
         print(summary, file=sys.stderr)
+        return 0
+    if args.action == 'externalize':
+        if not args.output:
+            raise ValueError('externalize takes the map and -o, the map to write')
+        files, count = externalize_strings(files_of(args.map))
+        _write_map(files, args.output)
+        print(f'{count} inline text(s) moved into war3map.wts', file=sys.stderr)
+        print(f'Wrote {args.output}', file=sys.stderr)
         return 0
     # apply
     if not args.other or not args.output:
@@ -4035,10 +4043,13 @@ def build_parser():
         'map-translate',
         help=('Strings of a map under stable keys (object and field, map info field, '
               'script function), a diff of two versions, and translation files.'))
-    p_translate.add_argument('action', choices=('keys', 'diff', 'export', 'apply'),
+    p_translate.add_argument('action', choices=('keys', 'diff', 'export', 'apply',
+                                                'externalize'),
                              help=('keys: list the keys; diff OLD NEW: compare two '
                                    'versions; export: write a translation file; apply '
-                                   'MAP FILE: write a translation into the map.'))
+                                   'MAP FILE: write a translation into the map; '
+                                   'externalize: move inline object and map info texts '
+                                   'into war3map.wts.'))
     p_translate.add_argument('map', help='The map (for diff, the old version).')
     p_translate.add_argument('other', nargs='?', default=None,
                              help='diff: the new version. apply: the translation file.')

@@ -27,6 +27,10 @@ translation whose source text is unchanged and marks the rest. And
 `apply_translation(files, table)` writes the translations into the map:
 `war3map.wts` for a `TRIGSTR_` string, the object data or the map info for
 text kept inline.
+
+`externalize_strings(files)` moves that inline text into `war3map.wts`
+(#411), so that every text has a `TRIGSTR_` reference and a locale's string
+table (`_Locales\\<locale>.w3mod\\war3map.wts`) can replace it.
 """
 
 import os
@@ -246,6 +250,43 @@ def apply_translation(files, table, force=False):
     if w3i_edits:
         files[w3i_edits[0][0][1]] = _edit_w3i(files, w3i_edits)
     return files, report
+
+
+def externalize_strings(files):
+    """(files, count): the map with each inline text of its object data and
+    map info moved into war3map.wts under a new number, and a TRIGSTR_
+    reference put in its place (#411). Keys do not change, and a locale's
+    string table then covers these texts too. Empty texts are left."""
+    from wc3files.table.wts_file import WtsFile
+    files = dict(files)
+    wts_name, wts_data = _member(files, 'war3map.wts')
+    wts = WtsFile()
+    if wts_data:
+        wts.read(wts_data)
+    strings = dict(wts.export_data())
+    used = [int(m.group(1)) for data in files.values() if data
+            for m in _TRIGSTR_ANY.finditer(data.decode('latin-1'))]
+    next_id = max([0, *strings, *used]) + 1
+    objects, w3i_edits = {}, []
+    for entry in string_keys(files).values():
+        if entry['string_id'] is not None or not entry['text']:
+            continue
+        strings[next_id] = entry['text']
+        reference = f'TRIGSTR_{next_id:03d}'
+        next_id += 1
+        if entry['source'][0] == 'object':
+            objects.setdefault(entry['source'][1], []).append((entry['source'], reference))
+        else:
+            w3i_edits.append((entry['source'], reference))
+    count = sum(map(len, objects.values())) + len(w3i_edits)
+    if not count:
+        return files, 0
+    files[wts_name or 'war3map.wts'] = WtsFile().import_data(strings).to_bytes()
+    for name, edits in objects.items():
+        files[name] = _edit_objects(files[name], edits)
+    if w3i_edits:
+        files[w3i_edits[0][0][1]] = _edit_w3i(files, w3i_edits)
+    return files, count
 
 
 def _edit_objects(data, edits):

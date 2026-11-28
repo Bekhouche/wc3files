@@ -314,6 +314,7 @@ wc3files map-translate diff v1.w3x v2.w3x               # what changed between v
 wc3files map-translate export v1.w3x -o fr.json         # a translation file to fill in
 wc3files map-translate export v2.w3x --previous fr.json -o fr2.json
 wc3files map-translate apply v2.w3x fr2.json -o v2-fr.w3x
+wc3files map-translate externalize map.w3x -o out.w3x  # inline texts into war3map.wts
 ```
 
 `TRIGSTR_` numbers change from one version of a map to the next, so
@@ -340,6 +341,15 @@ map: `war3map.wts` for a `TRIGSTR_` string, the object data or the map info
 for text kept inline. A translation is skipped when its source is not the
 map's current text, or still has the `changed` status: remove the status
 once it is reviewed, or write all of them with `--force`.
+
+`externalize` moves the texts kept inline in the object data and the map
+info into `war3map.wts`, each under a new number, with a `TRIGSTR_`
+reference in its place; the keys and their texts stay the same, and empty
+texts are left. A locale's string table
+(`_Locales\<locale>.w3mod\war3map.wts`) only replaces texts that have a
+`TRIGSTR_` reference, so this is the step before writing one.
+On the 342 readable corpus maps it moved 320,707 texts, and every key of
+every map kept its text.
 
 On seven pairs of versions of the same map in the corpus, the keys held: for
 example, between Balanced Hero Survival 0.91 and 0.92, 1,097 strings changed
