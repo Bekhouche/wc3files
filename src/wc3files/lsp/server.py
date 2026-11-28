@@ -130,6 +130,7 @@ class Server:
             'textDocument/didSave': self.on_did_save,
             'textDocument/didClose': self.on_did_close,
             'textDocument/hover': self.on_hover,
+            'textDocument/definition': self.on_definition,
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -139,6 +140,7 @@ class Server:
             'textDocumentSync': {'openClose': True, 'change': FULL_SYNC,
                                  'save': {'includeText': True}},
             'hoverProvider': True,
+            'definitionProvider': True,
         }
 
     def on_initialize(self, params):
@@ -219,6 +221,20 @@ class Server:
         document, symbol, word_range = found
         return {'contents': {'kind': 'markdown', 'value': describe(symbol, document.language)},
                 'range': word_range}
+
+    def on_definition(self, params):
+        """The declaration of the name at the position: in the document, or
+        in the bundled common.j or blizzard.j, opened from the installed
+        package."""
+        import pathlib
+        found = self.symbol_at(params)
+        if found is None:
+            return None
+        document, symbol, _ = found
+        uri = pathlib.Path(symbol.path).as_uri() if symbol.path else document.uri
+        start = {'line': symbol.line - 1, 'character': symbol.col - 1}
+        end = {'line': symbol.line - 1, 'character': symbol.col - 1 + len(symbol.name)}
+        return {'uri': uri, 'range': {'start': start, 'end': end}}
 
     def publish(self, uri):
         document = self.documents[uri]

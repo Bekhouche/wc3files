@@ -236,6 +236,49 @@ class TestHover(unittest.TestCase):
         self.assertIn('local count = 0', self.value(LUA_SCRIPT, 2, 5, uri=uri, language=language))
 
 
+def definition(text, line, character, uri='file:///map/war3map.j', language='jass'):
+    _, out = exchange(INITIALIZE, open_doc(text, uri=uri, language=language),
+                      {'id': 6, 'method': 'textDocument/definition', 'params': {
+                          'textDocument': {'uri': uri},
+                          'position': {'line': line, 'character': character}}},
+                      SHUTDOWN, EXIT)
+    [reply] = [m for m in out if m.get('id') == 6]
+    return reply['result']
+
+
+class TestDefinition(unittest.TestCase):
+    def start(self, result):
+        return result['range']['start']['line'], result['range']['start']['character']
+
+    def test_the_files_function_global_and_constant(self):
+        result = definition(SCRIPT, 9, 10)  # Heal
+        self.assertEqual((result['uri'], self.start(result)), ('file:///map/war3map.j', (4, 9)))
+        self.assertEqual(result['range']['end']['character'], 13)
+        self.assertEqual(self.start(definition(SCRIPT, 9, 16)), (2, 15))   # udg_Heroes
+        self.assertEqual(self.start(definition(SCRIPT, 9, 30)), (1, 21))   # MAX_HEROES
+
+    def test_a_parameter_and_a_local(self):
+        self.assertEqual(self.start(definition(SCRIPT, 6, 56)), (4, 38))  # amount
+        self.assertEqual(self.start(definition(SCRIPT, 6, 48)), (5, 15))  # life
+
+    def test_a_native_opens_the_bundled_common_j(self):
+        import urllib.parse
+        import urllib.request
+        result = definition(SCRIPT, 5, 24)  # GetUnitState
+        self.assertTrue(result['uri'].startswith('file:'))
+        path = urllib.request.url2pathname(urllib.parse.urlparse(result['uri']).path)
+        self.assertEqual(os.path.basename(path), 'common.j')
+        with open(path, encoding='utf-8', errors='replace') as handle:
+            line = handle.read().splitlines()[result['range']['start']['line']]
+        character = result['range']['start']['character']
+        self.assertEqual(line[character:character + len('GetUnitState')], 'GetUnitState')
+
+    def test_lua_and_nothing(self):
+        result = definition(LUA_SCRIPT, 5, 1, uri='file:///map/war3map.lua', language='lua')
+        self.assertEqual(self.start(result), (1, 9))
+        self.assertIsNone(definition(SCRIPT, 3, 0))
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
