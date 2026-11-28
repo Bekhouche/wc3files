@@ -2119,7 +2119,8 @@ def _cmd_map_translate(args):
     (#224)."""
     from wc3files.w3x.modes import archive_files, _write_map
     from wc3files.w3x.translation import (apply_translation, diff_strings,
-                                          externalize_strings, string_keys, translation)
+                                          externalize_strings, locale_tables, string_keys,
+                                          translation)
 
     def files_of(path):
         return archive_files(_open_map(path, args.deep))
@@ -2161,6 +2162,28 @@ def _cmd_map_translate(args):
             summary += (f": {counts['kept']} translation(s) kept, {counts['changed']} source(s) "
                         f"changed, {counts['new']} new, {counts['dropped']} key(s) dropped")
         print(summary, file=sys.stderr)
+        return 0
+    if args.action == 'locales':
+        if not args.locale or not args.output:
+            raise ValueError('locales takes the map, --locale LOCALE=FILE for each '
+                             'translation and -o, the map to write')
+        tables = {}
+        for item in args.locale:
+            locale, sep, path = item.partition('=')
+            if not sep or not path:
+                raise ValueError(f'--locale takes LOCALE=FILE, as frFR=fr.json, not {item!r}')
+            tables[locale] = read_json(path)
+        files, reports = locale_tables(files_of(args.map), tables, force=args.force)
+        _write_map(files, args.output)
+        moved = next(iter(reports.values()))['externalized']
+        if moved:
+            print(f'{moved} inline text(s) moved into war3map.wts', file=sys.stderr)
+        for locale, report in reports.items():
+            print(f"{locale}: {report['applied']} applied, {report['untranslated']} "
+                  f"untranslated, {len(report['stale'])} stale (source changed; --force "
+                  f"writes them), {len(report['unknown'])} key(s) not in the map",
+                  file=sys.stderr)
+        print(f'Wrote {args.output}', file=sys.stderr)
         return 0
     if args.action == 'externalize':
         if not args.output:
@@ -4044,12 +4067,14 @@ def build_parser():
         help=('Strings of a map under stable keys (object and field, map info field, '
               'script function), a diff of two versions, and translation files.'))
     p_translate.add_argument('action', choices=('keys', 'diff', 'export', 'apply',
-                                                'externalize'),
+                                                'externalize', 'locales'),
                              help=('keys: list the keys; diff OLD NEW: compare two '
                                    'versions; export: write a translation file; apply '
                                    'MAP FILE: write a translation into the map; '
                                    'externalize: move inline object and map info texts '
-                                   'into war3map.wts.'))
+                                   'into war3map.wts; locales: one string table per '
+                                   'language, for one map that shows each player their '
+                                   'own language.'))
     p_translate.add_argument('map', help='The map (for diff, the old version).')
     p_translate.add_argument('other', nargs='?', default=None,
                              help='diff: the new version. apply: the translation file.')
@@ -4059,8 +4084,13 @@ def build_parser():
                              help=('export: the translation file of an older version, '
                                    'whose translations carry over where the source '
                                    'text is unchanged.'))
+    p_translate.add_argument('--locale', action='append', default=None,
+                             metavar='LOCALE=FILE',
+                             help=('locales: a translation file for one locale, as '
+                                   'frFR=fr.json; give it once per locale.'))
     p_translate.add_argument('--force', action='store_true',
-                             help='apply: also write translations whose source changed.')
+                             help=('apply and locales: also write translations whose '
+                                   'source changed.'))
     p_translate.add_argument('--json', action='store_true',
                              help='keys and diff: JSON instead of text.')
     p_translate.add_argument('--deep', action='store_true', help=argparse.SUPPRESS)

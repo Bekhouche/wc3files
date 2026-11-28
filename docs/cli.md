@@ -315,6 +315,7 @@ wc3files map-translate export v1.w3x -o fr.json         # a translation file to 
 wc3files map-translate export v2.w3x --previous fr.json -o fr2.json
 wc3files map-translate apply v2.w3x fr2.json -o v2-fr.w3x
 wc3files map-translate externalize map.w3x -o out.w3x  # inline texts into war3map.wts
+wc3files map-translate locales map.w3x --locale frFR=fr.json --locale deDE=de.json -o all.w3x
 ```
 
 `TRIGSTR_` numbers change from one version of a map to the next, so
@@ -350,6 +351,26 @@ texts are left. A locale's string table
 `TRIGSTR_` reference, so this is the step before writing one.
 On the 342 readable corpus maps it moved 320,707 texts, and every key of
 every map kept its text.
+
+`locales` makes one map that shows each player their own language. The
+game reads a string table per language, `_Locales\<locale>.w3mod\war3map.wts`,
+beside the base `war3map.wts`, which holds the English text; 266 of the 273
+maps of the game carry them. `locales` writes one such table for each
+`--locale LOCALE=FILE`, with every string of `war3map.wts`: the translation
+where the file gives one, and the base text elsewhere, so the map does not
+depend on how the game falls back to the base table. It lists the tables in
+`war3map.imp`, keeps the base text, and moves inline texts into
+`war3map.wts` first, as `externalize` does. The locales are `deDE`, `esES`,
+`esMX`, `frFR`, `itIT`, `jaJP`, `koKR`, `plPL`, `ptBR`, `ruRU`, `thTH`,
+`zhCN` and `zhTW`, and `enUS`. Stale and untranslated strings are counted
+as `apply` counts them. An empty translation counts as untranslated, so a
+table cannot set a text to empty. That the game picks the table from the
+client's language is read from the game's own maps; it has not been checked
+in the game yet (#225).
+
+On the 266 maps of the game with locale tables, rebuilding the 3,313 tables
+from their own translations gave the same text for every string that has a
+key, apart from the strings a table sets to empty.
 
 On seven pairs of versions of the same map in the corpus, the keys held: for
 example, between Balanced Hero Survival 0.91 and 0.92, 1,097 strings changed

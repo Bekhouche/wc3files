@@ -11,8 +11,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 from wc3files.cli.main import main
 from wc3files.table.wts_file import WtsFile
 from wc3files.w3o.object_file import ObjectFile
+from wc3files.w3x.imports import read_imports
 from wc3files.w3x.translation import (apply_translation, diff_strings, externalize_strings,
-                                      string_keys, translation)
+                                      locale_tables, string_keys, translation)
 from wc3files.w3x.w3x_file import read_map
 
 SAMPLE = os.path.join(os.path.dirname(__file__), 'samples', 'w3x', 'sample.w3x')
@@ -128,6 +129,40 @@ class TestTranslation(unittest.TestCase):
         translated, _ = apply_translation(out, table)
         self.assertEqual(string_keys(translated)['w3u/h000/Name']['text'], 'Fantassin')
         self.assertEqual(translated['war3map.w3u'], out['war3map.w3u'])
+
+    def test_locale_tables(self):
+        files = version({1: 'Welcome!', 2: 'Defend the gate.'}, {'h000': ('hfoo', 'Footman')},
+                        [1, 2])
+        table, _ = translation(files)
+        table['strings']['w3u/h000/Name']['translation'] = 'Fantassin'
+        table['strings']['script/Trig_Intro_Actions/1']['translation'] = 'Bienvenue !'
+        german, _ = translation(files)
+        german['strings']['script/Trig_Intro_Actions/2']['translation'] = 'Verteidigt das Tor.'
+        german['strings']['script/Trig_Intro_Actions/2']['source'] = 'Hold the gate.'
+        out, reports = locale_tables(files, {'frFR': table, 'deDE': german})
+        self.assertEqual(reports['frFR']['applied'], 2)
+        self.assertEqual(reports['deDE']['stale'], ['script/Trig_Intro_Actions/2'])
+        self.assertGreater(reports['frFR']['externalized'], 0)   # the unit name was inline
+        keys = string_keys(out)
+        base = WtsFile()
+        base.read(out['war3map.wts'])
+        self.assertEqual(keys['w3u/h000/Name']['text'], 'Footman')     # the base keeps it
+        french = WtsFile()
+        french.read(out['_Locales\\frFR.w3mod\\war3map.wts'])
+        french = dict(french.export_data())
+        self.assertEqual(set(french), set(dict(base.export_data())))   # every string
+        self.assertEqual(french[keys['w3u/h000/Name']['string_id']], 'Fantassin')
+        self.assertEqual(french[1], 'Bienvenue !')
+        self.assertEqual(french[2], 'Defend the gate.')             # untranslated: the base
+        listed = read_imports(out)[1]['files']
+        self.assertEqual(sorted(e['path'] for e in listed if e['path'].startswith('_Locales')),
+                         ['_Locales\\deDE.w3mod\\war3map.wts',
+                          '_Locales\\frFR.w3mod\\war3map.wts'])
+        # writing again replaces the tables and lists them once
+        again, _ = locale_tables(out, {'frFR': table})
+        self.assertEqual(len(read_imports(again)[1]['files']), len(listed))
+        with self.assertRaises(ValueError):
+            locale_tables(files, {'fr': table})
 
     def test_cli(self):
         from wc3files.w3x.modes import _write_map

@@ -232,8 +232,7 @@ def apply_translation(files, table, force=False):
         if not text:
             report['untranslated'] += 1
             continue
-        reviewed = record.get('status') != 'changed'
-        if (record.get('source') != entry['text'] or not reviewed) and not force:
+        if not _current(record, entry) and not force:
             report['stale'].append(key)
             continue
         if entry['string_id'] is not None:
@@ -250,6 +249,82 @@ def apply_translation(files, table, force=False):
     if w3i_edits:
         files[w3i_edits[0][0][1]] = _edit_w3i(files, w3i_edits)
     return files, report
+
+
+# The locales of the game's string tables: enUS is the base war3map.wts, and
+# the maps of the game carry a _Locales table for the 13 others.
+LOCALES = ('enUS', 'deDE', 'esES', 'esMX', 'frFR', 'itIT', 'jaJP', 'koKR', 'plPL', 'ptBR',
+           'ruRU', 'thTH', 'zhCN', 'zhTW')
+
+
+def locale_member(locale):
+    """The member name of a locale's string table."""
+    return f'_Locales\\{locale}.w3mod\\war3map.wts'
+
+
+def locale_tables(files, tables, force=False):
+    """(files, {locale: report}): the map with a string table for each
+    locale of `tables` ({locale: translation file}), as
+    `_Locales\\<locale>.w3mod\\war3map.wts`, listed in war3map.imp (#412).
+
+    Each table holds every string of war3map.wts, translated where the file
+    gives a translation and the base text elsewhere, so the map does not
+    depend on how the game falls back to the base table. The base
+    war3map.wts keeps its text. Inline texts are moved into war3map.wts
+    first (externalize_strings), since a locale table only replaces texts
+    that have a TRIGSTR_ reference. A report counts the strings `applied`
+    and `untranslated`, and lists the keys `stale` and `unknown`, as
+    apply_translation does."""
+    from wc3files.table.wts_file import WtsFile
+    from wc3files.w3x.imports import find, import_flags, read_imports, write_imports
+    for locale in tables:
+        if locale not in LOCALES:
+            raise ValueError(f'unknown locale {locale!r}: the game uses {", ".join(LOCALES)}')
+    files, moved = externalize_strings(files)
+    keys = string_keys(files)
+    base = _strings(files)
+    imp_key, listing = read_imports(files)
+    entries = listing['files']
+    listed = {entry.get('path', '').replace('/', '\\').lower() for entry in entries}
+    flags = import_flags(entries)
+    reports = {}
+    for locale, table in tables.items():
+        strings = dict(base)
+        report = {'applied': 0, 'untranslated': 0, 'stale': [], 'unknown': [],
+                  'externalized': moved}
+        for key, record in (table.get('strings') or {}).items():
+            entry = keys.get(key)
+            if entry is None:
+                report['unknown'].append(key)
+                continue
+            text = record.get('translation') or ''
+            if not text:
+                report['untranslated'] += 1
+                continue
+            if not _current(record, entry) and not force:
+                report['stale'].append(key)
+                continue
+            if entry['string_id'] is None:
+                # an empty source text, which externalize_strings leaves inline
+                report['unknown'].append(key)
+                continue
+            strings[entry['string_id']] = text
+            report['applied'] += 1
+        name = find(files, locale_member(locale)) or locale_member(locale)
+        files[name] = WtsFile().import_data(strings).to_bytes()
+        if name.lower() not in listed:
+            entries.append({'flags': flags, 'path': name})
+            listed.add(name.lower())
+        reports[locale] = report
+    if tables:
+        write_imports(files, imp_key, listing)
+    return files, reports
+
+
+def _current(record, entry):
+    """Whether a translation was made for the map's current text and is not
+    waiting for review."""
+    return record.get('source') == entry['text'] and record.get('status') != 'changed'
 
 
 def externalize_strings(files):
