@@ -131,6 +131,7 @@ class Server:
             'textDocument/didClose': self.on_did_close,
             'textDocument/hover': self.on_hover,
             'textDocument/definition': self.on_definition,
+            'textDocument/completion': self.on_completion,
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -141,6 +142,7 @@ class Server:
                                  'save': {'includeText': True}},
             'hoverProvider': True,
             'definitionProvider': True,
+            'completionProvider': {'triggerCharacters': []},
         }
 
     def on_initialize(self, params):
@@ -235,6 +237,19 @@ class Server:
         start = {'line': symbol.line - 1, 'character': symbol.col - 1}
         end = {'line': symbol.line - 1, 'character': symbol.col - 1 + len(symbol.name)}
         return {'uri': uri, 'range': {'start': start, 'end': end}}
+
+    def on_completion(self, params):
+        from .symbols import completions, prefix_at
+        document = self.documents.get(params['textDocument']['uri'])
+        if document is None or document.language is None:
+            return None
+        position = params['position']
+        prefix = prefix_at(document.text, position['line'], position['character'])
+        items, complete = completions(document.index, document.language, prefix,
+                                      position['line'] + 1)
+        # Incomplete with no prefix too: the bundled names come once a letter
+        # is typed, so the editor has to ask again.
+        return {'isIncomplete': not complete or not prefix, 'items': items}
 
     def publish(self, uri):
         document = self.documents[uri]

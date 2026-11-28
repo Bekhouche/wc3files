@@ -48,6 +48,15 @@ Go to definition jumps to a name's declaration, found as hover finds it. A
 native, BJ function or constant opens the bundled `common.j` or
 `blizzard.j` of the installed package at its line.
 
+## Completion
+
+Completion offers the names that start with what you have typed: the
+file's own (a parameter or local only in its function), then the natives,
+BJ functions, constants and types of `common.j` and `blizzard.j`, then the
+keywords. Each name comes with its declaration. Before anything is typed,
+only the names of the function you are in and the keywords are offered; the
+list holds at most 300 names, and the editor asks again as you type.
+
 ## Neovim
 
 Neovim (0.10 or later) has a client built in. Give `.j` files a file type
