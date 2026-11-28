@@ -10,6 +10,8 @@ section to the new version and its date.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-11-28
+
 ### Added
 
 - `map-translate externalize`: the texts kept inline in a map's object data and map info move into `war3map.wts` under new numbers, with a `TRIGSTR_` reference in their place, so a locale's string table can replace them; the keys and texts stay the same (#411).
@@ -359,7 +361,8 @@ with the game's own field schema, GUI and custom text triggers, JASS and Lua
 scripts, MDL/MDX models, BLP/DDS/TGA/BMP/TIFF/PNG images, replays, UI and
 effect files, and the CASC storage of an installed game.
 
-[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Bekhouche/wc3files/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/Bekhouche/wc3files/compare/v0.14.0...v0.15.0
 [0.14.0]: https://github.com/Bekhouche/wc3files/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/Bekhouche/wc3files/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Bekhouche/wc3files/compare/v0.11.0...v0.12.0
