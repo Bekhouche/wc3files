@@ -321,6 +321,34 @@ def locale_tables(files, tables, force=False):
     return files, reports
 
 
+def locale_translations(files):
+    """{locale: translation file} for each string table of the map under
+    `_Locales\\<locale>.w3mod\\war3map.wts` (#413), keyed as translation()
+    keys: the source is the map's text, the translation the table's text
+    for the same string, or empty where the table does not have it. Passed
+    to translation() as `previous`, the translations carry over to a new
+    version of the map where the source text is the same."""
+    from wc3files.table.wts_file import WtsFile
+    keys = string_keys(files)
+    out = {}
+    for name in sorted(files):
+        parts = name.replace('/', '\\').split('\\')
+        if len(parts) != 3 or parts[0].lower() != '_locales' \
+                or parts[2].lower() != 'war3map.wts' or not files[name]:
+            continue
+        locale = parts[1][:-len('.w3mod')] if parts[1].lower().endswith('.w3mod') else parts[1]
+        locale = next((known for known in LOCALES if known.lower() == locale.lower()), locale)
+        table = WtsFile()
+        table.read(files[name])
+        texts = dict(table.export_data())
+        out[locale] = {'version': 1, 'strings': {
+            key: {'source': entry['text'],
+                  'translation': texts.get(entry['string_id'], '')
+                  if entry['string_id'] is not None else ''}
+            for key, entry in keys.items()}}
+    return out
+
+
 def _current(record, entry):
     """Whether a translation was made for the map's current text and is not
     waiting for review."""

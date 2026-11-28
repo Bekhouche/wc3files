@@ -2119,8 +2119,8 @@ def _cmd_map_translate(args):
     (#224)."""
     from wc3files.w3x.modes import archive_files, _write_map
     from wc3files.w3x.translation import (apply_translation, diff_strings,
-                                          externalize_strings, locale_tables, string_keys,
-                                          translation)
+                                          externalize_strings, locale_tables,
+                                          locale_translations, string_keys, translation)
 
     def files_of(path):
         return archive_files(_open_map(path, args.deep))
@@ -2154,8 +2154,26 @@ def _cmd_map_translate(args):
               f"{len(found['changed'])} changed, {found['unchanged']} unchanged", file=sys.stderr)
         return 0
     if args.action == 'export':
-        previous = read_json(args.previous) if args.previous else None
-        table, counts = translation(files_of(args.map), previous)
+        files = files_of(args.map)
+        locales = args.locale or []
+        if len(locales) > 1 or any('=' in item for item in locales):
+            raise ValueError('export takes one --locale, a locale name as deDE')
+        if args.previous and args.previous.lower().endswith('.json'):
+            previous = read_json(args.previous)
+        elif args.previous or locales:
+            if not locales:
+                raise ValueError('--previous is a map: give --locale, the locale of its '
+                                 'string table to read, as deDE')
+            source = files_of(args.previous) if args.previous else files
+            found = locale_translations(source)
+            match = next((k for k in found if k.lower() == locales[0].lower()), None)
+            if match is None:
+                raise ValueError(f"{args.previous or args.map} has no {locales[0]} string table"
+                                 f" (it has: {', '.join(found) or 'none'})")
+            previous = found[match]
+        else:
+            previous = None
+        table, counts = translation(files, previous)
         _write_json(table, args.output or '-')
         summary = f"{len(table['strings'])} string(s)"
         if previous is not None:
@@ -4081,13 +4099,16 @@ def build_parser():
     p_translate.add_argument('-o', '--output', default=None,
                              help='Where to write (default: stdout; apply needs a map).')
     p_translate.add_argument('--previous', default=None,
-                             help=('export: the translation file of an older version, '
+                             help=('export: the translation file (.json) of an older '
+                                   'version, or the older map itself with --locale, '
                                    'whose translations carry over where the source '
                                    'text is unchanged.'))
     p_translate.add_argument('--locale', action='append', default=None,
                              metavar='LOCALE=FILE',
                              help=('locales: a translation file for one locale, as '
-                                   'frFR=fr.json; give it once per locale.'))
+                                   'frFR=fr.json; give it once per locale. export: the '
+                                   'locale whose string table in the map (or in the '
+                                   '--previous map) gives the translations, as deDE.'))
     p_translate.add_argument('--force', action='store_true',
                              help=('apply and locales: also write translations whose '
                                    'source changed.'))

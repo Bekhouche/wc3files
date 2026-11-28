@@ -14,6 +14,7 @@ section to the new version and its date.
 
 - `map-translate externalize`: the texts kept inline in a map's object data and map info move into `war3map.wts` under new numbers, with a `TRIGSTR_` reference in their place, so a locale's string table can replace them; the keys and texts stay the same (#411).
 - `map-translate locales`: one map that shows each player their own language, with a string table per locale (`_Locales\<locale>.w3mod\war3map.wts`, the layout of the game's own maps) written from translation files; each table holds every string, translated or with the base text, and is listed in `war3map.imp` (#412).
+- `map-translate export --locale`: a map's own locale string tables read as translation files, keyed as before; with `--previous` set to the older map, its table carries over to the new version, and a string whose English text changed is marked for review (#413).
 
 ## [0.14.0] - 2026-11-28
 
