@@ -64,6 +64,16 @@ keywords. Each name comes with its declaration. Before anything is typed,
 only the names of the function you are in and the keywords are offered; the
 list holds at most 300 names, and the editor asks again as you type.
 
+## Signature help
+
+While a call is typed, after `(` and `,`, the editor shows the signature of
+the function being called, with the argument the cursor is on highlighted:
+a native or BJ function of `common.j` and `blizzard.j`, or a function or
+native of the file. In a nested call it is the innermost one; commas in
+strings, arrays and inner calls do not count. In Lua a call can run over
+several lines, and the 30 lines before the cursor are read to find it; a
+method call (`a:b(` or `a.b(`) gets none.
+
 ## References and highlights
 
 Find references lists every use of the name under the cursor in the file,
