@@ -204,7 +204,13 @@ class FunctionCompiler(object):
         if stmt.init is not None and keep_init:
             initial = self.value(stmt.init, ltype)
         ctx.locals[stmt.name] = info
-        return ir.Local(out_type(ltype), stmt.name, stmt.is_array, initial)
+        local = ir.Local(out_type(ltype), stmt.name, stmt.is_array, initial)
+        # Where it was declared, for the source map: the leading locals of a
+        # function are hoisted without going through statement(), so the
+        # output line of a local mapped to nothing, and a leak reported on
+        # it had no source line (#392).
+        local.loc = getattr(stmt, 'loc', None)
+        return local
 
     def block(self, body, hoisted):
         out = []
