@@ -153,6 +153,8 @@ class Server:
             'textDocument/prepareRename': self.on_prepare_rename,
             'textDocument/rename': self.on_rename,
             'textDocument/signatureHelp': self.on_signature_help,
+            'textDocument/formatting': self.on_formatting,
+            'textDocument/rangeFormatting': self.on_range_formatting,
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -170,6 +172,8 @@ class Server:
             'renameProvider': {'prepareProvider': True},
             'signatureHelpProvider': {'triggerCharacters': ['(', ','],
                                       'retriggerCharacters': [')']},
+            'documentFormattingProvider': True,
+            'documentRangeFormattingProvider': True,
         }
 
     def on_initialize(self, params):
@@ -386,6 +390,29 @@ class Server:
             result['activeParameter'] = active
             result['signatures'][0]['activeParameter'] = active
         return result
+
+    def format_edits(self, params, first=0, last=None):
+        """The edits that set the indentation of a JASS or vJass document
+        (#404); none for Lua, which is not formatted."""
+        from .format import format_lines
+        document = self.documents.get(params['textDocument']['uri'])
+        if document is None or document.language not in (analysis.JASS, analysis.VJASS):
+            return []
+        return [{'range': {'start': {'line': line, 'character': 0},
+                           'end': {'line': line, 'character': length}},
+                 'newText': new}
+                for line, length, new in format_lines(document.text, params.get('options'),
+                                                      first, last)]
+
+    def on_formatting(self, params):
+        return self.format_edits(params)
+
+    def on_range_formatting(self, params):
+        range_ = params['range']
+        last = range_['end']['line']
+        if range_['end']['character'] == 0 and last > range_['start']['line']:
+            last -= 1  # a selection that ends at the start of a line leaves it out
+        return self.format_edits(params, range_['start']['line'], last)
 
     def publish(self, uri):
         document = self.documents[uri]

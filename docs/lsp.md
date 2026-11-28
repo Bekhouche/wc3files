@@ -124,6 +124,22 @@ as one of the file or of `common.j` and `blizzard.j`, or a global named as
 a local of a function that uses it. In Lua, a name used anywhere in the file
 is refused. Names declared in `common.j` and `blizzard.j` cannot be renamed.
 
+## Formatting
+
+Format document, and format selection, set the indentation of a JASS or
+vJass file and nothing else: each line is indented by the blocks it is in
+(`globals`, `function`, `if`, `loop`, and in vJass `library`, `scope`,
+`struct`, `interface`, `module`, `method` and `static if`), with `else` and
+`elseif` at the depth of their `if`, using the editor's indent size and
+tabs or spaces; trailing spaces are removed. The text of each line, the
+comments, the blank lines and the line endings are kept. The lines of a
+`/* */` comment, and the bodies of `//! textmacro`, `//! zinc` and
+`//! novjass` blocks, are kept as they are. A file that does not lex is left
+as it is, and Lua files are not formatted.
+
+The JASS printer is not used for this: it would reprint the code, but
+without its comments and blank lines.
+
 ## Outline
 
 The outline of a file (document symbols) lists its types, globals and
