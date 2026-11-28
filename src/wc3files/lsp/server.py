@@ -19,6 +19,12 @@ INVALID_REQUEST = -32600
 METHOD_NOT_FOUND = -32601
 INTERNAL_ERROR = -32603
 SERVER_NOT_INITIALIZED = -32002
+REQUEST_FAILED = -32803
+
+
+class RequestFailed(Exception):
+    """A request that is valid but cannot be done; its message is shown to
+    the user, as for a refused rename."""
 
 FULL_SYNC = 1
 
@@ -114,6 +120,10 @@ class Server:
             return  # an unknown notification is ignored, as the protocol says
         try:
             result = handler(message.get('params') or {})
+        except RequestFailed as error:
+            if is_request:
+                self.reply(request_id, error={'code': REQUEST_FAILED, 'message': str(error)})
+            return
         except Exception as error:  # one bad document must not stop the server
             traceback.print_exc(file=self.log)
             if is_request:
@@ -138,6 +148,8 @@ class Server:
             'textDocument/documentSymbol': self.on_document_symbol,
             'textDocument/references': self.on_references,
             'textDocument/documentHighlight': self.on_document_highlight,
+            'textDocument/prepareRename': self.on_prepare_rename,
+            'textDocument/rename': self.on_rename,
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -152,6 +164,7 @@ class Server:
             'documentSymbolProvider': True,
             'referencesProvider': True,
             'documentHighlightProvider': True,
+            'renameProvider': {'prepareProvider': True},
         }
 
     def on_initialize(self, params):
@@ -299,6 +312,40 @@ class Server:
             return None
         return [{'range': range_, 'kind': WRITE if is_declaration else READ}
                 for range_, is_declaration in found[1]]
+
+    def on_prepare_rename(self, params):
+        """The name at the position and its range, or a failed request for
+        a name declared in the bundled files (#401)."""
+        from .symbols import RenameError, can_rename
+        found = self.symbol_at(params)
+        if found is None:
+            return None
+        _, symbol, word_range = found
+        try:
+            can_rename(symbol)
+        except RenameError as error:
+            raise RequestFailed(str(error)) from None
+        return {'range': word_range, 'placeholder': symbol.name}
+
+    def on_rename(self, params):
+        """A workspace edit renaming the name at the position in the
+        document: its declaration, its uses, and the ExecuteFunc and
+        TriggerRegisterVariableEvent strings that name it."""
+        from .symbols import RenameError, rename_edits
+        found = self.symbol_at(params)
+        if found is None:
+            return None
+        document, symbol, _ = found
+        new_name = params.get('newName', '')
+        try:
+            edits = rename_edits(document.index, symbol, new_name)
+        except RenameError as error:
+            raise RequestFailed(str(error)) from None
+        return {'changes': {document.uri: [
+            {'range': {'start': {'line': line - 1, 'character': col - 1},
+                       'end': {'line': line - 1, 'character': col - 1 + length}},
+             'newText': new_name}
+            for line, col, length in edits]}}
 
     def publish(self, uri):
         document = self.documents[uri]

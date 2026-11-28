@@ -522,6 +522,104 @@ class TestDocumentHighlight(unittest.TestCase):
                          [(4, 3), (5, 2), (5, 2)])
 
 
+def reply(method, text, line, character, uri='file:///map/war3map.j', language='jass', **extra):
+    """The whole reply to `method`, with its result or its error."""
+    params = dict({'textDocument': {'uri': uri},
+                   'position': {'line': line, 'character': character}}, **extra)
+    _, out = exchange(INITIALIZE, open_doc(text, uri=uri, language=language),
+                      {'id': 5, 'method': method, 'params': params}, SHUTDOWN, EXIT)
+    [message] = [m for m in out if m.get('id') == 5]
+    return message
+
+
+def apply(text, edit, uri='file:///map/war3map.j'):
+    """`text` with the edits of a workspace edit applied."""
+    lines = text.split('\n')
+    edits = edit['changes'][uri]
+    for change in sorted(edits, key=lambda e: (e['range']['start']['line'],
+                                               e['range']['start']['character']), reverse=True):
+        start, end = change['range']['start'], change['range']['end']
+        current = lines[start['line']]
+        lines[start['line']] = (current[:start['character']] + change['newText']
+                                + current[end['character']:])
+    return '\n'.join(lines)
+
+
+DYNAMIC = (
+    'globals\n'
+    '    real udg_Wave = 0\n'
+    'endglobals\n'
+    'function Spawn takes nothing returns nothing\n'
+    'endfunction\n'
+    'function Init takes nothing returns nothing\n'
+    '    local trigger t = CreateTrigger()\n'
+    '    call TriggerRegisterVariableEvent(t, "udg_Wave", EQUAL, 1.0)\n'
+    '    call ExecuteFunc("Spawn")\n'
+    '    call Spawn()\n'
+    'endfunction\n')
+
+
+class TestRename(unittest.TestCase):
+    def rename(self, text, line, character, new_name, **kwargs):
+        return reply('textDocument/rename', text, line, character, newName=new_name, **kwargs)
+
+    def test_a_local(self):
+        edit = self.rename(SHADOWED, 5, 9, 'n')['result']
+        renamed = apply(SHADOWED, edit)
+        self.assertIn('    local integer n = 1\n    set n = n + 1 // count\n', renamed)
+        self.assertIn('    set count = count + 2\n    call BJDebugMsg("count")\n', renamed)
+
+    def test_a_global_skips_the_function_that_shadows_it(self):
+        renamed = apply(SHADOWED, self.rename(SHADOWED, 1, 12, 'total')['result'])
+        self.assertIn('integer total = 0', renamed)
+        self.assertIn('set count = count + 1', renamed)
+        self.assertIn('set total = total + 2', renamed)
+
+    def test_the_strings_that_name_a_function_or_global(self):
+        renamed = apply(DYNAMIC, self.rename(DYNAMIC, 3, 10, 'SpawnWave')['result'])
+        self.assertIn('ExecuteFunc("SpawnWave")', renamed)
+        self.assertIn('call SpawnWave()', renamed)
+        self.assertIn('function SpawnWave takes', renamed)
+        renamed = apply(DYNAMIC, self.rename(DYNAMIC, 1, 10, 'udg_Level')['result'])
+        self.assertIn('TriggerRegisterVariableEvent(t, "udg_Level", EQUAL', renamed)
+        self.assertIn('real udg_Level = 0', renamed)
+
+    def test_lua(self):
+        uri = 'file:///map/war3map.lua'
+        edit = self.rename(LUA_SCRIPT, 0, 6, 'spawned', uri=uri, language='lua')['result']
+        renamed = apply(LUA_SCRIPT, edit, uri)
+        self.assertIn('local spawned = 0\n', renamed)
+        self.assertIn('    spawned = spawned + 1\n', renamed)
+
+    def refused(self, *args, **kwargs):
+        message = self.rename(*args, **kwargs)
+        self.assertEqual(message['error']['code'], -32803)
+        return message['error']['message']
+
+    def test_refused_names(self):
+        self.assertIn('not a name', self.refused(SHADOWED, 1, 12, '2x'))
+        self.assertIn('keyword', self.refused(SHADOWED, 1, 12, 'endif'))
+        # A native, a file-level name, a local of the same function, and a
+        # local that would shadow the renamed global where it is used.
+        self.assertIn('common.j', self.refused(SHADOWED, 1, 12, 'GetUnitState'))
+        self.assertIn('already declared', self.refused(SHADOWED, 1, 12, 'A'))
+        self.assertIn('already used in Heal', self.refused(SCRIPT, 5, 16, 'target'))
+        text = SHADOWED.replace('    set count = count + 2\n',
+                                '    local integer total = 0\n    set count = count + 2\n')
+        self.assertIn('local of B', self.refused(text, 1, 12, 'total'))
+
+    def test_a_native_cannot_be_renamed(self):
+        message = reply('textDocument/prepareRename', SCRIPT, 6, 10)
+        self.assertEqual(message['error']['code'], -32803)
+        self.assertIn('common.j', message['error']['message'])
+
+    def test_prepare_rename(self):
+        result = reply('textDocument/prepareRename', SHADOWED, 5, 9)['result']
+        self.assertEqual(result, {'range': {'start': {'line': 5, 'character': 8},
+                                            'end': {'line': 5, 'character': 13}},
+                                  'placeholder': 'count'})
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
