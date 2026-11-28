@@ -620,6 +620,59 @@ class TestRename(unittest.TestCase):
                                   'placeholder': 'count'})
 
 
+class TestSignatureHelp(unittest.TestCase):
+    def help(self, line_text, **kwargs):
+        """Signature help at the end of `line_text`, the last line of a
+        function in SCRIPT's file."""
+        text = SCRIPT + 'function Typing takes nothing returns nothing\n' + line_text + '\n'
+        line = text.count('\n') - 1
+        return request('textDocument/signatureHelp', text, line, len(line_text), **kwargs)
+
+    def parameter(self, result):
+        signature = result['signatures'][0]
+        start, end = signature['parameters'][result['activeParameter']]['label']
+        return signature['label'][start:end]
+
+    def test_a_native(self):
+        result = self.help('    call SetUnitState(GetTriggerUnit(), ')
+        self.assertTrue(result['signatures'][0]['label'].startswith('native SetUnitState takes'))
+        self.assertEqual(self.parameter(result), 'unitstate whichUnitState')
+
+    def test_the_innermost_call(self):
+        result = self.help('    call SetUnitState(u, UNIT_STATE_LIFE, GetUnitState(u, ')
+        self.assertIn('GetUnitState', result['signatures'][0]['label'])
+        self.assertEqual(self.parameter(result), 'unitstate whichUnitState')
+
+    def test_commas_in_strings_and_arrays_do_not_count(self):
+        self.assertEqual(self.parameter(self.help('    call BJDebugMsg("a, (b')), 'string msg')
+        result = self.help('    call Heal(udg_Heroes[1], ')
+        self.assertEqual(self.parameter(result), 'real amount')
+
+    def test_a_function_of_the_file(self):
+        result = self.help('    call Heal(')
+        self.assertEqual(result['signatures'][0]['label'],
+                         'function Heal takes unit target, real amount returns nothing')
+        self.assertEqual(result['signatures'][0]['parameters'][0]['label'], [20, 31])
+
+    def test_no_parameters(self):
+        result = self.help('    call GetTriggerUnit(')
+        self.assertEqual(result['signatures'][0]['parameters'], [])
+        self.assertNotIn('activeParameter', result)
+
+    def test_outside_a_call(self):
+        self.assertIsNone(self.help('    set udg_x = (1 + '))
+        self.assertIsNone(self.help('    call Heal(u, 1.0)'))
+
+    def test_lua_across_lines(self):
+        text = LUA_SCRIPT + 'CreateUnit(Player(0),\n    FourCC("hfoo"), '
+        result = request('textDocument/signatureHelp', text, 7, 20,
+                         uri='file:///map/war3map.lua', language='lua')
+        self.assertEqual(self.parameter(result), 'real x')
+        result = request('textDocument/signatureHelp', LUA_SCRIPT + 'Spawn(', 6, 6,
+                         uri='file:///map/war3map.lua', language='lua')
+        self.assertEqual(self.parameter(result), 'owner')
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')

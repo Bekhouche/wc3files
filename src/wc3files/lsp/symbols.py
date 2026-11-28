@@ -623,6 +623,88 @@ def _resolver(document_index, name):
     return jass
 
 
+_OPENERS = {'(': ')', '[': ']', '{': '}'}
+
+
+def call_at(text, line, character, language):
+    """(function name, 1-based line of the name, index of the argument) of
+    the innermost call the 0-based position is in, or None. In JASS a
+    statement is one line, so only the line is read; in Lua a call can span
+    lines, so up to 30 lines before it are."""
+    lines = text.splitlines()
+    if not 0 <= line < len(lines):
+        return None
+    first = max(line - 30, 0) if language == 'lua' else line
+    before = '\n'.join(lines[first:line] + [lines[line][:character]])
+    tokens = _call_tokens(before, language)
+    if tokens is None:
+        return None
+    stack = []  # [name token or None, opener, commas so far]
+    previous, second = None, None
+    for token in tokens:
+        # A string's value is its text, which can be "(" or ",".
+        value = None if token.kind in ('STRING', 'RAWCODE') else token.value
+        if value in _OPENERS:
+            is_call = (value == '(' and previous is not None
+                       and previous.kind in ('IDENT', 'NAME')
+                       and not (second is not None and second.value in ('.', ':')))
+            stack.append([previous if is_call else None, value, 0])
+        elif value in (')', ']', '}') and stack:
+            stack.pop()
+        elif value == ',' and stack:
+            stack[-1][2] += 1
+        second, previous = previous, token
+    for name, opener, commas in reversed(stack):
+        if opener == '(':
+            if name is None:
+                return None  # a parenthesis, not a call, or a method call
+            return name.value, name.line + first, commas
+    return None
+
+
+def _call_tokens(text, language):
+    """The tokens of `text`, an unfinished statement; a string still open
+    at the end is closed so that the rest lexes."""
+    if language == 'lua':
+        from wc3files.scripts.lua_lexer import tokenize
+    else:
+        from wc3files.scripts.jass_lexer import tokenize
+    for tail in ('', '"', "'"):
+        try:
+            tokens = tokenize(text + tail)
+        except ValueError:
+            continue
+        return [t for t in tokens if t.kind != 'EOF']
+    return None
+
+
+def signature(symbol):
+    """(label, [(start, end) of each parameter in it]) for a function or
+    native, from its declaration: JASS `takes a x, b y returns`, or Lua
+    `function f(x, y)`."""
+    label = symbol.detail
+    if ' takes ' in label:
+        start = label.index(' takes ') + len(' takes ')
+        end = label.find(' returns', start)
+        end = len(label) if end < 0 else end
+    elif '(' in label:
+        start = label.index('(') + 1
+        end = label.find(')', start)
+        end = len(label) if end < 0 else end
+    else:
+        return label, []
+    params = []
+    if label[start:end].strip() != 'nothing':
+        offset = start
+        for part in label[start:end].split(','):
+            stripped = part.strip()
+            if stripped:
+                at = label.index(stripped, offset)
+                params.append((at, at + len(stripped)))
+            offset += len(part) + 1
+    return label, params
+
+
 def lookup(document_index, name, line):
     """The declaration of `name` on 1-based `line`: in the document, then in
     the bundled files."""

@@ -150,6 +150,7 @@ class Server:
             'textDocument/documentHighlight': self.on_document_highlight,
             'textDocument/prepareRename': self.on_prepare_rename,
             'textDocument/rename': self.on_rename,
+            'textDocument/signatureHelp': self.on_signature_help,
         }
 
     # -- lifecycle ---------------------------------------------------------
@@ -165,6 +166,8 @@ class Server:
             'referencesProvider': True,
             'documentHighlightProvider': True,
             'renameProvider': {'prepareProvider': True},
+            'signatureHelpProvider': {'triggerCharacters': ['(', ','],
+                                      'retriggerCharacters': [')']},
         }
 
     def on_initialize(self, params):
@@ -346,6 +349,32 @@ class Server:
                        'end': {'line': line - 1, 'character': col - 1 + length}},
              'newText': new_name}
             for line, col, length in edits]}}
+
+    def on_signature_help(self, params):
+        """The signature of the function called at the position, and the
+        argument the cursor is on (#402)."""
+        from .symbols import call_at, lookup, signature
+        document = self.documents.get(params['textDocument']['uri'])
+        if document is None or document.language is None:
+            return None
+        position = params['position']
+        call = call_at(document.text, position['line'], position['character'],
+                       document.language)
+        if call is None:
+            return None
+        name, line, argument = call
+        symbol = lookup(document.index, name, line)
+        if symbol is None or symbol.kind not in ('function', 'native'):
+            return None
+        label, parameters = signature(symbol)
+        active = min(argument, len(parameters) - 1) if parameters else None
+        result = {'signatures': [{'label': label,
+                                  'parameters': [{'label': list(p)} for p in parameters]}],
+                  'activeSignature': 0}
+        if active is not None:
+            result['activeParameter'] = active
+            result['signatures'][0]['activeParameter'] = active
+        return result
 
     def publish(self, uri):
         document = self.documents[uri]
