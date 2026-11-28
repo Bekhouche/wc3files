@@ -838,6 +838,126 @@ class TestVJassStructs(unittest.TestCase):
             ('Init', ['p', 'b'])]))
 
 
+MESSY = (
+    'globals\n'
+    'integer x = 0   \n'
+    '      // a comment\n'
+    'endglobals\n'
+    '\n'
+    'function F takes nothing returns nothing\n'
+    'if x > 0 then\n'
+    '        call BJDebugMsg("a // not a comment")\n'
+    '  elseif x < 0 then\n'
+    'loop\n'
+    'exitwhen true\n'
+    'endloop\n'
+    '      else\n'
+    'set x = 1\n'
+    '    endif\n'
+    'endfunction\n')
+
+MESSY_FORMATTED = (
+    'globals\n'
+    '    integer x = 0\n'
+    '    // a comment\n'
+    'endglobals\n'
+    '\n'
+    'function F takes nothing returns nothing\n'
+    '    if x > 0 then\n'
+    '        call BJDebugMsg("a // not a comment")\n'
+    '    elseif x < 0 then\n'
+    '        loop\n'
+    '            exitwhen true\n'
+    '        endloop\n'
+    '    else\n'
+    '        set x = 1\n'
+    '    endif\n'
+    'endfunction\n')
+
+
+def formatted(text, method='textDocument/formatting', uri='file:///map/war3map.j',
+              language='jass', **params):
+    params = dict({'textDocument': {'uri': uri}}, **params)
+    _, out = exchange(INITIALIZE, open_doc(text, uri=uri, language=language),
+                      {'id': 5, 'method': method, 'params': params}, SHUTDOWN, EXIT)
+    [message] = [m for m in out if m.get('id') == 5]
+    edits = message['result']
+    return apply(text, {'changes': {uri: edits}}, uri), edits
+
+
+class TestFormatting(unittest.TestCase):
+    def test_jass(self):
+        text, _ = formatted(MESSY, options={'tabSize': 4, 'insertSpaces': True})
+        self.assertEqual(text, MESSY_FORMATTED)
+
+    def test_already_formatted(self):
+        _, edits = formatted(MESSY_FORMATTED, options={'tabSize': 4, 'insertSpaces': True})
+        self.assertEqual(edits, [])
+
+    def test_tabs_and_line_endings(self):
+        text, _ = formatted(MESSY.replace('\n', '\r\n'),
+                            options={'tabSize': 4, 'insertSpaces': False})
+        self.assertEqual(text, MESSY_FORMATTED.replace('    ', '\t').replace('\n', '\r\n'))
+
+    def test_a_range(self):
+        text, edits = formatted(MESSY, 'textDocument/rangeFormatting',
+                                options={'tabSize': 2, 'insertSpaces': True},
+                                range={'start': {'line': 9, 'character': 0},
+                                       'end': {'line': 12, 'character': 0}})
+        self.assertEqual([e['range']['start']['line'] for e in edits], [9, 10, 11])
+        # Inside the function and the if: two levels of two spaces.
+        self.assertIn('\n    loop\n      exitwhen true\n    endloop\n      else\n', text)
+
+    def test_vjass(self):
+        text = ('library L\n'
+                'interface Shape\n'
+                'method area takes nothing returns real\n'
+                'endinterface\n'
+                'private struct Square extends Shape\n'
+                'real side\n'
+                '/* a comment\n'
+                '      kept as it is */\n'
+                'method area takes nothing returns real\n'
+                'static if DEBUG then\n'
+                'call BJDebugMsg("area")\n'
+                'endif\n'
+                'return .side * .side\n'
+                'endmethod\n'
+                'endstruct\n'
+                '//! textmacro T takes NAME\n'
+                '  function $NAME$ takes nothing returns nothing\n'
+                '//! endtextmacro\n'
+                'endlibrary\n')
+        result, _ = formatted(text, uri='file:///map/L.j', options={'tabSize': 2})
+        self.assertEqual(result, (
+            'library L\n'
+            '  interface Shape\n'
+            '    method area takes nothing returns real\n'
+            '  endinterface\n'
+            '  private struct Square extends Shape\n'
+            '    real side\n'
+            '    /* a comment\n'
+            '      kept as it is */\n'
+            '    method area takes nothing returns real\n'
+            '      static if DEBUG then\n'
+            '        call BJDebugMsg("area")\n'
+            '      endif\n'
+            '      return .side * .side\n'
+            '    endmethod\n'
+            '  endstruct\n'
+            '  //! textmacro T takes NAME\n'
+            '  function $NAME$ takes nothing returns nothing\n'
+            '//! endtextmacro\n'
+            'endlibrary\n'))
+
+    def test_left_alone(self):
+        # A document that does not lex, and Lua.
+        _, edits = formatted('function F takes nothing returns nothing\n  set x = "\n')
+        self.assertEqual(edits, [])
+        _, edits = formatted('  local x = 1\n', uri='file:///map/war3map.lua', language='lua')
+        self.assertEqual(edits, [])
+
+
 class TestProcess(unittest.TestCase):
     def test_over_stdio(self):
         src = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src')
